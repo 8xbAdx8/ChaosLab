@@ -1,0 +1,23 @@
+# IntelliJ IDEA
+.idea/
+*.iml
+out/
+
+# Maven build output
+target/
+**/target/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Logs and JVM crash files
+*.log
+logs/
+hs_err_pid*
+replay_pid*
+
+# Operating system files
+.DS_Store
+Thumbs.db
