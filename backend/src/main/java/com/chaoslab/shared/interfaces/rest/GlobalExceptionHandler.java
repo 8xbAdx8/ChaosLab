@@ -1,5 +1,6 @@
 package com.chaoslab.shared.interfaces.rest;
 
+import com.chaoslab.scenario.application.FaultScenarioNotFoundException;
 import com.chaoslab.target.application.TargetNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
@@ -26,6 +27,20 @@ public class GlobalExceptionHandler {
         return error(
                 HttpStatus.NOT_FOUND,
                 "TARGET_NOT_FOUND",
+                exception.getMessage(),
+                request,
+                Map.of()
+        );
+    }
+
+    @ExceptionHandler(FaultScenarioNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleFaultScenarioNotFound(
+            FaultScenarioNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return error(
+                HttpStatus.NOT_FOUND,
+                "SCENARIO_NOT_FOUND",
                 exception.getMessage(),
                 request,
                 Map.of()
