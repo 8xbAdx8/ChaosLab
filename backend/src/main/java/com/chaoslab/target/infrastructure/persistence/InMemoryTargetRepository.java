@@ -2,7 +2,6 @@ package com.chaoslab.target.infrastructure.persistence;
 
 import com.chaoslab.target.application.port.TargetRepository;
 import com.chaoslab.target.domain.Target;
-import org.springframework.stereotype.Repository;
 
 import java.util.Comparator;
 import java.util.List;
@@ -12,7 +11,6 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-@Repository
 public class InMemoryTargetRepository implements TargetRepository {
 
     private static final Comparator<Target> TARGET_ORDER = Comparator

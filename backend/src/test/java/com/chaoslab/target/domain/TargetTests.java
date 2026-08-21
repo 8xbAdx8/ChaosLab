@@ -99,4 +99,20 @@ class TargetTests {
         target.enable();
         assertThat(target.isEnabled()).isTrue();
     }
+
+    @Test
+    void shouldRehydrateDisabledTarget() {
+        UUID id = UUID.randomUUID();
+
+        Target target = Target.rehydrate(
+                id,
+                "payment-service",
+                TargetType.JAVA_APPLICATION,
+                TargetEnvironment.CHAOS_LAB,
+                false
+        );
+
+        assertThat(target.getId()).isEqualTo(id);
+        assertThat(target.isEnabled()).isFalse();
+    }
 }

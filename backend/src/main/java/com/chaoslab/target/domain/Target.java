@@ -35,6 +35,18 @@ public final class Target {
         return new Target(id, name, type, environment);
     }
 
+    public static Target rehydrate(
+            UUID id,
+            String name,
+            TargetType type,
+            TargetEnvironment environment,
+            boolean enabled
+    ) {
+        Target target = new Target(id, name, type, environment);
+        target.enabled = enabled;
+        return target;
+    }
+
     public UUID getId() {
         return id;
     }
