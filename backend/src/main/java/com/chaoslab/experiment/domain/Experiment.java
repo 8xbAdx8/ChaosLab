@@ -131,6 +131,28 @@ public final class Experiment {
         return version;
     }
 
+    public Experiment validate() {
+        if (status == ExperimentStatus.VALIDATED) {
+            return this;
+        }
+        if (status != ExperimentStatus.CREATED) {
+            throw new IllegalStateException(
+                    "experiment cannot be validated from status " + status
+            );
+        }
+        return new Experiment(
+                id,
+                name,
+                hypothesis,
+                targetId,
+                scenarioId,
+                durationSeconds,
+                parameters,
+                ExperimentStatus.VALIDATED,
+                version
+        );
+    }
+
     private static int validateDuration(int durationSeconds) {
         if (durationSeconds < MIN_DURATION_SECONDS
                 || durationSeconds > MAX_DURATION_SECONDS) {

@@ -48,6 +48,24 @@ class ExperimentTests {
                 .hasMessage("durationSeconds must be between 5 and 60");
     }
 
+    @Test
+    void shouldTransitionFromCreatedToValidated() {
+        Experiment created = createExperiment(30);
+
+        Experiment validated = created.validate();
+
+        assertThat(validated.getStatus()).isEqualTo(ExperimentStatus.VALIDATED);
+        assertThat(validated.getId()).isEqualTo(created.getId());
+        assertThat(validated.getVersion()).isEqualTo(created.getVersion());
+    }
+
+    @Test
+    void shouldTreatRepeatedValidationAsIdempotent() {
+        Experiment validated = createExperiment(30).validate();
+
+        assertThat(validated.validate()).isSameAs(validated);
+    }
+
     private Experiment createExperiment(int durationSeconds) {
         return Experiment.create(
                 UUID.randomUUID(),

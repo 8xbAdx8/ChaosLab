@@ -2,7 +2,9 @@ package com.chaoslab.experiment.application;
 
 import com.chaoslab.experiment.application.dto.CreateExperimentCommand;
 import com.chaoslab.experiment.application.dto.ExperimentDetails;
+import com.chaoslab.experiment.application.port.ExperimentParameterValidator;
 import com.chaoslab.experiment.application.port.ExperimentRepository;
+import com.chaoslab.experiment.application.validation.ParameterViolation;
 import com.chaoslab.experiment.domain.Experiment;
 import com.chaoslab.experiment.domain.ExperimentStatus;
 import com.chaoslab.scenario.application.FaultScenarioNotFoundException;
@@ -24,16 +26,22 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 class ExperimentApplicationServiceTests {
 
     private final ExperimentRepository experimentRepository = mock(ExperimentRepository.class);
     private final TargetRepository targetRepository = mock(TargetRepository.class);
     private final FaultScenarioRepository scenarioRepository = mock(FaultScenarioRepository.class);
+    private final ExperimentParameterValidator parameterValidator =
+            mock(ExperimentParameterValidator.class);
     private final ExperimentApplicationService service = new ExperimentApplicationService(
             experimentRepository,
             targetRepository,
-            scenarioRepository
+            scenarioRepository,
+            parameterValidator
     );
 
     @Test
@@ -118,6 +126,91 @@ class ExperimentApplicationServiceTests {
                 .containsExactly(experiment.getId());
     }
 
+    @Test
+    void shouldValidateExperimentWhenParametersMatchScenarioSchema() {
+        Target target = target(true);
+        FaultScenario scenario = scenario(true);
+        Experiment experiment = experiment(target.getId(), scenario.getId());
+        given(experimentRepository.findById(experiment.getId()))
+                .willReturn(Optional.of(experiment));
+        given(targetRepository.findById(experiment.getTargetId()))
+                .willReturn(Optional.of(target));
+        given(scenarioRepository.findById(experiment.getScenarioId()))
+                .willReturn(Optional.of(scenario));
+        given(parameterValidator.validate(
+                scenario.getParameterSchema(),
+                experiment.getParameters()
+        )).willReturn(List.of());
+        given(experimentRepository.update(any(Experiment.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+
+        ExperimentDetails details = service.validate(experiment.getId());
+
+        assertThat(details.status()).isEqualTo(ExperimentStatus.VALIDATED);
+        verify(experimentRepository).update(any(Experiment.class));
+    }
+
+    @Test
+    void shouldRejectParametersThatDoNotMatchScenarioSchema() {
+        Target target = target(true);
+        FaultScenario scenario = scenario(true);
+        Experiment experiment = experiment(target.getId(), scenario.getId());
+        ParameterViolation violation = new ParameterViolation(
+                "/percent",
+                "maximum",
+                "must have a maximum value of 80"
+        );
+        given(experimentRepository.findById(experiment.getId()))
+                .willReturn(Optional.of(experiment));
+        given(targetRepository.findById(experiment.getTargetId()))
+                .willReturn(Optional.of(target));
+        given(scenarioRepository.findById(experiment.getScenarioId()))
+                .willReturn(Optional.of(scenario));
+        given(parameterValidator.validate(
+                scenario.getParameterSchema(),
+                experiment.getParameters()
+        )).willReturn(List.of(violation));
+
+        assertThatThrownBy(() -> service.validate(experiment.getId()))
+                .isInstanceOf(ExperimentParametersInvalidException.class)
+                .hasMessage("experiment parameters do not match the fault scenario schema")
+                .extracting("violations")
+                .isEqualTo(List.of(violation));
+        verify(experimentRepository, never()).update(any(Experiment.class));
+    }
+
+    @Test
+    void shouldTreatValidationOfValidatedExperimentAsIdempotent() {
+        Experiment validated = experiment().validate();
+        given(experimentRepository.findById(validated.getId()))
+                .willReturn(Optional.of(validated));
+
+        ExperimentDetails details = service.validate(validated.getId());
+
+        assertThat(details.status()).isEqualTo(ExperimentStatus.VALIDATED);
+        verify(experimentRepository, never()).update(any(Experiment.class));
+        verifyNoInteractions(targetRepository, scenarioRepository, parameterValidator);
+    }
+
+    @Test
+    void shouldRejectValidationWhenTargetWasDisabledAfterCreation() {
+        Target disabledTarget = target(false);
+        FaultScenario scenario = scenario(true);
+        Experiment experiment = experiment(disabledTarget.getId(), scenario.getId());
+        given(experimentRepository.findById(experiment.getId()))
+                .willReturn(Optional.of(experiment));
+        given(targetRepository.findById(disabledTarget.getId()))
+                .willReturn(Optional.of(disabledTarget));
+
+        assertThatThrownBy(() -> service.validate(experiment.getId()))
+                .isInstanceOf(ExperimentValidationRejectedException.class)
+                .hasMessage("target is disabled: " + disabledTarget.getId())
+                .extracting("code")
+                .isEqualTo("TARGET_DISABLED");
+        verifyNoInteractions(scenarioRepository, parameterValidator);
+        verify(experimentRepository, never()).update(any(Experiment.class));
+    }
+
     private CreateExperimentCommand command(UUID targetId, UUID scenarioId) {
         return new CreateExperimentCommand(
                 "payment CPU experiment",
@@ -154,12 +247,16 @@ class ExperimentApplicationServiceTests {
     }
 
     private Experiment experiment() {
+        return experiment(UUID.randomUUID(), UUID.randomUUID());
+    }
+
+    private Experiment experiment(UUID targetId, UUID scenarioId) {
         return Experiment.create(
                 UUID.randomUUID(),
                 "payment CPU experiment",
                 "Service remains available.",
-                UUID.randomUUID(),
-                UUID.randomUUID(),
+                targetId,
+                scenarioId,
                 30,
                 "{\"percent\":40}"
         );

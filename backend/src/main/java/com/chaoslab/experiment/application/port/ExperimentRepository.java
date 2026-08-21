@@ -10,6 +10,8 @@ public interface ExperimentRepository {
 
     Experiment insert(Experiment experiment);
 
+    Experiment update(Experiment experiment);
+
     Optional<Experiment> findById(UUID id);
 
     List<Experiment> findAll();

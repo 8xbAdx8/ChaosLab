@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +20,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @Transactional
@@ -88,6 +90,39 @@ class JpaExperimentRepositoryAdapterTests {
                 .toList();
 
         assertThat(names).containsExactly("order experiment", "payment experiment");
+    }
+
+    @Test
+    void shouldUpdateStatusWithOptimisticVersionIncrement() {
+        Experiment inserted = experimentRepository.insert(
+                experiment("payment validation experiment")
+        );
+
+        Experiment updated = experimentRepository.update(inserted.validate());
+        entityManager.clear();
+        Experiment restored = experimentRepository.findById(updated.getId()).orElseThrow();
+
+        assertThat(restored.getStatus()).isEqualTo(ExperimentStatus.VALIDATED);
+        assertThat(restored.getVersion()).isEqualTo(1);
+    }
+
+    @Test
+    void shouldRejectUpdateUsingStaleVersion() {
+        Experiment inserted = experimentRepository.insert(
+                experiment("concurrent validation experiment")
+        );
+        entityManager.clear();
+        Experiment firstRequest = experimentRepository.findById(inserted.getId())
+                .orElseThrow();
+        entityManager.clear();
+        Experiment staleRequest = experimentRepository.findById(inserted.getId())
+                .orElseThrow();
+        entityManager.clear();
+        experimentRepository.update(firstRequest.validate());
+        entityManager.clear();
+
+        assertThatThrownBy(() -> experimentRepository.update(staleRequest.validate()))
+                .isInstanceOf(OptimisticLockingFailureException.class);
     }
 
     private Experiment experiment(String name) {

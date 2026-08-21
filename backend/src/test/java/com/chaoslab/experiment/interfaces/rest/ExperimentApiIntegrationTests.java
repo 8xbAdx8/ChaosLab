@@ -52,9 +52,21 @@ class ExperimentApiIntegrationTests {
                 .andExpect(jsonPath("$.targetId").value(targetId))
                 .andExpect(jsonPath("$.scenarioId").value(CPU_LOAD_ID));
 
+        String validationPath = URI.create(location).getPath() + "/validation";
+        mockMvc.perform(post(validationPath))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("VALIDATED"))
+                .andExpect(jsonPath("$.version").value(1));
+
+        mockMvc.perform(post(validationPath))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("VALIDATED"))
+                .andExpect(jsonPath("$.version").value(1));
+
         mockMvc.perform(get("/api/v1/experiments"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1));
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].status").value("VALIDATED"));
     }
 
     @Test
@@ -94,6 +106,31 @@ class ExperimentApiIntegrationTests {
                 .andExpect(jsonPath("$.code").value("EXPERIMENT_NOT_FOUND"));
     }
 
+    @Test
+    void shouldRejectParametersOutsideScenarioSchemaWithoutChangingStatus()
+            throws Exception {
+        String targetId = registerTarget();
+        MvcResult creation = mockMvc.perform(post("/api/v1/experiments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(experimentRequest(targetId, CPU_LOAD_ID, 30, 81)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String location = creation.getResponse().getHeader("Location");
+        assertThat(location).isNotNull();
+        String experimentPath = URI.create(location).getPath();
+
+        mockMvc.perform(post(experimentPath + "/validation"))
+                .andExpect(status().is(422))
+                .andExpect(jsonPath("$.code").value("EXPERIMENT_PARAMETERS_INVALID"))
+                .andExpect(jsonPath("$.violations[0].path").value("/percent"))
+                .andExpect(jsonPath("$.violations[0].keyword").value("maximum"));
+
+        mockMvc.perform(get(experimentPath))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CREATED"))
+                .andExpect(jsonPath("$.version").value(0));
+    }
+
     private String registerTarget() throws Exception {
         String request = """
                 {
@@ -119,6 +156,15 @@ class ExperimentApiIntegrationTests {
             String scenarioId,
             int durationSeconds
     ) {
+        return experimentRequest(targetId, scenarioId, durationSeconds, 40);
+    }
+
+    private String experimentRequest(
+            String targetId,
+            String scenarioId,
+            int durationSeconds,
+            int percent
+    ) {
         return """
                 {
                   "name": "payment CPU experiment",
@@ -127,9 +173,9 @@ class ExperimentApiIntegrationTests {
                   "scenarioId": "%s",
                   "durationSeconds": %d,
                   "parameters": {
-                    "percent": 40
+                    "percent": %d
                   }
                 }
-                """.formatted(targetId, scenarioId, durationSeconds);
+                """.formatted(targetId, scenarioId, durationSeconds, percent);
     }
 }

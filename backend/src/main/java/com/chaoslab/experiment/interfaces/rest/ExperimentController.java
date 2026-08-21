@@ -49,6 +49,11 @@ public class ExperimentController {
         return jsonMapper.from(experimentApplicationService.findById(experimentId));
     }
 
+    @PostMapping("/{experimentId}/validation")
+    public ExperimentResponse validate(@PathVariable UUID experimentId) {
+        return jsonMapper.from(experimentApplicationService.validate(experimentId));
+    }
+
     @GetMapping
     public List<ExperimentResponse> findAll() {
         return experimentApplicationService.findAll().stream()

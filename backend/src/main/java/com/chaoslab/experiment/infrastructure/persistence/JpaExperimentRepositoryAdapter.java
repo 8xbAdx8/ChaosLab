@@ -43,6 +43,16 @@ public class JpaExperimentRepositoryAdapter implements ExperimentRepository {
     }
 
     @Override
+    @Transactional
+    public Experiment update(Experiment experiment) {
+        Objects.requireNonNull(experiment, "experiment must not be null");
+        ExperimentJpaEntity entity = repository.saveAndFlush(
+                ExperimentJpaEntity.from(experiment)
+        );
+        return entity.toDomain();
+    }
+
+    @Override
     public Optional<Experiment> findById(UUID id) {
         Objects.requireNonNull(id, "id must not be null");
         return repository.findById(id.toString()).map(ExperimentJpaEntity::toDomain);

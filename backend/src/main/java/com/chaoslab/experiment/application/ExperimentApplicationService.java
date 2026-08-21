@@ -2,8 +2,11 @@ package com.chaoslab.experiment.application;
 
 import com.chaoslab.experiment.application.dto.CreateExperimentCommand;
 import com.chaoslab.experiment.application.dto.ExperimentDetails;
+import com.chaoslab.experiment.application.port.ExperimentParameterValidator;
 import com.chaoslab.experiment.application.port.ExperimentRepository;
+import com.chaoslab.experiment.application.validation.ParameterViolation;
 import com.chaoslab.experiment.domain.Experiment;
+import com.chaoslab.experiment.domain.ExperimentStatus;
 import com.chaoslab.scenario.application.FaultScenarioNotFoundException;
 import com.chaoslab.scenario.application.port.FaultScenarioRepository;
 import com.chaoslab.scenario.domain.FaultScenario;
@@ -24,11 +27,13 @@ public class ExperimentApplicationService {
     private final ExperimentRepository experimentRepository;
     private final TargetRepository targetRepository;
     private final FaultScenarioRepository faultScenarioRepository;
+    private final ExperimentParameterValidator parameterValidator;
 
     public ExperimentApplicationService(
             ExperimentRepository experimentRepository,
             TargetRepository targetRepository,
-            FaultScenarioRepository faultScenarioRepository
+            FaultScenarioRepository faultScenarioRepository,
+            ExperimentParameterValidator parameterValidator
     ) {
         this.experimentRepository = Objects.requireNonNull(
                 experimentRepository,
@@ -41,6 +46,10 @@ public class ExperimentApplicationService {
         this.faultScenarioRepository = Objects.requireNonNull(
                 faultScenarioRepository,
                 "faultScenarioRepository must not be null"
+        );
+        this.parameterValidator = Objects.requireNonNull(
+                parameterValidator,
+                "parameterValidator must not be null"
         );
     }
 
@@ -82,6 +91,46 @@ public class ExperimentApplicationService {
         return experimentRepository.findById(experimentId)
                 .map(ExperimentDetails::from)
                 .orElseThrow(() -> new ExperimentNotFoundException(experimentId));
+    }
+
+    @Transactional
+    public ExperimentDetails validate(UUID experimentId) {
+        Objects.requireNonNull(experimentId, "experimentId must not be null");
+        Experiment experiment = experimentRepository.findById(experimentId)
+                .orElseThrow(() -> new ExperimentNotFoundException(experimentId));
+        if (experiment.getStatus() == ExperimentStatus.VALIDATED) {
+            return ExperimentDetails.from(experiment);
+        }
+
+        Target target = targetRepository.findById(experiment.getTargetId())
+                .orElseThrow(() -> new TargetNotFoundException(experiment.getTargetId()));
+        if (!target.isEnabled()) {
+            throw new ExperimentValidationRejectedException(
+                    "TARGET_DISABLED",
+                    "target is disabled: " + target.getId()
+            );
+        }
+
+        FaultScenario scenario = faultScenarioRepository.findById(experiment.getScenarioId())
+                .orElseThrow(() -> new FaultScenarioNotFoundException(
+                        experiment.getScenarioId()
+                ));
+        if (!scenario.isEnabled()) {
+            throw new ExperimentValidationRejectedException(
+                    "SCENARIO_DISABLED",
+                    "fault scenario is disabled: " + scenario.getId()
+            );
+        }
+
+        List<ParameterViolation> violations = parameterValidator.validate(
+                scenario.getParameterSchema(),
+                experiment.getParameters()
+        );
+        if (!violations.isEmpty()) {
+            throw new ExperimentParametersInvalidException(violations);
+        }
+
+        return ExperimentDetails.from(experimentRepository.update(experiment.validate()));
     }
 
     public List<ExperimentDetails> findAll() {
