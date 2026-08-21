@@ -1,5 +1,7 @@
 package com.chaoslab.shared.interfaces.rest;
 
+import com.chaoslab.experiment.application.ExperimentCreationRejectedException;
+import com.chaoslab.experiment.application.ExperimentNotFoundException;
 import com.chaoslab.scenario.application.FaultScenarioNotFoundException;
 import com.chaoslab.target.application.TargetNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -27,6 +29,34 @@ public class GlobalExceptionHandler {
         return error(
                 HttpStatus.NOT_FOUND,
                 "TARGET_NOT_FOUND",
+                exception.getMessage(),
+                request,
+                Map.of()
+        );
+    }
+
+    @ExceptionHandler(ExperimentNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleExperimentNotFound(
+            ExperimentNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return error(
+                HttpStatus.NOT_FOUND,
+                "EXPERIMENT_NOT_FOUND",
+                exception.getMessage(),
+                request,
+                Map.of()
+        );
+    }
+
+    @ExceptionHandler(ExperimentCreationRejectedException.class)
+    public ResponseEntity<ApiErrorResponse> handleExperimentCreationRejected(
+            ExperimentCreationRejectedException exception,
+            HttpServletRequest request
+    ) {
+        return error(
+                HttpStatus.CONFLICT,
+                exception.getCode(),
                 exception.getMessage(),
                 request,
                 Map.of()
