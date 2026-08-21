@@ -4,8 +4,8 @@
 out/
 
 # Maven build output
-target/
-**/target/
+/target/
+/backend/target/
 
 # Local environment and secrets
 .env
