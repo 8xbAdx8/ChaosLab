@@ -2,6 +2,8 @@ package com.chaoslab.experiment.interfaces.rest;
 
 import com.chaoslab.experiment.application.dto.CreateExperimentCommand;
 import com.chaoslab.experiment.application.dto.ExperimentDetails;
+import com.chaoslab.experiment.application.dto.ExperimentDryRunDetails;
+import com.chaoslab.safety.application.model.DryRunPlan;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -42,6 +44,32 @@ class ExperimentJsonMapper {
                 parseParameters(details),
                 details.status(),
                 details.version()
+        );
+    }
+
+    ExperimentDryRunResponse from(ExperimentDryRunDetails details) {
+        DryRunPlan plan = details.decision().plan();
+        return new ExperimentDryRunResponse(
+                from(details.experiment()),
+                details.decision().accepted(),
+                details.decision().checks().stream()
+                        .map(check -> new SafetyCheckResponse(
+                                check.code(),
+                                check.passed(),
+                                check.message()
+                        ))
+                        .toList(),
+                new DryRunPlanResponse(
+                        plan.experimentId(),
+                        plan.targetId(),
+                        plan.targetName(),
+                        plan.environment(),
+                        plan.scenarioCode(),
+                        plan.targetCount(),
+                        plan.durationSeconds(),
+                        plan.recoveryWithinSeconds(),
+                        parseParameters(details.experiment())
+                )
         );
     }
 

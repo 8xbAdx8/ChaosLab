@@ -2,11 +2,14 @@ package com.chaoslab.experiment.application;
 
 import com.chaoslab.experiment.application.dto.CreateExperimentCommand;
 import com.chaoslab.experiment.application.dto.ExperimentDetails;
+import com.chaoslab.experiment.application.dto.ExperimentDryRunDetails;
 import com.chaoslab.experiment.application.port.ExperimentParameterValidator;
 import com.chaoslab.experiment.application.port.ExperimentRepository;
 import com.chaoslab.experiment.application.validation.ParameterViolation;
 import com.chaoslab.experiment.domain.Experiment;
 import com.chaoslab.experiment.domain.ExperimentStatus;
+import com.chaoslab.safety.application.model.SafetyDecision;
+import com.chaoslab.safety.application.port.SafetyGuard;
 import com.chaoslab.scenario.application.FaultScenarioNotFoundException;
 import com.chaoslab.scenario.application.port.FaultScenarioRepository;
 import com.chaoslab.scenario.domain.FaultScenario;
@@ -28,12 +31,14 @@ public class ExperimentApplicationService {
     private final TargetRepository targetRepository;
     private final FaultScenarioRepository faultScenarioRepository;
     private final ExperimentParameterValidator parameterValidator;
+    private final SafetyGuard safetyGuard;
 
     public ExperimentApplicationService(
             ExperimentRepository experimentRepository,
             TargetRepository targetRepository,
             FaultScenarioRepository faultScenarioRepository,
-            ExperimentParameterValidator parameterValidator
+            ExperimentParameterValidator parameterValidator,
+            SafetyGuard safetyGuard
     ) {
         this.experimentRepository = Objects.requireNonNull(
                 experimentRepository,
@@ -50,6 +55,10 @@ public class ExperimentApplicationService {
         this.parameterValidator = Objects.requireNonNull(
                 parameterValidator,
                 "parameterValidator must not be null"
+        );
+        this.safetyGuard = Objects.requireNonNull(
+                safetyGuard,
+                "safetyGuard must not be null"
         );
     }
 
@@ -98,7 +107,8 @@ public class ExperimentApplicationService {
         Objects.requireNonNull(experimentId, "experimentId must not be null");
         Experiment experiment = experimentRepository.findById(experimentId)
                 .orElseThrow(() -> new ExperimentNotFoundException(experimentId));
-        if (experiment.getStatus() == ExperimentStatus.VALIDATED) {
+        if (experiment.getStatus() == ExperimentStatus.VALIDATED
+                || experiment.getStatus() == ExperimentStatus.READY) {
             return ExperimentDetails.from(experiment);
         }
 
@@ -131,6 +141,26 @@ public class ExperimentApplicationService {
         }
 
         return ExperimentDetails.from(experimentRepository.update(experiment.validate()));
+    }
+
+    @Transactional
+    public ExperimentDryRunDetails dryRun(UUID experimentId) {
+        Objects.requireNonNull(experimentId, "experimentId must not be null");
+        Experiment experiment = experimentRepository.findById(experimentId)
+                .orElseThrow(() -> new ExperimentNotFoundException(experimentId));
+        Target target = targetRepository.findById(experiment.getTargetId())
+                .orElseThrow(() -> new TargetNotFoundException(experiment.getTargetId()));
+        FaultScenario scenario = faultScenarioRepository.findById(experiment.getScenarioId())
+                .orElseThrow(() -> new FaultScenarioNotFoundException(
+                        experiment.getScenarioId()
+                ));
+
+        SafetyDecision decision = safetyGuard.evaluate(experiment, target, scenario);
+        Experiment result = experiment;
+        if (decision.accepted() && experiment.getStatus() == ExperimentStatus.VALIDATED) {
+            result = experimentRepository.update(experiment.ready());
+        }
+        return new ExperimentDryRunDetails(ExperimentDetails.from(result), decision);
     }
 
     public List<ExperimentDetails> findAll() {

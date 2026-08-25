@@ -2,11 +2,13 @@ package com.chaoslab.experiment.application;
 
 import com.chaoslab.experiment.application.dto.CreateExperimentCommand;
 import com.chaoslab.experiment.application.dto.ExperimentDetails;
+import com.chaoslab.experiment.application.dto.ExperimentDryRunDetails;
 import com.chaoslab.experiment.application.port.ExperimentParameterValidator;
 import com.chaoslab.experiment.application.port.ExperimentRepository;
 import com.chaoslab.experiment.application.validation.ParameterViolation;
 import com.chaoslab.experiment.domain.Experiment;
 import com.chaoslab.experiment.domain.ExperimentStatus;
+import com.chaoslab.safety.infrastructure.policy.DefaultSafetyGuard;
 import com.chaoslab.scenario.application.FaultScenarioNotFoundException;
 import com.chaoslab.scenario.application.port.FaultScenarioRepository;
 import com.chaoslab.scenario.domain.FaultScenario;
@@ -41,7 +43,8 @@ class ExperimentApplicationServiceTests {
             experimentRepository,
             targetRepository,
             scenarioRepository,
-            parameterValidator
+            parameterValidator,
+            new DefaultSafetyGuard()
     );
 
     @Test
@@ -193,6 +196,17 @@ class ExperimentApplicationServiceTests {
     }
 
     @Test
+    void shouldTreatValidationOfReadyExperimentAsIdempotent() {
+        Experiment ready = experiment().validate().ready();
+        given(experimentRepository.findById(ready.getId())).willReturn(Optional.of(ready));
+
+        ExperimentDetails details = service.validate(ready.getId());
+
+        assertThat(details.status()).isEqualTo(ExperimentStatus.READY);
+        verify(experimentRepository, never()).update(any(Experiment.class));
+        verifyNoInteractions(targetRepository, scenarioRepository, parameterValidator);
+    }
+    @Test
     void shouldRejectValidationWhenTargetWasDisabledAfterCreation() {
         Target disabledTarget = target(false);
         FaultScenario scenario = scenario(true);
@@ -211,6 +225,94 @@ class ExperimentApplicationServiceTests {
         verify(experimentRepository, never()).update(any(Experiment.class));
     }
 
+    @Test
+    void shouldMoveValidatedExperimentToReadyWhenDryRunIsAccepted() {
+        Target target = target(true);
+        FaultScenario scenario = scenario(true);
+        Experiment validated = experiment(target.getId(), scenario.getId()).validate();
+        given(experimentRepository.findById(validated.getId()))
+                .willReturn(Optional.of(validated));
+        given(targetRepository.findById(target.getId())).willReturn(Optional.of(target));
+        given(scenarioRepository.findById(scenario.getId()))
+                .willReturn(Optional.of(scenario));
+        given(experimentRepository.update(any(Experiment.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+
+        ExperimentDryRunDetails details = service.dryRun(validated.getId());
+
+        assertThat(details.decision().accepted()).isTrue();
+        assertThat(details.experiment().status()).isEqualTo(ExperimentStatus.READY);
+        assertThat(details.decision().plan().targetCount()).isEqualTo(1);
+        assertThat(details.decision().plan().recoveryWithinSeconds()).isEqualTo(30);
+        verify(experimentRepository).update(any(Experiment.class));
+        verifyNoInteractions(parameterValidator);
+    }
+
+    @Test
+    void shouldKeepValidatedStatusWhenDryRunRejectsProductionTarget() {
+        Target target = target(TargetEnvironment.PRODUCTION, true);
+        FaultScenario scenario = scenario(true);
+        Experiment validated = experiment(target.getId(), scenario.getId()).validate();
+        given(experimentRepository.findById(validated.getId()))
+                .willReturn(Optional.of(validated));
+        given(targetRepository.findById(target.getId())).willReturn(Optional.of(target));
+        given(scenarioRepository.findById(scenario.getId()))
+                .willReturn(Optional.of(scenario));
+
+        ExperimentDryRunDetails details = service.dryRun(validated.getId());
+
+        assertThat(details.decision().accepted()).isFalse();
+        assertThat(details.experiment().status()).isEqualTo(ExperimentStatus.VALIDATED);
+        assertThat(details.decision().checks())
+                .filteredOn(check -> check.code().equals("ENVIRONMENT_ALLOWED"))
+                .singleElement()
+                .extracting("passed")
+                .isEqualTo(false);
+        verify(experimentRepository, never()).update(any(Experiment.class));
+    }
+
+    @Test
+    void shouldKeepValidatedStatusWhenDurationExceedsSafetyLimit() {
+        Target target = target(true);
+        FaultScenario scenario = scenario(true);
+        Experiment validated = experiment(target.getId(), scenario.getId(), 60).validate();
+        given(experimentRepository.findById(validated.getId()))
+                .willReturn(Optional.of(validated));
+        given(targetRepository.findById(target.getId())).willReturn(Optional.of(target));
+        given(scenarioRepository.findById(scenario.getId()))
+                .willReturn(Optional.of(scenario));
+
+        ExperimentDryRunDetails details = service.dryRun(validated.getId());
+
+        assertThat(details.decision().accepted()).isFalse();
+        assertThat(details.experiment().status()).isEqualTo(ExperimentStatus.VALIDATED);
+        assertThat(details.decision().checks())
+                .filteredOn(check -> check.code().equals("DURATION_WITHIN_LIMIT"))
+                .singleElement()
+                .extracting("passed")
+                .isEqualTo(false);
+        verify(experimentRepository, never()).update(any(Experiment.class));
+    }
+
+    @Test
+    void shouldTreatRepeatedAcceptedDryRunAsIdempotent() {
+        Target target = target(true);
+        FaultScenario scenario = scenario(true);
+        Experiment ready = experiment(target.getId(), scenario.getId())
+                .validate()
+                .ready();
+        given(experimentRepository.findById(ready.getId())).willReturn(Optional.of(ready));
+        given(targetRepository.findById(target.getId())).willReturn(Optional.of(target));
+        given(scenarioRepository.findById(scenario.getId()))
+                .willReturn(Optional.of(scenario));
+
+        ExperimentDryRunDetails details = service.dryRun(ready.getId());
+
+        assertThat(details.decision().accepted()).isTrue();
+        assertThat(details.experiment().status()).isEqualTo(ExperimentStatus.READY);
+        verify(experimentRepository, never()).update(any(Experiment.class));
+    }
+
     private CreateExperimentCommand command(UUID targetId, UUID scenarioId) {
         return new CreateExperimentCommand(
                 "payment CPU experiment",
@@ -223,11 +325,15 @@ class ExperimentApplicationServiceTests {
     }
 
     private Target target(boolean enabled) {
+        return target(TargetEnvironment.CHAOS_LAB, enabled);
+    }
+
+    private Target target(TargetEnvironment environment, boolean enabled) {
         Target target = Target.register(
                 UUID.randomUUID(),
                 "payment-service",
                 TargetType.JAVA_APPLICATION,
-                TargetEnvironment.CHAOS_LAB
+                environment
         );
         if (!enabled) {
             target.disable();
@@ -258,6 +364,22 @@ class ExperimentApplicationServiceTests {
                 targetId,
                 scenarioId,
                 30,
+                "{\"percent\":40}"
+        );
+    }
+
+    private Experiment experiment(
+            UUID targetId,
+            UUID scenarioId,
+            int durationSeconds
+    ) {
+        return Experiment.create(
+                UUID.randomUUID(),
+                "payment CPU experiment",
+                "Service remains available.",
+                targetId,
+                scenarioId,
+                durationSeconds,
                 "{\"percent\":40}"
         );
     }

@@ -66,6 +66,34 @@ class ExperimentTests {
         assertThat(validated.validate()).isSameAs(validated);
     }
 
+    @Test
+    void shouldTransitionFromValidatedToReady() {
+        Experiment validated = createExperiment(30).validate();
+
+        Experiment ready = validated.ready();
+
+        assertThat(ready.getStatus()).isEqualTo(ExperimentStatus.READY);
+        assertThat(ready.getId()).isEqualTo(validated.getId());
+        assertThat(ready.getVersion()).isEqualTo(validated.getVersion());
+    }
+
+    @Test
+    void shouldTreatRepeatedReadyTransitionAsIdempotent() {
+        Experiment ready = createExperiment(30).validate().ready();
+
+        assertThat(ready.ready()).isSameAs(ready);
+        assertThat(ready.validate()).isSameAs(ready);
+    }
+
+    @Test
+    void shouldRejectReadyTransitionBeforeValidation() {
+        Experiment created = createExperiment(30);
+
+        assertThatThrownBy(created::ready)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("experiment cannot be made ready from status CREATED");
+    }
+
     private Experiment createExperiment(int durationSeconds) {
         return Experiment.create(
                 UUID.randomUUID(),

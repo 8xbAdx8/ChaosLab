@@ -63,10 +63,33 @@ class ExperimentApiIntegrationTests {
                 .andExpect(jsonPath("$.status").value("VALIDATED"))
                 .andExpect(jsonPath("$.version").value(1));
 
+        String dryRunPath = URI.create(location).getPath() + "/dry-run";
+        mockMvc.perform(post(dryRunPath))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accepted").value(true))
+                .andExpect(jsonPath("$.experiment.status").value("READY"))
+                .andExpect(jsonPath("$.experiment.version").value(2))
+                .andExpect(jsonPath("$.checks.length()").value(6))
+                .andExpect(jsonPath("$.plan.targetId").value(targetId))
+                .andExpect(jsonPath("$.plan.targetCount").value(1))
+                .andExpect(jsonPath("$.plan.durationSeconds").value(30))
+                .andExpect(jsonPath("$.plan.recoveryWithinSeconds").value(30))
+                .andExpect(jsonPath("$.plan.parameters.percent").value(40));
+
+        mockMvc.perform(post(dryRunPath))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accepted").value(true))
+                .andExpect(jsonPath("$.experiment.status").value("READY"))
+                .andExpect(jsonPath("$.experiment.version").value(2));
+
+        mockMvc.perform(post(validationPath))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("READY"))
+                .andExpect(jsonPath("$.version").value(2));
         mockMvc.perform(get("/api/v1/experiments"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].status").value("VALIDATED"));
+                .andExpect(jsonPath("$[0].status").value("READY"));
     }
 
     @Test
@@ -131,14 +154,79 @@ class ExperimentApiIntegrationTests {
                 .andExpect(jsonPath("$.version").value(0));
     }
 
+    @Test
+    void shouldRejectProductionTargetDuringDryRunWithoutChangingStatus()
+            throws Exception {
+        String targetId = registerTarget("PRODUCTION");
+        MvcResult creation = mockMvc.perform(post("/api/v1/experiments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(experimentRequest(targetId, CPU_LOAD_ID, 30)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String location = creation.getResponse().getHeader("Location");
+        assertThat(location).isNotNull();
+        String experimentPath = URI.create(location).getPath();
+
+        mockMvc.perform(post(experimentPath + "/validation"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("VALIDATED"));
+
+        mockMvc.perform(post(experimentPath + "/dry-run"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accepted").value(false))
+                .andExpect(jsonPath("$.experiment.status").value("VALIDATED"))
+                .andExpect(jsonPath("$.checks[2].code").value("ENVIRONMENT_ALLOWED"))
+                .andExpect(jsonPath("$.checks[2].passed").value(false))
+                .andExpect(jsonPath("$.plan.environment").value("PRODUCTION"));
+
+        mockMvc.perform(get(experimentPath))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("VALIDATED"))
+                .andExpect(jsonPath("$.version").value(1));
+    }
+
+    @Test
+    void shouldRejectDurationAboveSafetyLimitDuringDryRun()
+            throws Exception {
+        String targetId = registerTarget();
+        MvcResult creation = mockMvc.perform(post("/api/v1/experiments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(experimentRequest(targetId, CPU_LOAD_ID, 60)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String location = creation.getResponse().getHeader("Location");
+        assertThat(location).isNotNull();
+        String experimentPath = URI.create(location).getPath();
+
+        mockMvc.perform(post(experimentPath + "/validation"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post(experimentPath + "/dry-run"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accepted").value(false))
+                .andExpect(jsonPath("$.experiment.status").value("VALIDATED"))
+                .andExpect(jsonPath("$.checks[4].code").value("DURATION_WITHIN_LIMIT"))
+                .andExpect(jsonPath("$.checks[4].passed").value(false))
+                .andExpect(jsonPath("$.plan.durationSeconds").value(60));
+
+        mockMvc.perform(get(experimentPath))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("VALIDATED"))
+                .andExpect(jsonPath("$.version").value(1));
+    }
+
     private String registerTarget() throws Exception {
+        return registerTarget("CHAOS_LAB");
+    }
+
+    private String registerTarget(String environment) throws Exception {
         String request = """
                 {
                   "name": "payment-service",
                   "type": "JAVA_APPLICATION",
-                  "environment": "CHAOS_LAB"
+                  "environment": "%s"
                 }
-                """;
+                """.formatted(environment);
         MvcResult registration = mockMvc.perform(post("/api/v1/targets")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(request))

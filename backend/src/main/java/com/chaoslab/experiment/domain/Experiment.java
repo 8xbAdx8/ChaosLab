@@ -132,7 +132,7 @@ public final class Experiment {
     }
 
     public Experiment validate() {
-        if (status == ExperimentStatus.VALIDATED) {
+        if (status == ExperimentStatus.VALIDATED || status == ExperimentStatus.READY) {
             return this;
         }
         if (status != ExperimentStatus.CREATED) {
@@ -149,6 +149,28 @@ public final class Experiment {
                 durationSeconds,
                 parameters,
                 ExperimentStatus.VALIDATED,
+                version
+        );
+    }
+
+    public Experiment ready() {
+        if (status == ExperimentStatus.READY) {
+            return this;
+        }
+        if (status != ExperimentStatus.VALIDATED) {
+            throw new IllegalStateException(
+                    "experiment cannot be made ready from status " + status
+            );
+        }
+        return new Experiment(
+                id,
+                name,
+                hypothesis,
+                targetId,
+                scenarioId,
+                durationSeconds,
+                parameters,
+                ExperimentStatus.READY,
                 version
         );
     }

@@ -54,6 +54,11 @@ public class ExperimentController {
         return jsonMapper.from(experimentApplicationService.validate(experimentId));
     }
 
+    @PostMapping("/{experimentId}/dry-run")
+    public ExperimentDryRunResponse dryRun(@PathVariable UUID experimentId) {
+        return jsonMapper.from(experimentApplicationService.dryRun(experimentId));
+    }
+
     @GetMapping
     public List<ExperimentResponse> findAll() {
         return experimentApplicationService.findAll().stream()
