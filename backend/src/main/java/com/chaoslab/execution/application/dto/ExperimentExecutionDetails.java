@@ -16,6 +16,7 @@ public record ExperimentExecutionDetails(
         String errorMessage,
         Instant createdAt,
         Instant startedAt,
+        Instant finishedAt,
         long version
 ) {
 
@@ -30,6 +31,7 @@ public record ExperimentExecutionDetails(
                 execution.getErrorMessage(),
                 execution.getCreatedAt(),
                 execution.getStartedAt(),
+                execution.getFinishedAt(),
                 execution.getVersion()
         );
     }

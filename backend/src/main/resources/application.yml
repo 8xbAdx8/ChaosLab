@@ -35,3 +35,7 @@ management:
   endpoint:
     health:
       show-details: never
+
+chaoslab:
+  execution:
+    recovery-scan-interval-ms: 1000

@@ -80,6 +80,16 @@ class JpaExperimentExecutionRepositoryAdapterTests {
     }
 
     @Test
+    void shouldApplyAutomaticRecoveryMigration() {
+        Integer migrationCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM flyway_schema_history "
+                        + "WHERE version = '5' AND success = TRUE",
+                Integer.class
+        );
+
+        assertThat(migrationCount).isEqualTo(1);
+    }
+    @Test
     void shouldInsertAndReloadPreparingExecution() {
         ExperimentExecution inserted = executionRepository.insert(execution(
                 1,
@@ -140,6 +150,42 @@ class JpaExperimentExecutionRepositoryAdapterTests {
         assertThat(latest.getId()).isEqualTo(second.getId());
     }
 
+    @Test
+    void shouldFindRunningExecutionAndPersistSuccessfulRecovery() {
+        ExperimentExecution inserted = executionRepository.insert(execution(
+                1,
+                "request-001"
+        ));
+        ExperimentExecution running = executionRepository.update(
+                inserted.markRunning(
+                        "fake-" + inserted.getId(),
+                        CREATED_AT.plusSeconds(1)
+                )
+        );
+        entityManager.clear();
+
+        assertThat(executionRepository.findAllByStatus(
+                ExperimentExecutionStatus.RUNNING
+        )).extracting(ExperimentExecution::getId)
+                .containsExactly(running.getId());
+
+        ExperimentExecution destroying = executionRepository.update(
+                running.beginDestroy()
+        );
+        ExperimentExecution successful = executionRepository.update(
+                destroying.markSuccess(CREATED_AT.plusSeconds(31))
+        );
+        entityManager.clear();
+
+        ExperimentExecution restored = executionRepository.findById(
+                successful.getId()
+        ).orElseThrow();
+        assertThat(restored.getStatus())
+                .isEqualTo(ExperimentExecutionStatus.SUCCESS);
+        assertThat(restored.getFinishedAt())
+                .isEqualTo(CREATED_AT.plusSeconds(31));
+        assertThat(restored.getVersion()).isEqualTo(3);
+    }
     private ExperimentExecution execution(int attempt, String idempotencyKey) {
         return ExperimentExecution.prepare(
                 UUID.randomUUID(),

@@ -61,6 +61,9 @@ class ExperimentExecutionJpaEntity {
     @Column(name = "started_at")
     private Instant startedAt;
 
+    @Column(name = "finished_at")
+    private Instant finishedAt;
+
     @Version
     @Column(name = "version", nullable = false)
     private long version;
@@ -78,6 +81,7 @@ class ExperimentExecutionJpaEntity {
             String errorMessage,
             Instant createdAt,
             Instant startedAt,
+            Instant finishedAt,
             long version
     ) {
         this.id = id;
@@ -89,6 +93,7 @@ class ExperimentExecutionJpaEntity {
         this.errorMessage = errorMessage;
         this.createdAt = createdAt;
         this.startedAt = startedAt;
+        this.finishedAt = finishedAt;
         this.version = version;
     }
 
@@ -103,6 +108,7 @@ class ExperimentExecutionJpaEntity {
                 execution.getErrorMessage(),
                 execution.getCreatedAt(),
                 execution.getStartedAt(),
+                execution.getFinishedAt(),
                 execution.getVersion()
         );
     }
@@ -118,6 +124,7 @@ class ExperimentExecutionJpaEntity {
                 errorMessage,
                 createdAt,
                 startedAt,
+                finishedAt,
                 version
         );
     }

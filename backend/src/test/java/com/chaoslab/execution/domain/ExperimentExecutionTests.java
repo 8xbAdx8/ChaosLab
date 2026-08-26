@@ -79,6 +79,61 @@ class ExperimentExecutionTests {
                 .hasMessage("startedAt must not be before createdAt");
     }
 
+    @Test
+    void shouldCompleteDestroyLifecycle() {
+        Instant startedAt = CREATED_AT.plusSeconds(1);
+        Instant finishedAt = startedAt.plusSeconds(30);
+        ExperimentExecution running = execution().markRunning(
+                "fake-execution-001",
+                startedAt
+        );
+
+        ExperimentExecution destroying = running.beginDestroy();
+        ExperimentExecution successful = destroying.markSuccess(finishedAt);
+
+        assertThat(destroying.getStatus())
+                .isEqualTo(ExperimentExecutionStatus.DESTROYING);
+        assertThat(successful.getStatus())
+                .isEqualTo(ExperimentExecutionStatus.SUCCESS);
+        assertThat(successful.getFinishedAt()).isEqualTo(finishedAt);
+        assertThat(successful.getEngineExperimentId())
+                .isEqualTo("fake-execution-001");
+    }
+
+    @Test
+    void shouldRetainEngineDataAndAllowRetryAfterRollbackFailure() {
+        ExperimentExecution running = execution().markRunning(
+                "fake-execution-001",
+                CREATED_AT.plusSeconds(1)
+        );
+
+        ExperimentExecution rollbackFailed = running.beginDestroy()
+                .markRollbackFailed("engine destroy failed");
+        ExperimentExecution retrying = rollbackFailed.beginDestroy();
+
+        assertThat(rollbackFailed.getStatus())
+                .isEqualTo(ExperimentExecutionStatus.ROLLBACK_FAILED);
+        assertThat(rollbackFailed.getEngineExperimentId())
+                .isEqualTo("fake-execution-001");
+        assertThat(rollbackFailed.getErrorMessage())
+                .isEqualTo("engine destroy failed");
+        assertThat(retrying.getStatus())
+                .isEqualTo(ExperimentExecutionStatus.DESTROYING);
+        assertThat(retrying.getErrorMessage()).isNull();
+    }
+
+    @Test
+    void shouldRejectFinishedTimeBeforeStartTime() {
+        ExperimentExecution destroying = execution().markRunning(
+                "fake-execution-001",
+                CREATED_AT.plusSeconds(10)
+        ).beginDestroy();
+
+        assertThatThrownBy(() -> destroying.markSuccess(
+                CREATED_AT.plusSeconds(9)
+        )).isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("finishedAt must not be before startedAt");
+    }
     private ExperimentExecution execution() {
         return ExperimentExecution.prepare(
                 UUID.randomUUID(),

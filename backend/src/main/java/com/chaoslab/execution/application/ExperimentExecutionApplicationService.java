@@ -1,13 +1,17 @@
 package com.chaoslab.execution.application;
 
 import com.chaoslab.engine.application.model.EngineCreateResult;
+import com.chaoslab.engine.application.model.EngineDestroyResult;
+import com.chaoslab.engine.application.model.EngineExperimentId;
 import com.chaoslab.engine.application.model.EngineStatus;
 import com.chaoslab.engine.application.model.ReadyExperimentRequest;
 import com.chaoslab.engine.application.port.ChaosEngine;
 import com.chaoslab.execution.application.dto.ExperimentExecutionDetails;
+import com.chaoslab.execution.application.dto.ExpiredExperimentExecution;
 import com.chaoslab.execution.application.dto.StartExperimentExecutionResult;
 import com.chaoslab.execution.application.port.ExperimentExecutionRepository;
 import com.chaoslab.execution.domain.ExperimentExecution;
+import com.chaoslab.execution.domain.ExperimentExecutionStatus;
 import com.chaoslab.experiment.application.ExperimentNotFoundException;
 import com.chaoslab.experiment.application.port.ExperimentRepository;
 import com.chaoslab.experiment.domain.Experiment;
@@ -24,6 +28,7 @@ import com.chaoslab.target.domain.Target;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -39,6 +44,7 @@ public class ExperimentExecutionApplicationService {
     private final FaultScenarioRepository scenarioRepository;
     private final SafetyGuard safetyGuard;
     private final ChaosEngine chaosEngine;
+    private final Clock clock;
 
     public ExperimentExecutionApplicationService(
             ExperimentExecutionRepository executionRepository,
@@ -46,7 +52,8 @@ public class ExperimentExecutionApplicationService {
             TargetRepository targetRepository,
             FaultScenarioRepository scenarioRepository,
             SafetyGuard safetyGuard,
-            ChaosEngine chaosEngine
+            ChaosEngine chaosEngine,
+            Clock clock
     ) {
         this.executionRepository = Objects.requireNonNull(
                 executionRepository,
@@ -72,6 +79,7 @@ public class ExperimentExecutionApplicationService {
                 chaosEngine,
                 "chaosEngine must not be null"
         );
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
     }
 
     @Transactional
@@ -105,6 +113,75 @@ public class ExperimentExecutionApplicationService {
         return ExperimentExecutionDetails.from(execution);
     }
 
+    @Transactional
+    public ExperimentExecutionDetails destroy(
+            UUID experimentId,
+            UUID executionId
+    ) {
+        Objects.requireNonNull(experimentId, "experimentId must not be null");
+        Objects.requireNonNull(executionId, "executionId must not be null");
+        ExperimentExecution execution = findOwnedExecution(experimentId, executionId);
+        if (execution.getStatus() == ExperimentExecutionStatus.SUCCESS) {
+            return ExperimentExecutionDetails.from(execution);
+        }
+
+        Experiment experiment = experimentRepository.findById(experimentId)
+                .orElseThrow(() -> new ExperimentNotFoundException(experimentId));
+        requireDestroyable(execution, experiment);
+
+        ExperimentExecution destroying = executionRepository.update(
+                execution.beginDestroy()
+        );
+        Experiment destroyingExperiment = experimentRepository.update(
+                experiment.beginDestroy()
+        );
+
+        EngineDestroyResult engineResult;
+        try {
+            engineResult = chaosEngine.destroy(new EngineExperimentId(
+                    destroying.getEngineExperimentId()
+            ));
+        } catch (RuntimeException exception) {
+            return recordRollbackFailure(
+                    destroying,
+                    destroyingExperiment,
+                    rollbackFailureMessage(exception)
+            );
+        }
+
+        if (engineResult.status() != EngineStatus.DESTROYED) {
+            return recordRollbackFailure(
+                    destroying,
+                    destroyingExperiment,
+                    "engine destroy returned unexpected status "
+                            + engineResult.status()
+            );
+        }
+
+        Instant finishedAt = clock.instant();
+        if (finishedAt.isBefore(destroying.getStartedAt())) {
+            finishedAt = destroying.getStartedAt();
+        }
+        ExperimentExecution successful = executionRepository.update(
+                destroying.markSuccess(finishedAt)
+        );
+        experimentRepository.update(destroyingExperiment.complete());
+        return ExperimentExecutionDetails.from(successful);
+    }
+
+    public List<ExpiredExperimentExecution> findExpired(Instant now) {
+        Objects.requireNonNull(now, "now must not be null");
+        return executionRepository.findAllByStatus(
+                        ExperimentExecutionStatus.RUNNING
+                ).stream()
+                .filter(execution -> hasReachedDeadline(execution, now))
+                .map(execution -> new ExpiredExperimentExecution(
+                        execution.getExperimentId(),
+                        execution.getId()
+                ))
+                .toList();
+    }
+
     private StartExperimentExecutionResult startNew(
             UUID experimentId,
             String idempotencyKey
@@ -125,7 +202,7 @@ public class ExperimentExecutionApplicationService {
                 .map(ExperimentExecution::getAttempt)
                 .map(previous -> Math.addExact(previous, 1))
                 .orElse(1);
-        Instant createdAt = Instant.now();
+        Instant createdAt = clock.instant();
         ExperimentExecution execution = executionRepository.insert(
                 ExperimentExecution.prepare(
                         UUID.randomUUID(),
@@ -163,7 +240,7 @@ public class ExperimentExecutionApplicationService {
             return created(failed);
         }
 
-        Instant startedAt = Instant.now();
+        Instant startedAt = clock.instant();
         if (startedAt.isBefore(createdAt)) {
             startedAt = createdAt;
         }
@@ -175,6 +252,62 @@ public class ExperimentExecutionApplicationService {
         );
         experimentRepository.update(experiment.start());
         return created(running);
+    }
+
+    private ExperimentExecution findOwnedExecution(
+            UUID experimentId,
+            UUID executionId
+    ) {
+        return executionRepository.findById(executionId)
+                .filter(found -> found.getExperimentId().equals(experimentId))
+                .orElseThrow(() -> new ExperimentExecutionNotFoundException(executionId));
+    }
+
+    private boolean hasReachedDeadline(
+            ExperimentExecution execution,
+            Instant now
+    ) {
+        Experiment experiment = experimentRepository.findById(
+                execution.getExperimentId()
+        ).orElseThrow(() -> new ExperimentNotFoundException(
+                execution.getExperimentId()
+        ));
+        Instant deadline = execution.getStartedAt().plusSeconds(
+                experiment.getDurationSeconds()
+        );
+        return !deadline.isAfter(now);
+    }
+
+    private void requireDestroyable(
+            ExperimentExecution execution,
+            Experiment experiment
+    ) {
+        boolean running = execution.getStatus() == ExperimentExecutionStatus.RUNNING
+                && experiment.getStatus() == ExperimentStatus.RUNNING;
+        boolean retrying = execution.getStatus()
+                == ExperimentExecutionStatus.ROLLBACK_FAILED
+                && experiment.getStatus() == ExperimentStatus.ROLLBACK_FAILED;
+        if (!running && !retrying) {
+            throw new ExperimentExecutionDestroyRejectedException(
+                    "EXPERIMENT_EXECUTION_NOT_DESTROYABLE",
+                    "execution cannot be destroyed from status "
+                            + execution.getStatus()
+                            + " while experiment is "
+                            + experiment.getStatus()
+            );
+        }
+    }
+
+    private ExperimentExecutionDetails recordRollbackFailure(
+            ExperimentExecution destroying,
+            Experiment destroyingExperiment,
+            String errorMessage
+    ) {
+        ExperimentExecution failed = executionRepository.update(
+                destroying.markRollbackFailed(errorMessage)
+        );
+        experimentRepository.update(destroyingExperiment.markRollbackFailed());
+        return ExperimentExecutionDetails.from(failed);
     }
 
     private StartExperimentExecutionResult created(ExperimentExecution execution) {
@@ -226,10 +359,15 @@ public class ExperimentExecutionApplicationService {
     }
 
     private String engineFailureMessage(RuntimeException exception) {
+        return "engine create failed: " + exceptionType(exception);
+    }
+
+    private String rollbackFailureMessage(RuntimeException exception) {
+        return "engine destroy failed: " + exceptionType(exception);
+    }
+
+    private String exceptionType(RuntimeException exception) {
         String type = exception.getClass().getSimpleName();
-        if (type.isBlank()) {
-            type = RuntimeException.class.getSimpleName();
-        }
-        return "engine create failed: " + type;
+        return type.isBlank() ? RuntimeException.class.getSimpleName() : type;
     }
 }

@@ -49,6 +49,17 @@ public class ExperimentExecutionController {
         return ResponseEntity.created(location).body(response);
     }
 
+    @PostMapping("/{executionId}/destroy")
+    public ExperimentExecutionResponse destroy(
+            @PathVariable UUID experimentId,
+            @PathVariable UUID executionId
+    ) {
+        return responseMapper.from(executionService.destroy(
+                experimentId,
+                executionId
+        ));
+    }
+
     @GetMapping("/{executionId}")
     public ExperimentExecutionResponse findById(
             @PathVariable UUID experimentId,

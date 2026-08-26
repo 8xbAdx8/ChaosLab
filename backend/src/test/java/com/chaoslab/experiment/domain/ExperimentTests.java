@@ -121,6 +121,36 @@ class ExperimentTests {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("experiment cannot be started from status VALIDATED");
     }
+    @Test
+    void shouldCompleteDestroyLifecycle() {
+        Experiment running = createExperiment(30).validate().ready().start();
+
+        Experiment destroying = running.beginDestroy();
+        Experiment successful = destroying.complete();
+
+        assertThat(destroying.getStatus()).isEqualTo(ExperimentStatus.DESTROYING);
+        assertThat(successful.getStatus()).isEqualTo(ExperimentStatus.SUCCESS);
+        assertThat(successful.complete()).isSameAs(successful);
+    }
+
+    @Test
+    void shouldAllowRetryAfterRollbackFailure() {
+        Experiment running = createExperiment(30).validate().ready().start();
+        Experiment rollbackFailed = running.beginDestroy().markRollbackFailed();
+
+        Experiment retrying = rollbackFailed.beginDestroy();
+
+        assertThat(retrying.getStatus()).isEqualTo(ExperimentStatus.DESTROYING);
+    }
+
+    @Test
+    void shouldRejectCompletionBeforeDestroying() {
+        Experiment running = createExperiment(30).validate().ready().start();
+
+        assertThatThrownBy(running::complete)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("experiment cannot complete from status RUNNING");
+    }
     private Experiment createExperiment(int durationSeconds) {
         return Experiment.create(
                 UUID.randomUUID(),

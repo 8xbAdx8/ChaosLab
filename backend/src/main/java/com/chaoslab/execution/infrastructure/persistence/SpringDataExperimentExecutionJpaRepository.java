@@ -1,7 +1,9 @@
 package com.chaoslab.execution.infrastructure.persistence;
 
+import com.chaoslab.execution.domain.ExperimentExecutionStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
 import java.util.Optional;
 
 interface SpringDataExperimentExecutionJpaRepository
@@ -14,5 +16,9 @@ interface SpringDataExperimentExecutionJpaRepository
 
     Optional<ExperimentExecutionJpaEntity> findTopByExperimentIdOrderByAttemptDesc(
             String experimentId
+    );
+
+    List<ExperimentExecutionJpaEntity> findAllByStatusOrderByStartedAtAsc(
+            ExperimentExecutionStatus status
     );
 }

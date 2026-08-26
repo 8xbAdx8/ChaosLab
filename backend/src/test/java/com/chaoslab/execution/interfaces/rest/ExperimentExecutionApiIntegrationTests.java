@@ -82,6 +82,36 @@ class ExperimentExecutionApiIntegrationTests {
     }
 
     @Test
+    void shouldDestroyExecutionIdempotentlyAndCompleteExperiment()
+            throws Exception {
+        ReadyExperiment ready = createReadyExperiment();
+        MvcResult start = mockMvc.perform(post(
+                        ready.experimentPath() + "/executions"
+                ).header("Idempotency-Key", "request-destroy"))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String executionLocation = start.getResponse().getHeader("Location");
+        assertThat(executionLocation).isNotNull();
+        String destroyPath = URI.create(executionLocation).getPath() + "/destroy";
+
+        mockMvc.perform(post(destroyPath))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUCCESS"))
+                .andExpect(jsonPath("$.finishedAt").exists())
+                .andExpect(jsonPath("$.errorMessage").doesNotExist())
+                .andExpect(jsonPath("$.version").value(3));
+
+        mockMvc.perform(post(destroyPath))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUCCESS"))
+                .andExpect(jsonPath("$.version").value(3));
+
+        mockMvc.perform(get(ready.experimentPath()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUCCESS"))
+                .andExpect(jsonPath("$.version").value(5));
+    }
+    @Test
     void shouldRejectExecutionBeforeDryRun() throws Exception {
         String targetId = registerTarget();
         String experimentPath = createExperiment(targetId);

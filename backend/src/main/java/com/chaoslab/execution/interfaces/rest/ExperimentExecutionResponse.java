@@ -17,6 +17,7 @@ public record ExperimentExecutionResponse(
         String errorMessage,
         Instant createdAt,
         Instant startedAt,
+        Instant finishedAt,
         long version
 ) {
 }

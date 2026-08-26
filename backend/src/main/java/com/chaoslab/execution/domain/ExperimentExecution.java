@@ -19,6 +19,7 @@ public final class ExperimentExecution {
     private final String errorMessage;
     private final Instant createdAt;
     private final Instant startedAt;
+    private final Instant finishedAt;
     private final long version;
 
     private ExperimentExecution(
@@ -31,6 +32,7 @@ public final class ExperimentExecution {
             String errorMessage,
             Instant createdAt,
             Instant startedAt,
+            Instant finishedAt,
             long version
     ) {
         this.id = Objects.requireNonNull(id, "id must not be null");
@@ -63,6 +65,11 @@ public final class ExperimentExecution {
         if (startedAt != null && startedAt.isBefore(createdAt)) {
             throw new IllegalArgumentException("startedAt must not be before createdAt");
         }
+        this.finishedAt = finishedAt;
+        if (finishedAt != null
+                && (startedAt == null || finishedAt.isBefore(startedAt))) {
+            throw new IllegalArgumentException("finishedAt must not be before startedAt");
+        }
         if (version < 0) {
             throw new IllegalArgumentException("version must not be negative");
         }
@@ -87,6 +94,7 @@ public final class ExperimentExecution {
                 null,
                 createdAt,
                 null,
+                null,
                 0
         );
     }
@@ -101,6 +109,7 @@ public final class ExperimentExecution {
             String errorMessage,
             Instant createdAt,
             Instant startedAt,
+            Instant finishedAt,
             long version
     ) {
         return new ExperimentExecution(
@@ -113,6 +122,7 @@ public final class ExperimentExecution {
                 errorMessage,
                 createdAt,
                 startedAt,
+                finishedAt,
                 version
         );
     }
@@ -139,7 +149,8 @@ public final class ExperimentExecution {
                 ExperimentExecutionStatus.RUNNING,
                 normalizedEngineId,
                 null,
-                Objects.requireNonNull(newStartedAt, "startedAt must not be null")
+                Objects.requireNonNull(newStartedAt, "startedAt must not be null"),
+                null
         );
     }
 
@@ -157,6 +168,62 @@ public final class ExperimentExecution {
                 ExperimentExecutionStatus.FAILED,
                 null,
                 normalizedError,
+                null,
+                null
+        );
+    }
+
+    public ExperimentExecution beginDestroy() {
+        if (status == ExperimentExecutionStatus.DESTROYING) {
+            return this;
+        }
+        if (status != ExperimentExecutionStatus.RUNNING
+                && status != ExperimentExecutionStatus.ROLLBACK_FAILED) {
+            throw new IllegalStateException(
+                    "cannot begin destroy execution from status " + status
+            );
+        }
+        return copy(
+                ExperimentExecutionStatus.DESTROYING,
+                engineExperimentId,
+                null,
+                startedAt,
+                null
+        );
+    }
+
+    public ExperimentExecution markSuccess(Instant newFinishedAt) {
+        if (status == ExperimentExecutionStatus.SUCCESS) {
+            return this;
+        }
+        requireStatus(ExperimentExecutionStatus.DESTROYING, "mark success");
+        return copy(
+                ExperimentExecutionStatus.SUCCESS,
+                engineExperimentId,
+                null,
+                startedAt,
+                Objects.requireNonNull(newFinishedAt, "finishedAt must not be null")
+        );
+    }
+
+    public ExperimentExecution markRollbackFailed(String newErrorMessage) {
+        String normalizedError = validateText(
+                newErrorMessage,
+                "errorMessage",
+                MAX_ERROR_MESSAGE_LENGTH
+        );
+        if (status == ExperimentExecutionStatus.ROLLBACK_FAILED) {
+            return this;
+        }
+        requireStatus(
+                ExperimentExecutionStatus.DESTROYING,
+                "mark rollback failed"
+        );
+        return copy(
+                ExperimentExecutionStatus.ROLLBACK_FAILED,
+                engineExperimentId,
+                normalizedError,
+                startedAt,
                 null
         );
     }
@@ -197,6 +264,10 @@ public final class ExperimentExecution {
         return startedAt;
     }
 
+    public Instant getFinishedAt() {
+        return finishedAt;
+    }
+
     public long getVersion() {
         return version;
     }
@@ -205,7 +276,8 @@ public final class ExperimentExecution {
             ExperimentExecutionStatus newStatus,
             String newEngineExperimentId,
             String newErrorMessage,
-            Instant newStartedAt
+            Instant newStartedAt,
+            Instant newFinishedAt
     ) {
         return new ExperimentExecution(
                 id,
@@ -217,6 +289,7 @@ public final class ExperimentExecution {
                 newErrorMessage,
                 createdAt,
                 newStartedAt,
+                newFinishedAt,
                 version
         );
     }
@@ -234,32 +307,57 @@ public final class ExperimentExecution {
 
     private void validateState() {
         switch (status) {
-            case PREPARING -> requireFields(null, null, null);
-            case RUNNING -> {
-                if (engineExperimentId == null || startedAt == null || errorMessage != null) {
+            case PREPARING -> requireFields(null, null, null, null);
+            case RUNNING -> requireActiveEngineState("running", false);
+            case DESTROYING -> requireActiveEngineState("destroying", false);
+            case SUCCESS -> requireActiveEngineState("successful", true);
+            case FAILED -> {
+                if (errorMessage == null
+                        || engineExperimentId != null
+                        || startedAt != null
+                        || finishedAt != null) {
                     throw new IllegalArgumentException(
-                            "running execution requires engine id and start time without error"
+                            "failed execution requires only an error message"
                     );
                 }
             }
-            case FAILED -> {
-                if (errorMessage == null || engineExperimentId != null || startedAt != null) {
+            case ROLLBACK_FAILED -> {
+                if (engineExperimentId == null
+                        || startedAt == null
+                        || errorMessage == null
+                        || finishedAt != null) {
                     throw new IllegalArgumentException(
-                            "failed execution requires only an error message"
+                            "rollback failed execution requires engine data and an error"
                     );
                 }
             }
         }
     }
 
+    private void requireActiveEngineState(String state, boolean requiresFinishedAt) {
+        boolean invalidFinishedAt = requiresFinishedAt
+                ? finishedAt == null
+                : finishedAt != null;
+        if (engineExperimentId == null
+                || startedAt == null
+                || errorMessage != null
+                || invalidFinishedAt) {
+            throw new IllegalArgumentException(
+                    state + " execution contains inconsistent engine result fields"
+            );
+        }
+    }
+
     private void requireFields(
             String expectedEngineId,
             String expectedError,
-            Instant expectedStartedAt
+            Instant expectedStartedAt,
+            Instant expectedFinishedAt
     ) {
         if (!Objects.equals(engineExperimentId, expectedEngineId)
                 || !Objects.equals(errorMessage, expectedError)
-                || !Objects.equals(startedAt, expectedStartedAt)) {
+                || !Objects.equals(startedAt, expectedStartedAt)
+                || !Objects.equals(finishedAt, expectedFinishedAt)) {
             throw new IllegalArgumentException(
                     "preparing execution cannot contain engine result fields"
             );

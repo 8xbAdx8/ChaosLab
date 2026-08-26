@@ -186,6 +186,47 @@ public final class Experiment {
                     "experiment cannot be started from status " + status
             );
         }
+        return withStatus(ExperimentStatus.RUNNING);
+    }
+
+    public Experiment beginDestroy() {
+        if (status == ExperimentStatus.DESTROYING) {
+            return this;
+        }
+        if (status != ExperimentStatus.RUNNING
+                && status != ExperimentStatus.ROLLBACK_FAILED) {
+            throw new IllegalStateException(
+                    "experiment cannot begin destroy from status " + status
+            );
+        }
+        return withStatus(ExperimentStatus.DESTROYING);
+    }
+
+    public Experiment complete() {
+        if (status == ExperimentStatus.SUCCESS) {
+            return this;
+        }
+        if (status != ExperimentStatus.DESTROYING) {
+            throw new IllegalStateException(
+                    "experiment cannot complete from status " + status
+            );
+        }
+        return withStatus(ExperimentStatus.SUCCESS);
+    }
+
+    public Experiment markRollbackFailed() {
+        if (status == ExperimentStatus.ROLLBACK_FAILED) {
+            return this;
+        }
+        if (status != ExperimentStatus.DESTROYING) {
+            throw new IllegalStateException(
+                    "experiment cannot mark rollback failed from status " + status
+            );
+        }
+        return withStatus(ExperimentStatus.ROLLBACK_FAILED);
+    }
+
+    private Experiment withStatus(ExperimentStatus newStatus) {
         return new Experiment(
                 id,
                 name,
@@ -194,10 +235,11 @@ public final class Experiment {
                 scenarioId,
                 durationSeconds,
                 parameters,
-                ExperimentStatus.RUNNING,
+                newStatus,
                 version
         );
     }
+
     private static int validateDuration(int durationSeconds) {
         if (durationSeconds < MIN_DURATION_SECONDS
                 || durationSeconds > MAX_DURATION_SECONDS) {

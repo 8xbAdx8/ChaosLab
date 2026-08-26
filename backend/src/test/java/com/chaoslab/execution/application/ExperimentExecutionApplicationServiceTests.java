@@ -1,10 +1,13 @@
 package com.chaoslab.execution.application;
 
 import com.chaoslab.engine.application.model.EngineCreateResult;
+import com.chaoslab.engine.application.model.EngineDestroyResult;
 import com.chaoslab.engine.application.model.EngineExperimentId;
 import com.chaoslab.engine.application.model.EngineStatus;
 import com.chaoslab.engine.application.model.ReadyExperimentRequest;
 import com.chaoslab.engine.application.port.ChaosEngine;
+import com.chaoslab.execution.application.dto.ExperimentExecutionDetails;
+import com.chaoslab.execution.application.dto.ExpiredExperimentExecution;
 import com.chaoslab.execution.application.dto.StartExperimentExecutionResult;
 import com.chaoslab.execution.application.port.ExperimentExecutionRepository;
 import com.chaoslab.execution.domain.ExperimentExecution;
@@ -22,7 +25,10 @@ import com.chaoslab.target.domain.TargetType;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -36,6 +42,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 class ExperimentExecutionApplicationServiceTests {
+
+    private static final Instant NOW = Instant.parse("2026-08-26T00:01:00Z");
+    private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
 
     private final ExperimentExecutionRepository executionRepository =
             mock(ExperimentExecutionRepository.class);
@@ -52,7 +61,8 @@ class ExperimentExecutionApplicationServiceTests {
                     targetRepository,
                     scenarioRepository,
                     new DefaultSafetyGuard(),
-                    chaosEngine
+                    chaosEngine,
+                    CLOCK
             );
 
     @Test
@@ -256,6 +266,175 @@ class ExperimentExecutionApplicationServiceTests {
         assertThat(result.execution().attempt()).isEqualTo(2);
     }
 
+    @Test
+    void shouldDestroyRunningExecutionAndCompleteExperiment() {
+        Target target = target(true);
+        FaultScenario scenario = scenario(true);
+        Experiment runningExperiment = runningExperiment(target, scenario);
+        ExperimentExecution runningExecution = runningExecution(
+                runningExperiment.getId(),
+                1,
+                "request-001"
+        );
+        given(executionRepository.findById(runningExecution.getId()))
+                .willReturn(Optional.of(runningExecution));
+        given(experimentRepository.findById(runningExperiment.getId()))
+                .willReturn(Optional.of(runningExperiment));
+        given(executionRepository.update(any(ExperimentExecution.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(experimentRepository.update(any(Experiment.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        EngineExperimentId engineId = new EngineExperimentId(
+                runningExecution.getEngineExperimentId()
+        );
+        given(chaosEngine.destroy(engineId))
+                .willReturn(new EngineDestroyResult(
+                        engineId,
+                        EngineStatus.DESTROYED
+                ));
+
+        ExperimentExecutionDetails result = service.destroy(
+                runningExperiment.getId(),
+                runningExecution.getId()
+        );
+
+        assertThat(result.status()).isEqualTo(ExperimentExecutionStatus.SUCCESS);
+        assertThat(result.finishedAt()).isEqualTo(NOW);
+        assertThat(result.errorMessage()).isNull();
+        ArgumentCaptor<ExperimentExecution> executionCaptor =
+                ArgumentCaptor.forClass(ExperimentExecution.class);
+        verify(executionRepository, org.mockito.Mockito.times(2))
+                .update(executionCaptor.capture());
+        assertThat(executionCaptor.getAllValues())
+                .extracting(ExperimentExecution::getStatus)
+                .containsExactly(
+                        ExperimentExecutionStatus.DESTROYING,
+                        ExperimentExecutionStatus.SUCCESS
+                );
+        ArgumentCaptor<Experiment> experimentCaptor =
+                ArgumentCaptor.forClass(Experiment.class);
+        verify(experimentRepository, org.mockito.Mockito.times(2))
+                .update(experimentCaptor.capture());
+        assertThat(experimentCaptor.getAllValues())
+                .extracting(Experiment::getStatus)
+                .containsExactly(
+                        ExperimentStatus.DESTROYING,
+                        ExperimentStatus.SUCCESS
+                );
+    }
+
+    @Test
+    void shouldRecordRollbackFailureWithoutLeakingEngineMessage() {
+        Target target = target(true);
+        FaultScenario scenario = scenario(true);
+        Experiment runningExperiment = runningExperiment(target, scenario);
+        ExperimentExecution runningExecution = runningExecution(
+                runningExperiment.getId(),
+                1,
+                "request-001"
+        );
+        given(executionRepository.findById(runningExecution.getId()))
+                .willReturn(Optional.of(runningExecution));
+        given(experimentRepository.findById(runningExperiment.getId()))
+                .willReturn(Optional.of(runningExperiment));
+        given(executionRepository.update(any(ExperimentExecution.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(experimentRepository.update(any(Experiment.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(chaosEngine.destroy(any(EngineExperimentId.class)))
+                .willThrow(new IllegalStateException("sensitive rollback detail"));
+
+        ExperimentExecutionDetails result = service.destroy(
+                runningExperiment.getId(),
+                runningExecution.getId()
+        );
+
+        assertThat(result.status())
+                .isEqualTo(ExperimentExecutionStatus.ROLLBACK_FAILED);
+        assertThat(result.errorMessage())
+                .isEqualTo("engine destroy failed: IllegalStateException");
+        assertThat(result.errorMessage()).doesNotContain("sensitive");
+        ArgumentCaptor<Experiment> experimentCaptor =
+                ArgumentCaptor.forClass(Experiment.class);
+        verify(experimentRepository, org.mockito.Mockito.times(2))
+                .update(experimentCaptor.capture());
+        assertThat(experimentCaptor.getAllValues().get(1).getStatus())
+                .isEqualTo(ExperimentStatus.ROLLBACK_FAILED);
+    }
+
+    @Test
+    void shouldRetryDestroyAfterRollbackFailure() {
+        Target target = target(true);
+        FaultScenario scenario = scenario(true);
+        Experiment rollbackFailedExperiment = runningExperiment(target, scenario)
+                .beginDestroy()
+                .markRollbackFailed();
+        ExperimentExecution rollbackFailedExecution = runningExecution(
+                rollbackFailedExperiment.getId(),
+                1,
+                "request-001"
+        ).beginDestroy().markRollbackFailed("engine destroy failed");
+        given(executionRepository.findById(rollbackFailedExecution.getId()))
+                .willReturn(Optional.of(rollbackFailedExecution));
+        given(experimentRepository.findById(rollbackFailedExperiment.getId()))
+                .willReturn(Optional.of(rollbackFailedExperiment));
+        given(executionRepository.update(any(ExperimentExecution.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(experimentRepository.update(any(Experiment.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        EngineExperimentId engineId = new EngineExperimentId(
+                rollbackFailedExecution.getEngineExperimentId()
+        );
+        given(chaosEngine.destroy(engineId))
+                .willReturn(new EngineDestroyResult(
+                        engineId,
+                        EngineStatus.DESTROYED
+                ));
+
+        ExperimentExecutionDetails result = service.destroy(
+                rollbackFailedExperiment.getId(),
+                rollbackFailedExecution.getId()
+        );
+
+        assertThat(result.status()).isEqualTo(ExperimentExecutionStatus.SUCCESS);
+        assertThat(result.errorMessage()).isNull();
+    }
+
+    @Test
+    void shouldFindOnlyExecutionsWhoseDurationHasElapsed() {
+        Target target = target(true);
+        FaultScenario scenario = scenario(true);
+        Experiment expiredExperiment = runningExperiment(target, scenario);
+        Experiment activeExperiment = runningExperiment(target, scenario);
+        ExperimentExecution expired = ExperimentExecution.prepare(
+                UUID.randomUUID(),
+                expiredExperiment.getId(),
+                1,
+                "request-expired",
+                NOW.minusSeconds(40)
+        ).markRunning("fake-expired", NOW.minusSeconds(31));
+        ExperimentExecution active = ExperimentExecution.prepare(
+                UUID.randomUUID(),
+                activeExperiment.getId(),
+                1,
+                "request-active",
+                NOW.minusSeconds(20)
+        ).markRunning("fake-active", NOW.minusSeconds(10));
+        given(executionRepository.findAllByStatus(
+                ExperimentExecutionStatus.RUNNING
+        )).willReturn(List.of(expired, active));
+        given(experimentRepository.findById(expiredExperiment.getId()))
+                .willReturn(Optional.of(expiredExperiment));
+        given(experimentRepository.findById(activeExperiment.getId()))
+                .willReturn(Optional.of(activeExperiment));
+
+        List<ExpiredExperimentExecution> result = service.findExpired(NOW);
+
+        assertThat(result).containsExactly(new ExpiredExperimentExecution(
+                expiredExperiment.getId(),
+                expired.getId()
+        ));
+    }
     private void stubReadyExperiment(
             Experiment experiment,
             Target target,
@@ -280,6 +459,9 @@ class ExperimentExecutionApplicationServiceTests {
                 .willReturn(Optional.of(scenario));
     }
 
+    private Experiment runningExperiment(Target target, FaultScenario scenario) {
+        return readyExperiment(target, scenario).start();
+    }
     private Experiment readyExperiment(Target target, FaultScenario scenario) {
         return Experiment.create(
                 UUID.randomUUID(),

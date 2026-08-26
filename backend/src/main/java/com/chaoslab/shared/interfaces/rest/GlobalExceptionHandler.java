@@ -1,5 +1,6 @@
 package com.chaoslab.shared.interfaces.rest;
 
+import com.chaoslab.execution.application.ExperimentExecutionDestroyRejectedException;
 import com.chaoslab.execution.application.ExperimentExecutionNotFoundException;
 import com.chaoslab.execution.application.ExperimentExecutionStartRejectedException;
 import com.chaoslab.execution.application.InvalidIdempotencyKeyException;
@@ -38,6 +39,20 @@ public class GlobalExceptionHandler {
         return error(
                 HttpStatus.NOT_FOUND,
                 "TARGET_NOT_FOUND",
+                exception.getMessage(),
+                request,
+                Map.of()
+        );
+    }
+
+    @ExceptionHandler(ExperimentExecutionDestroyRejectedException.class)
+    public ResponseEntity<ApiErrorResponse> handleExecutionDestroyRejected(
+            ExperimentExecutionDestroyRejectedException exception,
+            HttpServletRequest request
+    ) {
+        return error(
+                HttpStatus.CONFLICT,
+                exception.getCode(),
                 exception.getMessage(),
                 request,
                 Map.of()

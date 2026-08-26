@@ -4,5 +4,8 @@ public enum ExperimentStatus {
     CREATED,
     VALIDATED,
     READY,
-    RUNNING
+    RUNNING,
+    DESTROYING,
+    SUCCESS,
+    ROLLBACK_FAILED
 }

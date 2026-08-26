@@ -2,10 +2,12 @@ package com.chaoslab.execution.infrastructure.persistence;
 
 import com.chaoslab.execution.application.port.ExperimentExecutionRepository;
 import com.chaoslab.execution.domain.ExperimentExecution;
+import com.chaoslab.execution.domain.ExperimentExecutionStatus;
 import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -73,4 +75,13 @@ public class JpaExperimentExecutionRepositoryAdapter
         return repository.findTopByExperimentIdOrderByAttemptDesc(experimentId.toString())
                 .map(ExperimentExecutionJpaEntity::toDomain);
     }
-}
+
+    @Override
+    public List<ExperimentExecution> findAllByStatus(
+            ExperimentExecutionStatus status
+    ) {
+        Objects.requireNonNull(status, "status must not be null");
+        return repository.findAllByStatusOrderByStartedAtAsc(status).stream()
+                .map(ExperimentExecutionJpaEntity::toDomain)
+                .toList();
+    }}

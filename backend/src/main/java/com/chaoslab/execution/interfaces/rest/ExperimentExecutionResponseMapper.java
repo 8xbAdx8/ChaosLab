@@ -17,6 +17,7 @@ class ExperimentExecutionResponseMapper {
                 details.errorMessage(),
                 details.createdAt(),
                 details.startedAt(),
+                details.finishedAt(),
                 details.version()
         );
     }
