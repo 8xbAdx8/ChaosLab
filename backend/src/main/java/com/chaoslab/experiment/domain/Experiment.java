@@ -132,7 +132,9 @@ public final class Experiment {
     }
 
     public Experiment validate() {
-        if (status == ExperimentStatus.VALIDATED || status == ExperimentStatus.READY) {
+        if (status == ExperimentStatus.VALIDATED
+                || status == ExperimentStatus.READY
+                || status == ExperimentStatus.RUNNING) {
             return this;
         }
         if (status != ExperimentStatus.CREATED) {
@@ -175,6 +177,27 @@ public final class Experiment {
         );
     }
 
+    public Experiment start() {
+        if (status == ExperimentStatus.RUNNING) {
+            return this;
+        }
+        if (status != ExperimentStatus.READY) {
+            throw new IllegalStateException(
+                    "experiment cannot be started from status " + status
+            );
+        }
+        return new Experiment(
+                id,
+                name,
+                hypothesis,
+                targetId,
+                scenarioId,
+                durationSeconds,
+                parameters,
+                ExperimentStatus.RUNNING,
+                version
+        );
+    }
     private static int validateDuration(int durationSeconds) {
         if (durationSeconds < MIN_DURATION_SECONDS
                 || durationSeconds > MAX_DURATION_SECONDS) {

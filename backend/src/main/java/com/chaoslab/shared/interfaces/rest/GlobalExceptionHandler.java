@@ -1,5 +1,8 @@
 package com.chaoslab.shared.interfaces.rest;
 
+import com.chaoslab.execution.application.ExperimentExecutionNotFoundException;
+import com.chaoslab.execution.application.ExperimentExecutionStartRejectedException;
+import com.chaoslab.execution.application.InvalidIdempotencyKeyException;
 import com.chaoslab.experiment.application.ExperimentCreationRejectedException;
 import com.chaoslab.experiment.application.ExperimentNotFoundException;
 import com.chaoslab.experiment.application.ExperimentParametersInvalidException;
@@ -15,6 +18,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
@@ -37,6 +41,56 @@ public class GlobalExceptionHandler {
                 exception.getMessage(),
                 request,
                 Map.of()
+        );
+    }
+
+    @ExceptionHandler(ExperimentExecutionNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleExecutionNotFound(
+            ExperimentExecutionNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return error(
+                HttpStatus.NOT_FOUND,
+                "EXPERIMENT_EXECUTION_NOT_FOUND",
+                exception.getMessage(),
+                request,
+                Map.of()
+        );
+    }
+
+    @ExceptionHandler(InvalidIdempotencyKeyException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidIdempotencyKey(
+            InvalidIdempotencyKeyException exception,
+            HttpServletRequest request
+    ) {
+        return error(
+                HttpStatus.BAD_REQUEST,
+                "INVALID_IDEMPOTENCY_KEY",
+                exception.getMessage(),
+                request,
+                Map.of()
+        );
+    }
+
+    @ExceptionHandler(ExperimentExecutionStartRejectedException.class)
+    public ResponseEntity<ApiErrorResponse> handleExecutionStartRejected(
+            ExperimentExecutionStartRejectedException exception,
+            HttpServletRequest request
+    ) {
+        List<ApiViolationResponse> violations = exception.getFailedChecks().stream()
+                .map(check -> new ApiViolationResponse(
+                        "/safety",
+                        check.code(),
+                        check.message()
+                ))
+                .toList();
+        return error(
+                HttpStatus.CONFLICT,
+                exception.getCode(),
+                exception.getMessage(),
+                request,
+                Map.of(),
+                violations
         );
     }
 
@@ -166,7 +220,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler({
             HttpMessageNotReadableException.class,
-            MethodArgumentTypeMismatchException.class
+            MethodArgumentTypeMismatchException.class,
+            MissingRequestHeaderException.class
     })
     public ResponseEntity<ApiErrorResponse> handleMalformedRequest(
             Exception exception,

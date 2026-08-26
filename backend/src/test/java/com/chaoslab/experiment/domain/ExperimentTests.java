@@ -94,6 +94,33 @@ class ExperimentTests {
                 .hasMessage("experiment cannot be made ready from status CREATED");
     }
 
+    @Test
+    void shouldTransitionFromReadyToRunning() {
+        Experiment ready = createExperiment(30).validate().ready();
+
+        Experiment running = ready.start();
+
+        assertThat(running.getStatus()).isEqualTo(ExperimentStatus.RUNNING);
+        assertThat(running.getId()).isEqualTo(ready.getId());
+        assertThat(running.getVersion()).isEqualTo(ready.getVersion());
+    }
+
+    @Test
+    void shouldTreatRepeatedStartAsIdempotent() {
+        Experiment running = createExperiment(30).validate().ready().start();
+
+        assertThat(running.start()).isSameAs(running);
+        assertThat(running.validate()).isSameAs(running);
+    }
+
+    @Test
+    void shouldRejectStartBeforeReady() {
+        Experiment validated = createExperiment(30).validate();
+
+        assertThatThrownBy(validated::start)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("experiment cannot be started from status VALIDATED");
+    }
     private Experiment createExperiment(int durationSeconds) {
         return Experiment.create(
                 UUID.randomUUID(),
