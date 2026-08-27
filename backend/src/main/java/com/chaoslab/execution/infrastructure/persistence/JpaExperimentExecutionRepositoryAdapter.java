@@ -96,4 +96,20 @@ public class JpaExperimentExecutionRepositoryAdapter
                 .map(ExperimentExecutionJpaEntity::toDomain)
                 .toList();
     }
+
+    @Override
+    public boolean existsByTargetIdAndStatuses(
+            UUID targetId,
+            Collection<ExperimentExecutionStatus> statuses
+    ) {
+        Objects.requireNonNull(targetId, "targetId must not be null");
+        Objects.requireNonNull(statuses, "statuses must not be null");
+        List<String> statusNames = statuses.stream()
+                .map(ExperimentExecutionStatus::name)
+                .toList();
+        return repository.countByTargetIdAndStatuses(
+                targetId.toString(),
+                statusNames
+        ) > 0;
+    }
 }

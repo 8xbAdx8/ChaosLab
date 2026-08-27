@@ -10,6 +10,7 @@ import com.chaoslab.execution.application.dto.ExperimentExecutionDetails;
 import com.chaoslab.execution.application.dto.ExpiredExperimentExecution;
 import com.chaoslab.execution.application.dto.StartExperimentExecutionResult;
 import com.chaoslab.execution.application.port.ExperimentExecutionRepository;
+import com.chaoslab.execution.application.port.TargetExecutionMutex;
 import com.chaoslab.execution.domain.ExperimentExecution;
 import com.chaoslab.execution.domain.ExperimentExecutionStatus;
 import com.chaoslab.experiment.application.port.ExperimentRepository;
@@ -30,6 +31,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -48,6 +50,8 @@ class ExperimentExecutionApplicationServiceTests {
 
     private final ExperimentExecutionRepository executionRepository =
             mock(ExperimentExecutionRepository.class);
+    private final TargetExecutionMutex targetExecutionMutex =
+            mock(TargetExecutionMutex.class);
     private final ExperimentRepository experimentRepository =
             mock(ExperimentRepository.class);
     private final TargetRepository targetRepository = mock(TargetRepository.class);
@@ -57,6 +61,7 @@ class ExperimentExecutionApplicationServiceTests {
     private final ExperimentExecutionApplicationService service =
             new ExperimentExecutionApplicationService(
                     executionRepository,
+                    targetExecutionMutex,
                     experimentRepository,
                     targetRepository,
                     scenarioRepository,
@@ -213,6 +218,35 @@ class ExperimentExecutionApplicationServiceTests {
                 .isInstanceOf(ExperimentExecutionStartRejectedException.class)
                 .extracting("code")
                 .isEqualTo("SAFETY_CHECK_REJECTED");
+        verify(executionRepository, never()).insert(any(ExperimentExecution.class));
+        verifyNoInteractions(chaosEngine);
+    }
+
+    @Test
+    void shouldRejectStartWhenTargetAlreadyHasActiveExecution() {
+        Target target = target(true);
+        FaultScenario scenario = scenario(true);
+        Experiment ready = readyExperiment(target, scenario);
+        stubReadyExperiment(ready, target, scenario);
+        given(executionRepository.existsByTargetIdAndStatuses(
+                target.getId(),
+                Set.of(
+                        ExperimentExecutionStatus.PREPARING,
+                        ExperimentExecutionStatus.RUNNING,
+                        ExperimentExecutionStatus.DESTROYING,
+                        ExperimentExecutionStatus.ROLLBACK_FAILED
+                )
+        )).willReturn(true);
+
+        assertThatThrownBy(() -> service.start(ready.getId(), "request-001"))
+                .isInstanceOf(ExperimentExecutionStartRejectedException.class)
+                .hasMessage(
+                        "target already has an active experiment execution: "
+                                + target.getId()
+                )
+                .extracting("code")
+                .isEqualTo("TARGET_EXECUTION_ALREADY_ACTIVE");
+        verify(targetExecutionMutex).lockForExperiment(ready.getId());
         verify(executionRepository, never()).insert(any(ExperimentExecution.class));
         verifyNoInteractions(chaosEngine);
     }

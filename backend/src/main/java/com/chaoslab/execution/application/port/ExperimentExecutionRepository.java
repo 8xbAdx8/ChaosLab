@@ -28,4 +28,9 @@ public interface ExperimentExecutionRepository {
     List<ExperimentExecution> findAllByStatuses(
             Collection<ExperimentExecutionStatus> statuses
     );
+
+    boolean existsByTargetIdAndStatuses(
+            UUID targetId,
+            Collection<ExperimentExecutionStatus> statuses
+    );
 }

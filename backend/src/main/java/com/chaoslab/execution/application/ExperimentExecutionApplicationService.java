@@ -10,6 +10,7 @@ import com.chaoslab.execution.application.dto.ExperimentExecutionDetails;
 import com.chaoslab.execution.application.dto.ExpiredExperimentExecution;
 import com.chaoslab.execution.application.dto.StartExperimentExecutionResult;
 import com.chaoslab.execution.application.port.ExperimentExecutionRepository;
+import com.chaoslab.execution.application.port.TargetExecutionMutex;
 import com.chaoslab.execution.domain.ExperimentExecution;
 import com.chaoslab.execution.domain.ExperimentExecutionStatus;
 import com.chaoslab.experiment.application.ExperimentNotFoundException;
@@ -32,13 +33,22 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
 @Transactional(readOnly = true)
 public class ExperimentExecutionApplicationService {
 
+    private static final Set<ExperimentExecutionStatus> ACTIVE_STATUSES = Set.of(
+            ExperimentExecutionStatus.PREPARING,
+            ExperimentExecutionStatus.RUNNING,
+            ExperimentExecutionStatus.DESTROYING,
+            ExperimentExecutionStatus.ROLLBACK_FAILED
+    );
+
     private final ExperimentExecutionRepository executionRepository;
+    private final TargetExecutionMutex targetExecutionMutex;
     private final ExperimentRepository experimentRepository;
     private final TargetRepository targetRepository;
     private final FaultScenarioRepository scenarioRepository;
@@ -48,6 +58,7 @@ public class ExperimentExecutionApplicationService {
 
     public ExperimentExecutionApplicationService(
             ExperimentExecutionRepository executionRepository,
+            TargetExecutionMutex targetExecutionMutex,
             ExperimentRepository experimentRepository,
             TargetRepository targetRepository,
             FaultScenarioRepository scenarioRepository,
@@ -58,6 +69,10 @@ public class ExperimentExecutionApplicationService {
         this.executionRepository = Objects.requireNonNull(
                 executionRepository,
                 "executionRepository must not be null"
+        );
+        this.targetExecutionMutex = Objects.requireNonNull(
+                targetExecutionMutex,
+                "targetExecutionMutex must not be null"
         );
         this.experimentRepository = Objects.requireNonNull(
                 experimentRepository,
@@ -89,6 +104,7 @@ public class ExperimentExecutionApplicationService {
     ) {
         Objects.requireNonNull(experimentId, "experimentId must not be null");
         String idempotencyKey = normalizeIdempotencyKey(rawIdempotencyKey);
+        targetExecutionMutex.lockForExperiment(experimentId);
 
         return executionRepository.findByExperimentIdAndIdempotencyKey(
                         experimentId,
@@ -197,6 +213,7 @@ public class ExperimentExecutionApplicationService {
                         experiment.getScenarioId()
                 ));
         requireSafe(safetyGuard.evaluate(experiment, target, scenario));
+        requireTargetAvailable(target.getId());
 
         int attempt = executionRepository.findLatestByExperimentId(experimentId)
                 .map(ExperimentExecution::getAttempt)
@@ -338,6 +355,20 @@ public class ExperimentExecutionApplicationService {
                 "SAFETY_CHECK_REJECTED",
                 "experiment no longer passes the execution safety checks",
                 failedChecks
+        );
+    }
+
+    private void requireTargetAvailable(UUID targetId) {
+        if (!executionRepository.existsByTargetIdAndStatuses(
+                targetId,
+                ACTIVE_STATUSES
+        )) {
+            return;
+        }
+        throw new ExperimentExecutionStartRejectedException(
+                "TARGET_EXECUTION_ALREADY_ACTIVE",
+                "target already has an active experiment execution: " + targetId,
+                List.of()
         );
     }
 

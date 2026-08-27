@@ -46,11 +46,12 @@ class JpaExperimentExecutionRepositoryAdapterTests {
     @Autowired
     private EntityManager entityManager;
 
+    private UUID targetId;
     private UUID experimentId;
 
     @BeforeEach
     void createValidatedExperiment() {
-        UUID targetId = UUID.randomUUID();
+        targetId = UUID.randomUUID();
         targetRepository.save(Target.register(
                 targetId,
                 "execution-target-" + targetId,
@@ -173,6 +174,15 @@ class JpaExperimentExecutionRepositoryAdapterTests {
                 ExperimentExecutionStatus.ROLLBACK_FAILED
         ))).extracting(ExperimentExecution::getId)
                 .containsExactly(running.getId());
+        assertThat(executionRepository.existsByTargetIdAndStatuses(
+                targetId,
+                java.util.List.of(
+                        ExperimentExecutionStatus.PREPARING,
+                        ExperimentExecutionStatus.RUNNING,
+                        ExperimentExecutionStatus.DESTROYING,
+                        ExperimentExecutionStatus.ROLLBACK_FAILED
+                )
+        )).isTrue();
 
         ExperimentExecution destroying = executionRepository.update(
                 running.beginDestroy()
@@ -190,7 +200,17 @@ class JpaExperimentExecutionRepositoryAdapterTests {
         assertThat(restored.getFinishedAt())
                 .isEqualTo(CREATED_AT.plusSeconds(31));
         assertThat(restored.getVersion()).isEqualTo(3);
+        assertThat(executionRepository.existsByTargetIdAndStatuses(
+                targetId,
+                java.util.List.of(
+                        ExperimentExecutionStatus.PREPARING,
+                        ExperimentExecutionStatus.RUNNING,
+                        ExperimentExecutionStatus.DESTROYING,
+                        ExperimentExecutionStatus.ROLLBACK_FAILED
+                )
+        )).isFalse();
     }
+
     private ExperimentExecution execution(int attempt, String idempotencyKey) {
         return ExperimentExecution.prepare(
                 UUID.randomUUID(),
