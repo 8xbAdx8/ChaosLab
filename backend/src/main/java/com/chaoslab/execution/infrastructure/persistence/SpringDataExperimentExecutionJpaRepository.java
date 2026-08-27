@@ -40,4 +40,6 @@ interface SpringDataExperimentExecutionJpaRepository
             @Param("targetId") String targetId,
             @Param("statuses") Collection<String> statuses
     );
+
+    long countByStatusIn(Collection<ExperimentExecutionStatus> statuses);
 }

@@ -10,6 +10,7 @@ import com.chaoslab.execution.application.dto.ExperimentExecutionDetails;
 import com.chaoslab.execution.application.dto.ExpiredExperimentExecution;
 import com.chaoslab.execution.application.dto.StartExperimentExecutionResult;
 import com.chaoslab.execution.application.port.ExperimentExecutionRepository;
+import com.chaoslab.execution.application.port.GlobalExecutionMutex;
 import com.chaoslab.execution.application.port.TargetExecutionMutex;
 import com.chaoslab.execution.domain.ExperimentExecution;
 import com.chaoslab.execution.domain.ExperimentExecutionStatus;
@@ -50,6 +51,8 @@ class ExperimentExecutionApplicationServiceTests {
 
     private final ExperimentExecutionRepository executionRepository =
             mock(ExperimentExecutionRepository.class);
+    private final GlobalExecutionMutex globalExecutionMutex =
+            mock(GlobalExecutionMutex.class);
     private final TargetExecutionMutex targetExecutionMutex =
             mock(TargetExecutionMutex.class);
     private final ExperimentRepository experimentRepository =
@@ -61,13 +64,15 @@ class ExperimentExecutionApplicationServiceTests {
     private final ExperimentExecutionApplicationService service =
             new ExperimentExecutionApplicationService(
                     executionRepository,
+                    globalExecutionMutex,
                     targetExecutionMutex,
                     experimentRepository,
                     targetRepository,
                     scenarioRepository,
                     new DefaultSafetyGuard(),
                     chaosEngine,
-                    CLOCK
+                    CLOCK,
+                    3
             );
 
     @Test
@@ -247,6 +252,34 @@ class ExperimentExecutionApplicationServiceTests {
                 .extracting("code")
                 .isEqualTo("TARGET_EXECUTION_ALREADY_ACTIVE");
         verify(targetExecutionMutex).lockForExperiment(ready.getId());
+        verify(executionRepository, never()).insert(any(ExperimentExecution.class));
+        verifyNoInteractions(chaosEngine);
+    }
+
+    @Test
+    void shouldRejectStartWhenGlobalExecutionLimitIsReached() {
+        Target target = target(true);
+        FaultScenario scenario = scenario(true);
+        Experiment ready = readyExperiment(target, scenario);
+        stubReadyExperiment(ready, target, scenario);
+        given(executionRepository.countByStatuses(Set.of(
+                ExperimentExecutionStatus.PREPARING,
+                ExperimentExecutionStatus.RUNNING,
+                ExperimentExecutionStatus.DESTROYING,
+                ExperimentExecutionStatus.ROLLBACK_FAILED
+        ))).willReturn(3L);
+
+        assertThatThrownBy(() -> service.start(ready.getId(), "request-001"))
+                .isInstanceOf(ExperimentExecutionStartRejectedException.class)
+                .hasMessage("active experiment execution limit reached: 3")
+                .extracting("code")
+                .isEqualTo("GLOBAL_EXECUTION_LIMIT_REACHED");
+        org.mockito.InOrder lockOrder = org.mockito.Mockito.inOrder(
+                globalExecutionMutex,
+                targetExecutionMutex
+        );
+        lockOrder.verify(globalExecutionMutex).lock();
+        lockOrder.verify(targetExecutionMutex).lockForExperiment(ready.getId());
         verify(executionRepository, never()).insert(any(ExperimentExecution.class));
         verifyNoInteractions(chaosEngine);
     }

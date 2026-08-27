@@ -112,4 +112,12 @@ public class JpaExperimentExecutionRepositoryAdapter
                 statusNames
         ) > 0;
     }
+
+    @Override
+    public long countByStatuses(
+            Collection<ExperimentExecutionStatus> statuses
+    ) {
+        Objects.requireNonNull(statuses, "statuses must not be null");
+        return repository.countByStatusIn(statuses);
+    }
 }

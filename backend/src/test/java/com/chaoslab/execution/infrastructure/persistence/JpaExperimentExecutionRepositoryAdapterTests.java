@@ -90,6 +90,23 @@ class JpaExperimentExecutionRepositoryAdapterTests {
 
         assertThat(migrationCount).isEqualTo(1);
     }
+
+    @Test
+    void shouldApplyGlobalAdmissionControlMigration() {
+        Integer migrationCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM flyway_schema_history "
+                        + "WHERE version = '6' AND success = TRUE",
+                Integer.class
+        );
+        Integer singletonCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM execution_admission_control WHERE id = 1",
+                Integer.class
+        );
+
+        assertThat(migrationCount).isEqualTo(1);
+        assertThat(singletonCount).isEqualTo(1);
+    }
+
     @Test
     void shouldInsertAndReloadPreparingExecution() {
         ExperimentExecution inserted = executionRepository.insert(execution(
@@ -183,6 +200,12 @@ class JpaExperimentExecutionRepositoryAdapterTests {
                         ExperimentExecutionStatus.ROLLBACK_FAILED
                 )
         )).isTrue();
+        assertThat(executionRepository.countByStatuses(java.util.List.of(
+                ExperimentExecutionStatus.PREPARING,
+                ExperimentExecutionStatus.RUNNING,
+                ExperimentExecutionStatus.DESTROYING,
+                ExperimentExecutionStatus.ROLLBACK_FAILED
+        ))).isEqualTo(1);
 
         ExperimentExecution destroying = executionRepository.update(
                 running.beginDestroy()
@@ -209,6 +232,12 @@ class JpaExperimentExecutionRepositoryAdapterTests {
                         ExperimentExecutionStatus.ROLLBACK_FAILED
                 )
         )).isFalse();
+        assertThat(executionRepository.countByStatuses(java.util.List.of(
+                ExperimentExecutionStatus.PREPARING,
+                ExperimentExecutionStatus.RUNNING,
+                ExperimentExecutionStatus.DESTROYING,
+                ExperimentExecutionStatus.ROLLBACK_FAILED
+        ))).isZero();
     }
 
     private ExperimentExecution execution(int attempt, String idempotencyKey) {

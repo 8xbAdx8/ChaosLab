@@ -10,6 +10,7 @@ import com.chaoslab.execution.application.dto.ExperimentExecutionDetails;
 import com.chaoslab.execution.application.dto.ExpiredExperimentExecution;
 import com.chaoslab.execution.application.dto.StartExperimentExecutionResult;
 import com.chaoslab.execution.application.port.ExperimentExecutionRepository;
+import com.chaoslab.execution.application.port.GlobalExecutionMutex;
 import com.chaoslab.execution.application.port.TargetExecutionMutex;
 import com.chaoslab.execution.domain.ExperimentExecution;
 import com.chaoslab.execution.domain.ExperimentExecutionStatus;
@@ -26,6 +27,7 @@ import com.chaoslab.scenario.domain.FaultScenario;
 import com.chaoslab.target.application.TargetNotFoundException;
 import com.chaoslab.target.application.port.TargetRepository;
 import com.chaoslab.target.domain.Target;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,6 +50,7 @@ public class ExperimentExecutionApplicationService {
     );
 
     private final ExperimentExecutionRepository executionRepository;
+    private final GlobalExecutionMutex globalExecutionMutex;
     private final TargetExecutionMutex targetExecutionMutex;
     private final ExperimentRepository experimentRepository;
     private final TargetRepository targetRepository;
@@ -55,20 +58,28 @@ public class ExperimentExecutionApplicationService {
     private final SafetyGuard safetyGuard;
     private final ChaosEngine chaosEngine;
     private final Clock clock;
+    private final int maxActiveExecutions;
 
     public ExperimentExecutionApplicationService(
             ExperimentExecutionRepository executionRepository,
+            GlobalExecutionMutex globalExecutionMutex,
             TargetExecutionMutex targetExecutionMutex,
             ExperimentRepository experimentRepository,
             TargetRepository targetRepository,
             FaultScenarioRepository scenarioRepository,
             SafetyGuard safetyGuard,
             ChaosEngine chaosEngine,
-            Clock clock
+            Clock clock,
+            @Value("${chaoslab.execution.max-active-executions:3}")
+            int maxActiveExecutions
     ) {
         this.executionRepository = Objects.requireNonNull(
                 executionRepository,
                 "executionRepository must not be null"
+        );
+        this.globalExecutionMutex = Objects.requireNonNull(
+                globalExecutionMutex,
+                "globalExecutionMutex must not be null"
         );
         this.targetExecutionMutex = Objects.requireNonNull(
                 targetExecutionMutex,
@@ -95,6 +106,12 @@ public class ExperimentExecutionApplicationService {
                 "chaosEngine must not be null"
         );
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        if (maxActiveExecutions < 1) {
+            throw new IllegalArgumentException(
+                    "maxActiveExecutions must be at least 1"
+            );
+        }
+        this.maxActiveExecutions = maxActiveExecutions;
     }
 
     @Transactional
@@ -104,6 +121,7 @@ public class ExperimentExecutionApplicationService {
     ) {
         Objects.requireNonNull(experimentId, "experimentId must not be null");
         String idempotencyKey = normalizeIdempotencyKey(rawIdempotencyKey);
+        globalExecutionMutex.lock();
         targetExecutionMutex.lockForExperiment(experimentId);
 
         return executionRepository.findByExperimentIdAndIdempotencyKey(
@@ -214,6 +232,7 @@ public class ExperimentExecutionApplicationService {
                 ));
         requireSafe(safetyGuard.evaluate(experiment, target, scenario));
         requireTargetAvailable(target.getId());
+        requireGlobalCapacity();
 
         int attempt = executionRepository.findLatestByExperimentId(experimentId)
                 .map(ExperimentExecution::getAttempt)
@@ -368,6 +387,21 @@ public class ExperimentExecutionApplicationService {
         throw new ExperimentExecutionStartRejectedException(
                 "TARGET_EXECUTION_ALREADY_ACTIVE",
                 "target already has an active experiment execution: " + targetId,
+                List.of()
+        );
+    }
+
+    private void requireGlobalCapacity() {
+        long activeExecutions = executionRepository.countByStatuses(
+                ACTIVE_STATUSES
+        );
+        if (activeExecutions < maxActiveExecutions) {
+            return;
+        }
+        throw new ExperimentExecutionStartRejectedException(
+                "GLOBAL_EXECUTION_LIMIT_REACHED",
+                "active experiment execution limit reached: "
+                        + maxActiveExecutions,
                 List.of()
         );
     }

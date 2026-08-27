@@ -39,3 +39,4 @@ management:
 chaoslab:
   execution:
     recovery-scan-interval-ms: 1000
+    max-active-executions: ${CHAOSLAB_MAX_ACTIVE_EXECUTIONS:3}

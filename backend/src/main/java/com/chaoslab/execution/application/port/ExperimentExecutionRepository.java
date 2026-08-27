@@ -33,4 +33,6 @@ public interface ExperimentExecutionRepository {
             UUID targetId,
             Collection<ExperimentExecutionStatus> statuses
     );
+
+    long countByStatuses(Collection<ExperimentExecutionStatus> statuses);
 }

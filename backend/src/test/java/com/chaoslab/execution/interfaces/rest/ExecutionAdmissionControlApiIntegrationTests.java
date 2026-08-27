@@ -38,12 +38,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest(properties = {
         "chaoslab.execution.recovery-scan-interval-ms=60000",
+        "chaoslab.execution.max-active-executions=1",
         "spring.datasource.url=jdbc:h2:mem:chaoslab-mutex-test;"
                 + "MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE"
 })
 @AutoConfigureMockMvc
-@Import(TargetExecutionMutexApiIntegrationTests.EngineConfiguration.class)
-class TargetExecutionMutexApiIntegrationTests {
+@Import(ExecutionAdmissionControlApiIntegrationTests.EngineConfiguration.class)
+class ExecutionAdmissionControlApiIntegrationTests {
 
     private static final String CPU_LOAD_ID =
             "00000000-0000-0000-0000-000000000101";
@@ -105,6 +106,70 @@ class TargetExecutionMutexApiIntegrationTests {
             MvcResult retry = mockMvc.perform(post(
                             secondExperiment + "/executions"
                     ).header("Idempotency-Key", "mutex-retry-" + suffix))
+                    .andExpect(status().isCreated())
+                    .andReturn();
+            String retryLocation = retry.getResponse().getHeader("Location");
+            assertThat(retryLocation).isNotNull();
+            mockMvc.perform(post(URI.create(retryLocation).getPath() + "/destroy"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status").value("SUCCESS"));
+        } finally {
+            chaosEngine.releaseBlockedCreate();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void shouldEnforceGlobalLimitAcrossDifferentTargets() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        String firstTargetId = registerTarget("global-first-" + suffix);
+        String secondTargetId = registerTarget("global-second-" + suffix);
+        String firstExperiment = createReadyExperiment(
+                firstTargetId,
+                "global-first-" + suffix
+        );
+        String secondExperiment = createReadyExperiment(
+                secondTargetId,
+                "global-second-" + suffix
+        );
+        chaosEngine.blockNextCreate();
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch secondRequestStarted = new CountDownLatch(1);
+        try {
+            Future<MvcResult> first = executor.submit(() -> start(
+                    firstExperiment,
+                    "global-first-" + suffix
+            ));
+            assertThat(chaosEngine.awaitBlockedCreate(Duration.ofSeconds(5)))
+                    .isTrue();
+
+            Future<MvcResult> second = executor.submit(() -> {
+                secondRequestStarted.countDown();
+                return start(secondExperiment, "global-second-" + suffix);
+            });
+            assertThat(secondRequestStarted.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThatThrownBy(() -> second.get(300, TimeUnit.MILLISECONDS))
+                    .isInstanceOf(TimeoutException.class);
+
+            chaosEngine.releaseBlockedCreate();
+            MvcResult firstResult = first.get(5, TimeUnit.SECONDS);
+            MvcResult secondResult = second.get(5, TimeUnit.SECONDS);
+
+            assertThat(firstResult.getResponse().getStatus()).isEqualTo(201);
+            assertThat(secondResult.getResponse().getStatus()).isEqualTo(409);
+            assertThat(secondResult.getResponse().getContentAsString())
+                    .contains("\"code\":\"GLOBAL_EXECUTION_LIMIT_REACHED\"");
+
+            String executionLocation = firstResult.getResponse().getHeader("Location");
+            assertThat(executionLocation).isNotNull();
+            mockMvc.perform(post(URI.create(executionLocation).getPath() + "/destroy"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status").value("SUCCESS"));
+
+            MvcResult retry = mockMvc.perform(post(
+                            secondExperiment + "/executions"
+                    ).header("Idempotency-Key", "global-retry-" + suffix))
                     .andExpect(status().isCreated())
                     .andReturn();
             String retryLocation = retry.getResponse().getHeader("Location");
