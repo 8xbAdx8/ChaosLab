@@ -7,6 +7,7 @@ import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -84,4 +85,15 @@ public class JpaExperimentExecutionRepositoryAdapter
         return repository.findAllByStatusOrderByStartedAtAsc(status).stream()
                 .map(ExperimentExecutionJpaEntity::toDomain)
                 .toList();
-    }}
+    }
+
+    @Override
+    public List<ExperimentExecution> findAllByStatuses(
+            Collection<ExperimentExecutionStatus> statuses
+    ) {
+        Objects.requireNonNull(statuses, "statuses must not be null");
+        return repository.findAllByStatusInOrderByStartedAtAsc(statuses).stream()
+                .map(ExperimentExecutionJpaEntity::toDomain)
+                .toList();
+    }
+}

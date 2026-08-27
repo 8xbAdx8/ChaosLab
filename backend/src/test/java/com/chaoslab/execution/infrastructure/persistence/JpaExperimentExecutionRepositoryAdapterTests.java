@@ -168,6 +168,11 @@ class JpaExperimentExecutionRepositoryAdapterTests {
                 ExperimentExecutionStatus.RUNNING
         )).extracting(ExperimentExecution::getId)
                 .containsExactly(running.getId());
+        assertThat(executionRepository.findAllByStatuses(java.util.List.of(
+                ExperimentExecutionStatus.RUNNING,
+                ExperimentExecutionStatus.ROLLBACK_FAILED
+        ))).extracting(ExperimentExecution::getId)
+                .containsExactly(running.getId());
 
         ExperimentExecution destroying = executionRepository.update(
                 running.beginDestroy()
