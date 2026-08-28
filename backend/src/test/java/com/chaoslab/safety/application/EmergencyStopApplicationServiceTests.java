@@ -1,6 +1,6 @@
 package com.chaoslab.safety.application;
 
-import com.chaoslab.execution.application.ExperimentExecutionApplicationService;
+import com.chaoslab.execution.application.AuditedExperimentExecutionApplicationService;
 import com.chaoslab.execution.application.dto.ExperimentExecutionDetails;
 import com.chaoslab.execution.application.port.ExperimentExecutionRepository;
 import com.chaoslab.execution.domain.ExperimentExecution;
@@ -32,8 +32,8 @@ class EmergencyStopApplicationServiceTests {
 
     private final ExperimentExecutionRepository executionRepository =
             mock(ExperimentExecutionRepository.class);
-    private final ExperimentExecutionApplicationService executionService =
-            mock(ExperimentExecutionApplicationService.class);
+    private final AuditedExperimentExecutionApplicationService executionService =
+            mock(AuditedExperimentExecutionApplicationService.class);
     private final EmergencyStopApplicationService emergencyStopService =
             new EmergencyStopApplicationService(
                     executionRepository,
@@ -49,11 +49,11 @@ class EmergencyStopApplicationServiceTests {
                 .markRollbackFailed("engine destroy failed");
         given(executionRepository.findAllByStatuses(RECOVERABLE_STATUSES))
                 .willReturn(List.of(running, rollbackFailed));
-        given(executionService.destroy(
+        given(executionService.recoverForEmergency(
                 running.getExperimentId(),
                 running.getId()
         )).willReturn(successfulDetails(running));
-        given(executionService.destroy(
+        given(executionService.recoverForEmergency(
                 rollbackFailed.getExperimentId(),
                 rollbackFailed.getId()
         )).willReturn(ExperimentExecutionDetails.from(rollbackFailed));
@@ -78,8 +78,8 @@ class EmergencyStopApplicationServiceTests {
                 .willReturn(List.of(first, second));
         doThrow(new IllegalStateException("persistence failure"))
                 .when(executionService)
-                .destroy(first.getExperimentId(), first.getId());
-        given(executionService.destroy(
+                .recoverForEmergency(first.getExperimentId(), first.getId());
+        given(executionService.recoverForEmergency(
                 second.getExperimentId(),
                 second.getId()
         )).willReturn(successfulDetails(second));
@@ -92,7 +92,7 @@ class EmergencyStopApplicationServiceTests {
                         EmergencyStopOutcome.PROCESSING_FAILED,
                         EmergencyStopOutcome.RECOVERED
                 );
-        verify(executionService).destroy(
+        verify(executionService).recoverForEmergency(
                 second.getExperimentId(),
                 second.getId()
         );

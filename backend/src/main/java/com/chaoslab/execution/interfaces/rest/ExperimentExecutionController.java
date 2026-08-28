@@ -1,6 +1,6 @@
 package com.chaoslab.execution.interfaces.rest;
 
-import com.chaoslab.execution.application.ExperimentExecutionApplicationService;
+import com.chaoslab.execution.application.AuditedExperimentExecutionApplicationService;
 import com.chaoslab.execution.application.dto.StartExperimentExecutionResult;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,11 +18,11 @@ import java.util.UUID;
 @RequestMapping("/api/v1/experiments/{experimentId}/executions")
 public class ExperimentExecutionController {
 
-    private final ExperimentExecutionApplicationService executionService;
+    private final AuditedExperimentExecutionApplicationService executionService;
     private final ExperimentExecutionResponseMapper responseMapper;
 
     public ExperimentExecutionController(
-            ExperimentExecutionApplicationService executionService,
+            AuditedExperimentExecutionApplicationService executionService,
             ExperimentExecutionResponseMapper responseMapper
     ) {
         this.executionService = executionService;

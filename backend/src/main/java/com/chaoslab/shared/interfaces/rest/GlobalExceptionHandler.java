@@ -1,5 +1,7 @@
 package com.chaoslab.shared.interfaces.rest;
 
+import com.chaoslab.audit.application.InvalidAuditQueryException;
+
 import com.chaoslab.execution.application.ExperimentExecutionDestroyRejectedException;
 import com.chaoslab.execution.application.ExperimentExecutionNotFoundException;
 import com.chaoslab.execution.application.ExperimentExecutionStartRejectedException;
@@ -30,6 +32,20 @@ import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(InvalidAuditQueryException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidAuditQuery(
+            InvalidAuditQueryException exception,
+            HttpServletRequest request
+    ) {
+        return error(
+                HttpStatus.BAD_REQUEST,
+                "INVALID_AUDIT_QUERY",
+                exception.getMessage(),
+                request,
+                Map.of()
+        );
+    }
 
     @ExceptionHandler(TargetNotFoundException.class)
     public ResponseEntity<ApiErrorResponse> handleTargetNotFound(

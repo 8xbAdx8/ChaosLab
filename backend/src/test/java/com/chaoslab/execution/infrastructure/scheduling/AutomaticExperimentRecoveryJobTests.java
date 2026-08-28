@@ -1,6 +1,6 @@
 package com.chaoslab.execution.infrastructure.scheduling;
 
-import com.chaoslab.execution.application.ExperimentExecutionApplicationService;
+import com.chaoslab.execution.application.AuditedExperimentExecutionApplicationService;
 import com.chaoslab.execution.application.dto.ExpiredExperimentExecution;
 import org.junit.jupiter.api.Test;
 
@@ -19,8 +19,8 @@ class AutomaticExperimentRecoveryJobTests {
 
     private static final Instant NOW = Instant.parse("2026-08-26T00:01:00Z");
 
-    private final ExperimentExecutionApplicationService executionService =
-            mock(ExperimentExecutionApplicationService.class);
+    private final AuditedExperimentExecutionApplicationService executionService =
+            mock(AuditedExperimentExecutionApplicationService.class);
     private final AutomaticExperimentRecoveryJob job =
             new AutomaticExperimentRecoveryJob(
                     executionService,
@@ -36,11 +36,11 @@ class AutomaticExperimentRecoveryJobTests {
 
         job.recoverExpiredExecutions();
 
-        verify(executionService).destroy(
+        verify(executionService).recoverAutomatically(
                 first.experimentId(),
                 first.executionId()
         );
-        verify(executionService).destroy(
+        verify(executionService).recoverAutomatically(
                 second.experimentId(),
                 second.executionId()
         );
@@ -54,11 +54,11 @@ class AutomaticExperimentRecoveryJobTests {
                 .willReturn(List.of(first, second));
         doThrow(new IllegalStateException("first failed"))
                 .when(executionService)
-                .destroy(first.experimentId(), first.executionId());
+                .recoverAutomatically(first.experimentId(), first.executionId());
 
         job.recoverExpiredExecutions();
 
-        verify(executionService).destroy(
+        verify(executionService).recoverAutomatically(
                 second.experimentId(),
                 second.executionId()
         );

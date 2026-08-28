@@ -1,6 +1,6 @@
 package com.chaoslab.safety.application;
 
-import com.chaoslab.execution.application.ExperimentExecutionApplicationService;
+import com.chaoslab.execution.application.AuditedExperimentExecutionApplicationService;
 import com.chaoslab.execution.application.dto.ExperimentExecutionDetails;
 import com.chaoslab.execution.application.port.ExperimentExecutionRepository;
 import com.chaoslab.execution.domain.ExperimentExecution;
@@ -31,12 +31,12 @@ public class EmergencyStopApplicationService {
             );
 
     private final ExperimentExecutionRepository executionRepository;
-    private final ExperimentExecutionApplicationService executionService;
+    private final AuditedExperimentExecutionApplicationService executionService;
     private final Clock clock;
 
     public EmergencyStopApplicationService(
             ExperimentExecutionRepository executionRepository,
-            ExperimentExecutionApplicationService executionService,
+            AuditedExperimentExecutionApplicationService executionService,
             Clock clock
     ) {
         this.executionRepository = Objects.requireNonNull(
@@ -69,7 +69,7 @@ public class EmergencyStopApplicationService {
             ExperimentExecution candidate
     ) {
         try {
-            ExperimentExecutionDetails result = executionService.destroy(
+            ExperimentExecutionDetails result = executionService.recoverForEmergency(
                     candidate.getExperimentId(),
                     candidate.getId()
             );

@@ -1,6 +1,6 @@
 package com.chaoslab.execution.infrastructure.scheduling;
 
-import com.chaoslab.execution.application.ExperimentExecutionApplicationService;
+import com.chaoslab.execution.application.AuditedExperimentExecutionApplicationService;
 import com.chaoslab.execution.application.dto.ExpiredExperimentExecution;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,11 +16,11 @@ public class AutomaticExperimentRecoveryJob {
             AutomaticExperimentRecoveryJob.class
     );
 
-    private final ExperimentExecutionApplicationService executionService;
+    private final AuditedExperimentExecutionApplicationService executionService;
     private final Clock clock;
 
     public AutomaticExperimentRecoveryJob(
-            ExperimentExecutionApplicationService executionService,
+            AuditedExperimentExecutionApplicationService executionService,
             Clock clock
     ) {
         this.executionService = executionService;
@@ -40,7 +40,7 @@ public class AutomaticExperimentRecoveryJob {
 
     private void recover(ExpiredExperimentExecution expired) {
         try {
-            executionService.destroy(
+            executionService.recoverAutomatically(
                     expired.experimentId(),
                     expired.executionId()
             );
