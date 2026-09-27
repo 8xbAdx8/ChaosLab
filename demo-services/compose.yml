@@ -89,6 +89,7 @@ services:
         condition: service_healthy
     networks:
       - chaoslab-demo-net
+      - chaoslab-observability-net
     ports:
       - "127.0.0.1:19090:9090"
     read_only: true
@@ -102,8 +103,45 @@ services:
     cpus: 1.0
     pids_limit: 100
 
+  grafana:
+    image: grafana/grafana-oss:13.0.2
+    profiles:
+      - observability
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_BASIC_ENABLED: "false"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_SECURITY_DISABLE_INITIAL_ADMIN_CREATION: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_PLUGINS_PREINSTALL_AUTO_UPDATE: "false"
+    volumes:
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    networks:
+      - chaoslab-observability-net
+    ports:
+      - "127.0.0.1:13000:3000"
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/lib/grafana
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 100
+
 networks:
   chaoslab-demo-net:
+    driver: bridge
+  chaoslab-observability-net:
     driver: bridge
 
 volumes:

@@ -25,3 +25,5 @@ jobs:
         run: bash ./mvnw --batch-mode verify
       - name: Test demo services
         run: bash ./backend/mvnw -f demo-services/pom.xml --batch-mode verify
+      - name: Test observation scripts and dashboard
+        run: python3 -m unittest discover -s demo-services -p 'test_*.py'

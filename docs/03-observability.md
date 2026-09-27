@@ -1,6 +1,6 @@
-# 可观测性：阶段 6 增量 5
+# 可观测性：阶段 6 增量 6
 
-后端与 Demo 服务提供 Prometheus 指标出口；可选的本地 Prometheus 定期抓取两个 Demo 服务，并持久保存 7 天。`demo-services/report.py` 可从后端核验执行与审计事件，再对本机 Demo 容器和指标 job 做只读绑定检查，查询三段相等时长的指标窗口，生成 Markdown 或 JSON 报告文件。同一套只读绑定检查已接入 Docker Target 的 Dry Run 与启动安全门。**没有真实故障注入、Grafana 看板或平台内持久化报告；未来真实引擎还须在执行时核对完整容器 ID。**
+后端与 Demo 服务提供 Prometheus 指标出口；可选的本地 Prometheus 定期抓取两个 Demo 服务，并持久保存 7 天。可选 Grafana 看板展示订单请求量、5xx 错误率与 P95。`demo-services/report.py` 可从后端核验执行与审计事件，再对本机 Demo 容器和指标 job 做只读绑定检查，查询三段相等时长的指标窗口，生成 Markdown 或 JSON 报告文件。同一套只读绑定检查已接入 Docker Target 的 Dry Run 与启动安全门。**没有真实故障注入或平台内持久化报告；未来真实引擎还须在执行时核对完整容器 ID。**
 
 ## 指标定义
 
@@ -38,6 +38,10 @@ Invoke-RestMethod 'http://127.0.0.1:19090/api/v1/query?query=up'
 
 预期 `order-service` 和 `inventory-service` 两个 job 的 `up` 均为 `1`。Prometheus 只监听宿主机 `127.0.0.1:19090`，其数据保存在 Compose 命名卷；普通 `docker compose --profile observability -f demo-services/compose.yml down` 不删除历史数据。后端仍在宿主机单独运行，**本配置没有抓取后端生命周期计数器**；其端点可直接查看，但不能从本报告反推生命周期历史。
 
+Grafana 只监听 `http://127.0.0.1:13000`，打开 `ChaosLab · 订单服务稳态` 看板即可查看三个趋势图。订单请求量单位为次/秒；错误率以 `/orders/{orderId}` 路由的 5xx 次数除以该路由全部请求数，无流量时不把结果伪装成 0%；P95 由直方图桶估算。看板使用与报告相同的路由过滤口径，但看板是滑动时间窗口，不替代报告的三阶段对比和审计证据。可持续请求 `http://127.0.0.1:18081/orders/order-1` 产生样本，至少等待两次抓取再观察。
+
+Grafana 仅对本机开放匿名 Viewer，禁用登录表单、Basic Auth 和初始管理员创建；数据源及看板由仓库文件只读预置，运行数据是临时的。Viewer 仍可对已配置的 Prometheus 数据源发起查询，因此**不要转发 13000 端口、放入公网或替换成生产数据源**。Grafana 只连接独立观测网络；Prometheus 同时连接观测与 Demo 网络，Demo 网络仍只有三个预期容器。
+
 ## 三阶段观察报告
 
 报告脚本需要本机 Python 3 和 Docker CLI，不需要 Python 第三方包。先启动 `observability` profile，向后端显式注册 `name=order-service`、`type=DOCKER_CONTAINER`、`environment=CHAOS_LAB` 的 Target，且不要将平台自身注册为目标。容器应在基线窗口开始前已启动，并保持运行至报告生成。在开始实验前先保持稳定的订单请求流至少一个完整窗口，期间和结束后继续按相近速率发请求。执行开始与结束之间至少 20 秒，建议至少 30 秒；恢复结束后，再等待同等时长和数次抓取。推荐从本机后端读取 `SUCCESS` 执行记录与精确审计事件，再生成报告：
@@ -54,4 +58,4 @@ py -3 demo-services/report.py --backend http://127.0.0.1:8080 --experiment-id <�
 
 报告分为“生命周期证据”“观察事实”和“比较与结论”：审计 ID 可用于回查平台记录，容器 ID 和镜像 ID 可用于复核本地绑定。但这些检查仅证明**生成报告时**当前本机 Demo 容器、Prometheus job 与指定 Target 的一致性及容器启动早于基线；不证明 FakeChaosEngine 曾对容器注入故障，也不证明指标变化的因果关系。当前执行器不会影响 Demo 服务；其报告通常不应出现真实故障偏离。若要比较，请保持三个窗口的负载、目标与路由口径一致。验证脚本：`py -3 -m unittest discover -s demo-services -p 'test_*.py'`。
 
-当前 API 和指标端点都没有认证。仅绑定本机或保持在隔离网络内，不要暴露到公网。下一增量可补齐 Grafana 看板和平台内报告；真实执行器接入前，不能把 Fake 模式的本地报告当作真实故障实验结论。
+当前 API 和指标端点都没有认证。仅绑定本机或保持在隔离网络内，不要暴露到公网。下一增量可设计平台内报告；真实执行器接入前，不能把 Fake 模式的本地报告当作真实故障实验结论。
