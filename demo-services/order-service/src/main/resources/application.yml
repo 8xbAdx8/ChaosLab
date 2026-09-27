@@ -10,6 +10,10 @@ spring:
       path: /internal-error
 
 management:
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
   endpoints:
     web:
       exposure:

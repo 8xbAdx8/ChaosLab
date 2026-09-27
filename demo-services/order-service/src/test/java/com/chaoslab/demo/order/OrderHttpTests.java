@@ -35,6 +35,8 @@ class OrderHttpTests {
             HttpResponse<String> metrics = client.send(scrape, HttpResponse.BodyHandlers.ofString());
             assertThat(metrics.statusCode()).isEqualTo(200);
             assertThat(metrics.body()).contains("jvm_memory_used_bytes");
+            assertThat(metrics.body()).contains("http_server_requests_seconds_bucket");
+            assertThat(metrics.body()).contains("uri=\"/orders/{orderId}\"");
         }
     }
 }

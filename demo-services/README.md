@@ -15,6 +15,8 @@ docker compose -f demo-services/compose.yml ps
 
 两服务都提供 `/actuator/prometheus` 指标出口；指标定义与安全注意事项见[可观测性文档](../docs/03-observability.md)。
 
+需要保存指标历史并生成三阶段观察报告时，使用可选的 `observability` profile；它会在本机 `127.0.0.1:19090` 启动 Prometheus，抓取两个 Demo 服务。启动、验证与报告命令见[可观测性文档](../docs/03-observability.md)。普通靶场启动不包含 Prometheus。
+
 | 请求 | 预期状态 | 说明 |
 | --- | --- | --- |
 | `GET http://127.0.0.1:18081/health` | 200 | 订单服务自身存活 |
@@ -31,7 +33,7 @@ PowerShell 中可使用 `Invoke-WebRequest -SkipHttpErrorCheck` 查看非 2xx �
 (Invoke-WebRequest 'http://127.0.0.1:18081/slow' -SkipHttpErrorCheck).StatusCode
 ```
 
-服务使用固定的 `order-1/order-2` 和 `item-1/item-2` 内存数据，每次重建结果相同，不使用或删除 ChaosLab 平台数据库。要重建靶场可执行 `docker compose -f demo-services/compose.yml up -d --force-recreate --wait`；实验后执行 `docker compose -f demo-services/compose.yml down`。此 Compose 项目没有持久化卷。
+服务使用固定的 `order-1/order-2` 和 `item-1/item-2` 内存数据，每次重建结果相同，不使用或删除 ChaosLab 平台数据库。要重建靶场可执行 `docker compose -f demo-services/compose.yml up -d --force-recreate --wait`；实验后执行 `docker compose -f demo-services/compose.yml down`。启用观测 profile 时，Prometheus 使用独立命名卷保存七天指标；普通 `down` 不删除该卷。
 
 ## 与平台的边界
 
