@@ -10,8 +10,21 @@ import com.chaoslab.execution.domain.ExperimentExecutionStatus;
 import com.chaoslab.experiment.application.port.ExperimentRepository;
 import com.chaoslab.experiment.domain.Experiment;
 import com.chaoslab.report.application.port.ExperimentReportRepository;
+import com.chaoslab.report.application.port.ReportObservationCollector;
+import com.chaoslab.report.domain.ExperimentReport;
+import com.chaoslab.report.domain.ReportBindingStatus;
+import com.chaoslab.report.domain.ReportConclusionStatus;
+import com.chaoslab.report.domain.ReportMetricsStatus;
+import com.chaoslab.report.domain.ReportWindow;
+import com.chaoslab.safety.application.model.TargetIdentityVerification;
+import com.chaoslab.safety.application.model.VerifiedDockerTarget;
+import com.chaoslab.safety.application.port.TargetIdentityVerifier;
 import com.chaoslab.scenario.application.port.FaultScenarioRepository;
 import com.chaoslab.scenario.domain.FaultScenario;
+import com.chaoslab.target.application.port.TargetRepository;
+import com.chaoslab.target.domain.Target;
+import com.chaoslab.target.domain.TargetEnvironment;
+import com.chaoslab.target.domain.TargetType;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -21,8 +34,11 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -41,9 +57,13 @@ class ExperimentReportApplicationServiceTests {
     private final ExperimentRepository experiments = mock(ExperimentRepository.class);
     private final FaultScenarioRepository scenarios = mock(FaultScenarioRepository.class);
     private final AuditLogApplicationService audits = mock(AuditLogApplicationService.class);
+    private final TargetRepository targets = mock(TargetRepository.class);
+    private final TargetIdentityVerifier bindingVerifier = mock(TargetIdentityVerifier.class);
+    private final ReportObservationCollector observations = mock(ReportObservationCollector.class);
     private final ExperimentReportApplicationService service =
             new ExperimentReportApplicationService(
                     reports, executions, experiments, scenarios, audits,
+                    targets, bindingVerifier, observations,
                     Clock.fixed(START.plusSeconds(90), ZoneOffset.UTC)
             );
 
@@ -83,10 +103,68 @@ class ExperimentReportApplicationServiceTests {
                 .isInstanceOf(ReportCreationRejectedException.class)
                 .extracting("code")
                 .isEqualTo("INVALID_REPORT_GENERATION_KEY");
-        verifyNoInteractions(reports, executions, experiments, audits);
+        verifyNoInteractions(reports, executions, experiments, audits,
+                targets, bindingVerifier, observations);
     }
 
-    private void givenCompleteExecution() {
+    @Test
+    void observedDemoMetricsRemainSimulationOnlyAndUseHistoricalBinding() {
+        ExperimentExecution execution = givenCompleteExecution();
+        given(execution.getEngineExperimentId()).willReturn("fake-" + EXECUTION_ID);
+        givenDockerTarget();
+        given(audits.findByExecution(EXPERIMENT_ID, EXECUTION_ID)).willReturn(List.of(
+                audit(AuditOperation.START_EXPERIMENT, TARGET_ID, START),
+                audit(AuditOperation.DESTROY_EXPERIMENT, TARGET_ID, START.plusSeconds(30))
+        ));
+        String containerId = "a".repeat(64);
+        String imageId = "sha256:" + "b".repeat(64);
+        given(bindingVerifier.verifyForWindow(any(), any())).willReturn(
+                TargetIdentityVerification.verified(new VerifiedDockerTarget(
+                        TARGET_ID, containerId, imageId, "order-service")));
+        given(observations.collect(any())).willAnswer(invocation ->
+                ((List<ReportWindow>) invocation.getArgument(0)).stream()
+                        .map(window -> new ReportWindow(window.phase(), window.start(),
+                                window.end(), ReportMetricsStatus.OBSERVED,
+                                6.0, 10.0, 1.0, 0.1, 0.2, null))
+                        .toList());
+        when(reports.insert(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ExperimentReport report = service.create(EXPERIMENT_ID, EXECUTION_ID, "observed").report();
+
+        assertThat(report.bindingStatus()).isEqualTo(ReportBindingStatus.VERIFIED_LOCAL_DEMO);
+        assertThat(report.containerId()).isEqualTo(containerId);
+        assertThat(report.metricsStatus()).isEqualTo(ReportMetricsStatus.OBSERVED);
+        assertThat(report.conclusionStatus()).isEqualTo(ReportConclusionStatus.SIMULATED_ONLY);
+        assertThat(report.windows()).hasSize(3);
+        verify(bindingVerifier).verifyForWindow(any(), org.mockito.ArgumentMatchers.eq(START.minusSeconds(30)));
+    }
+
+    @Test
+    void rejectedHistoricalBindingDoesNotQueryPrometheus() {
+        givenCompleteExecution();
+        givenDockerTarget();
+        given(audits.findByExecution(EXPERIMENT_ID, EXECUTION_ID)).willReturn(List.of(
+                audit(AuditOperation.START_EXPERIMENT, TARGET_ID, START),
+                audit(AuditOperation.DESTROY_EXPERIMENT, TARGET_ID, START.plusSeconds(30))
+        ));
+        given(bindingVerifier.verifyForWindow(any(), any())).willReturn(
+                TargetIdentityVerification.rejected("container was recreated"));
+        when(reports.insert(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ExperimentReport report = service.create(EXPERIMENT_ID, EXECUTION_ID, "unbound").report();
+
+        assertThat(report.bindingStatus()).isEqualTo(ReportBindingStatus.NOT_VERIFIED);
+        assertThat(report.metricsStatus()).isEqualTo(ReportMetricsStatus.NOT_COLLECTED);
+        verifyNoInteractions(observations);
+    }
+
+    private void givenDockerTarget() {
+        given(targets.findById(TARGET_ID)).willReturn(Optional.of(Target.register(
+                TARGET_ID, "demo-order-service", TargetType.DOCKER_CONTAINER,
+                TargetEnvironment.CHAOS_LAB)));
+    }
+
+    private ExperimentExecution givenCompleteExecution() {
         ExperimentExecution execution = mock(ExperimentExecution.class);
         given(execution.getExperimentId()).willReturn(EXPERIMENT_ID);
         given(execution.getStatus()).willReturn(ExperimentExecutionStatus.SUCCESS);
@@ -100,6 +178,10 @@ class ExperimentReportApplicationServiceTests {
         FaultScenario scenario = mock(FaultScenario.class);
         given(scenario.getCode()).willReturn("CPU_LOAD");
         given(scenarios.findById(SCENARIO_ID)).willReturn(Optional.of(scenario));
+        Target target = Target.register(TARGET_ID, "unit-target",
+                TargetType.JAVA_APPLICATION, TargetEnvironment.CHAOS_LAB);
+        given(targets.findById(TARGET_ID)).willReturn(Optional.of(target));
+        return execution;
     }
 
     private AuditLogDetails audit(

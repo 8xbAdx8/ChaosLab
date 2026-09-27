@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -46,7 +47,13 @@ public class LocalDemoTargetIdentityVerifier implements TargetIdentityVerifier {
 
     @Override
     public TargetIdentityVerification verify(Target target) {
+        return verifyForWindow(target, clock.instant());
+    }
+
+    @Override
+    public TargetIdentityVerification verifyForWindow(Target target, Instant windowStart) {
         Objects.requireNonNull(target, "target must not be null");
+        Objects.requireNonNull(windowStart, "windowStart must not be null");
         if (target.getType() != TargetType.DOCKER_CONTAINER
                 || target.getEnvironment() != TargetEnvironment.CHAOS_LAB
                 || !target.isEnabled()
@@ -83,7 +90,7 @@ public class LocalDemoTargetIdentityVerifier implements TargetIdentityVerifier {
                 "--environment", target.getEnvironment().name(),
                 "--enabled", "true",
                 "--alias-count", "1",
-                "--window-start", clock.instant().toString()
+                "--window-start", windowStart.toString()
         ));
         try {
             Process process = new ProcessBuilder(command)

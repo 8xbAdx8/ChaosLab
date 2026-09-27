@@ -1,5 +1,11 @@
 package com.chaoslab.report.interfaces.rest;
 
+import com.chaoslab.report.application.port.ExperimentReportRepository;
+import com.chaoslab.report.domain.ExperimentReport;
+import com.chaoslab.report.domain.ReportBindingStatus;
+import com.chaoslab.report.domain.ReportConclusionStatus;
+import com.chaoslab.report.domain.ReportMetricsStatus;
+import com.chaoslab.report.domain.ReportWindow;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -30,6 +36,9 @@ class ExperimentReportApiIntegrationTests {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private ExperimentReportRepository reports;
 
     @Test
     void reportIsImmutableSnapshotWithAuditsAndThreeUncollectedWindows()
@@ -73,6 +82,31 @@ class ExperimentReportApiIntegrationTests {
         String reportPath = URI.create(created.getResponse().getHeader("Location"))
                 .getPath();
         String reportId = reportPath.substring(reportPath.lastIndexOf('/') + 1);
+
+        ExperimentReport base = reports.findById(UUID.fromString(reportId)).orElseThrow();
+        ExperimentReport observed = new ExperimentReport(
+                UUID.randomUUID(), base.experimentId(), base.executionId(),
+                "observed-json-roundtrip", base.targetId(), base.scenarioCode(),
+                base.startAuditId(), base.recoveryAuditId(), base.startedAt(),
+                base.finishedAt(), base.generatedAt(), base.executionMode(),
+                ReportMetricsStatus.OBSERVED, ReportConclusionStatus.SIMULATED_ONLY,
+                "synthetic test fixture; no fault-effect conclusion",
+                ReportBindingStatus.VERIFIED_LOCAL_DEMO, "a".repeat(64),
+                "sha256:" + "b".repeat(64),
+                base.windows().stream().map(window -> new ReportWindow(
+                        window.phase(), window.start(), window.end(),
+                        ReportMetricsStatus.OBSERVED, 8.0, 12.0, 1.0,
+                        1.0 / 12.0, 0.25, null)).toList()
+        );
+        reports.insert(observed);
+        ExperimentReport reloaded = reports.findById(observed.id()).orElseThrow();
+        assertThat(reloaded.windows()).containsExactlyElementsOf(observed.windows());
+        mockMvc.perform(get(executionPath + "/reports/" + observed.id()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.bindingStatus").value("VERIFIED_LOCAL_DEMO"))
+                .andExpect(jsonPath("$.metricsStatus").value("OBSERVED"))
+                .andExpect(jsonPath("$.conclusionStatus").value("SIMULATED_ONLY"))
+                .andExpect(jsonPath("$.windows[0].p95Seconds").value(0.25));
 
         mockMvc.perform(get(reportPath))
                 .andExpect(status().isOk())

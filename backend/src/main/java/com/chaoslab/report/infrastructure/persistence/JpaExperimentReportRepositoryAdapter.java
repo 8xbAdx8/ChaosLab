@@ -2,10 +2,15 @@ package com.chaoslab.report.infrastructure.persistence;
 
 import com.chaoslab.report.application.port.ExperimentReportRepository;
 import com.chaoslab.report.domain.ExperimentReport;
+import com.chaoslab.report.domain.ReportWindow;
 import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
+import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -16,13 +21,16 @@ public class JpaExperimentReportRepositoryAdapter implements ExperimentReportRep
 
     private final SpringDataExperimentReportJpaRepository repository;
     private final EntityManager entityManager;
+    private final ObjectMapper mapper;
 
     public JpaExperimentReportRepositoryAdapter(
             SpringDataExperimentReportJpaRepository repository,
-            EntityManager entityManager
+            EntityManager entityManager,
+            ObjectMapper mapper
     ) {
         this.repository = Objects.requireNonNull(repository);
         this.entityManager = Objects.requireNonNull(entityManager);
+        this.mapper = Objects.requireNonNull(mapper);
     }
 
     @Override
@@ -38,16 +46,18 @@ public class JpaExperimentReportRepositoryAdapter implements ExperimentReportRep
     @Override
     @Transactional
     public ExperimentReport insert(ExperimentReport report) {
-        ExperimentReportJpaEntity entity = ExperimentReportJpaEntity.from(report);
+        ExperimentReportJpaEntity entity = ExperimentReportJpaEntity.from(
+                report, serialize(report.observations())
+        );
         entityManager.persist(entity);
         entityManager.flush();
-        return entity.toDomain();
+        return entity.toDomain(report.observations());
     }
 
     @Override
     public Optional<ExperimentReport> findById(UUID id) {
         return repository.findById(id.toString())
-                .map(ExperimentReportJpaEntity::toDomain);
+                .map(this::toDomain);
     }
 
     @Override
@@ -57,6 +67,30 @@ public class JpaExperimentReportRepositoryAdapter implements ExperimentReportRep
         return repository.findByExecutionIdAndGenerationKey(
                         executionId.toString(), generationKey
                 )
-                .map(ExperimentReportJpaEntity::toDomain);
+                .map(this::toDomain);
+    }
+
+    private ExperimentReport toDomain(ExperimentReportJpaEntity entity) {
+        String json = entity.observationsJson();
+        if (json == null) {
+            return entity.toDomain(null);
+        }
+        try {
+            ReportWindow[] windows = mapper.readValue(json, ReportWindow[].class);
+            return entity.toDomain(List.copyOf(Arrays.asList(windows)));
+        } catch (JacksonException exception) {
+            throw new IllegalStateException("stored report observations are invalid", exception);
+        }
+    }
+
+    private String serialize(List<ReportWindow> windows) {
+        if (windows == null) {
+            return null;
+        }
+        try {
+            return mapper.writeValueAsString(windows);
+        } catch (JacksonException exception) {
+            throw new IllegalStateException("report observations cannot be serialized", exception);
+        }
     }
 }

@@ -8,9 +8,9 @@ ChaosLab 是一个教学型混沌工程平台，目前提供可运行的 Java �
 - 安全检查与 Dry Run；默认拒绝生产环境目标，限制时长和单次作用范围。
 - 带幂等键的启动、状态查询、手动销毁、超时自动恢复与紧急停止。
 - 单目标互斥、全局并发上限，以及记录成功、拒绝和失败的追加式审计日志。
-- MySQL + Flyway V1–V9；测试使用 H2 的 MySQL 兼容模式。
+- MySQL + Flyway V1–V10；测试使用 H2 的 MySQL 兼容模式。
 
-已加入独立的 [Demo Services 靶场](demo-services/README.md)，用于观察订单到库存的调用及慢/错传播；后端与靶场现可导出 [Prometheus 指标](docs/03-observability.md)。可选的本地 Prometheus 可采集 Demo 指标，Grafana 看板展示订单请求量、5xx 错误率和 P95；报告脚本可核验后端执行、审计事件和本机 Demo 容器／指标 job 的绑定，生成实验前、中、后的观察文件。平台内[报告第一增量](docs/04-experiment-report.md)已持久化执行与审计证据及三阶段窗口，但**尚未采集指标，不给出故障效果结论**。Docker Target 的 Dry Run 和启动已接入本机 Demo 身份安全门，未通过校验会拒绝启动；当前仍只有 Fake 执行器，尚无真实 ChaosBlade 故障注入、认证授权、前端和 Kubernetes 集成。完整计划见[路线图](docs/00-roadmap.md)，设计说明见[架构文档](docs/02-architecture.md)。当前 API 没有认证，请仅在本机运行，不要向公网开放。
+已加入独立的 [Demo Services 靶场](demo-services/README.md)，用于观察订单到库存的调用及慢/错传播；后端与靶场现可导出 [Prometheus 指标](docs/03-observability.md)。可选的本地 Prometheus 可采集 Demo 指标，Grafana 看板展示订单请求量、5xx 错误率和 P95；报告脚本可核验后端执行、审计事件和本机 Demo 容器／指标 job 的绑定，生成实验前、中、后的观察文件。平台内[实验报告](docs/04-experiment-report.md)已持久化生命周期证据，并在本机 Demo 绑定通过、恢复窗口结束且样本充足时，只读采集三阶段请求数、5xx、错误率与 P95；**仍不给出真实故障效果结论**。Docker Target 的 Dry Run 和启动已接入本机 Demo 身份安全门，未通过校验会拒绝启动；当前仍只有 Fake 执行器，尚无真实 ChaosBlade 故障注入、认证授权、前端和 Kubernetes 集成。完整计划见[路线图](docs/00-roadmap.md)，设计说明见[架构文档](docs/02-architecture.md)。当前 API 没有认证，请仅在本机运行，不要向公网开放。
 
 ## 环境要求
 
@@ -84,7 +84,7 @@ Invoke-RestMethod "$base/audit-logs?experimentId=$($experiment.id)"
 
 只在 Dry Run 返回 `accepted=true` 后启动实验。`Idempotency-Key` 的相同值用于重放同一次启动请求。当前的 `RUNNING` 表示 Fake 引擎的模拟状态，不代表真实资源被施加故障。紧急恢复入口为 `POST /api/v1/emergency-stop`。
 
-执行成功销毁/恢复后，可向 `$base/experiments/$($experiment.id)/executions/$($execution.id)/reports` 发送带新 `Idempotency-Key` 的 `POST`，保存生命周期报告快照；响应的 `Location` 可用于查询。当前快照的三个窗口均标记为 `NOT_COLLECTED`，不能当作指标报告，详见[报告说明](docs/04-experiment-report.md)。
+执行成功销毁/恢复后，可向 `$base/experiments/$($experiment.id)/executions/$($execution.id)/reports` 发送带新 `Idempotency-Key` 的 `POST`，保存报告快照；响应的 `Location` 可用于查询。普通 Java Target 的指标仍为 `NOT_COLLECTED`；本机 Demo Docker Target 通过绑定核验、等待恢复窗口结束并具备足够样本后，三个窗口才可能为 `OBSERVED`。详见[报告说明](docs/04-experiment-report.md)。
 
 ## 项目结构
 

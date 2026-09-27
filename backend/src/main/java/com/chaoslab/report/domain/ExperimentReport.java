@@ -21,10 +21,27 @@ public record ExperimentReport(
         ReportExecutionMode executionMode,
         ReportMetricsStatus metricsStatus,
         ReportConclusionStatus conclusionStatus,
-        String reason
+        String reason,
+        ReportBindingStatus bindingStatus,
+        String containerId,
+        String imageId,
+        List<ReportWindow> observations
 ) {
     public static final int MAX_GENERATION_KEY_LENGTH = 128;
     public static final int MAX_REASON_LENGTH = 500;
+
+    public ExperimentReport(
+            UUID id, UUID experimentId, UUID executionId, String generationKey,
+            UUID targetId, String scenarioCode, UUID startAuditId, UUID recoveryAuditId,
+            Instant startedAt, Instant finishedAt, Instant generatedAt,
+            ReportExecutionMode executionMode, ReportMetricsStatus metricsStatus,
+            ReportConclusionStatus conclusionStatus, String reason
+    ) {
+        this(id, experimentId, executionId, generationKey, targetId, scenarioCode,
+                startAuditId, recoveryAuditId, startedAt, finishedAt, generatedAt,
+                executionMode, metricsStatus, conclusionStatus, reason,
+                ReportBindingStatus.NOT_VERIFIED, null, null, null);
+    }
 
     public ExperimentReport {
         Objects.requireNonNull(id);
@@ -45,18 +62,58 @@ public record ExperimentReport(
         Objects.requireNonNull(metricsStatus);
         Objects.requireNonNull(conclusionStatus);
         reason = requiredText(reason, MAX_REASON_LENGTH);
-        if (metricsStatus == ReportMetricsStatus.NOT_COLLECTED
+        Objects.requireNonNull(bindingStatus);
+        if (bindingStatus == ReportBindingStatus.VERIFIED_LOCAL_DEMO) {
+            if (containerId == null || !containerId.matches("[0-9a-f]{64}")
+                    || imageId == null || !imageId.matches("sha256:[0-9a-f]{64}")) {
+                throw new IllegalArgumentException("verified binding requires full Docker identities");
+            }
+        } else if (containerId != null || imageId != null) {
+            throw new IllegalArgumentException("unverified report cannot retain Docker identities");
+        }
+        observations = observations == null ? null : List.copyOf(observations);
+        if (observations != null && (observations.size() != 3
+                || !"before".equals(observations.get(0).phase())
+                || !"during".equals(observations.get(1).phase())
+                || !"after".equals(observations.get(2).phase())
+                || !observations.get(0).end().equals(startedAt)
+                || !observations.get(1).start().equals(startedAt)
+                || !observations.get(1).end().equals(finishedAt)
+                || !observations.get(2).start().equals(finishedAt))) {
+            throw new IllegalArgumentException("report requires three ordered windows");
+        }
+        if (metricsStatus != ReportMetricsStatus.OBSERVED
                 && conclusionStatus != ReportConclusionStatus.INSUFFICIENT_DATA) {
-            throw new IllegalArgumentException("uncollected metrics cannot support a conclusion");
+            throw new IllegalArgumentException("incomplete metrics cannot support a conclusion");
+        }
+        if (metricsStatus == ReportMetricsStatus.OBSERVED
+                && (bindingStatus != ReportBindingStatus.VERIFIED_LOCAL_DEMO
+                || observations == null
+                || observations.stream().anyMatch(window ->
+                        window.metricsStatus() != ReportMetricsStatus.OBSERVED))) {
+            throw new IllegalArgumentException("observed report requires three bound windows");
+        }
+        if (metricsStatus == ReportMetricsStatus.OBSERVED
+                && ((executionMode == ReportExecutionMode.SIMULATED
+                        && conclusionStatus != ReportConclusionStatus.SIMULATED_ONLY)
+                || (executionMode == ReportExecutionMode.UNVERIFIED
+                        && conclusionStatus != ReportConclusionStatus.EXECUTION_UNVERIFIED))) {
+            throw new IllegalArgumentException("observation must not imply a verified fault effect");
         }
     }
 
     public List<ReportWindow> windows() {
+        if (observations != null) {
+            return observations;
+        }
         Duration duration = Duration.between(startedAt, finishedAt);
         return List.of(
-                new ReportWindow("before", startedAt.minus(duration), startedAt, metricsStatus),
-                new ReportWindow("during", startedAt, finishedAt, metricsStatus),
-                new ReportWindow("after", finishedAt, finishedAt.plus(duration), metricsStatus)
+                new ReportWindow("before", startedAt.minus(duration), startedAt,
+                        ReportMetricsStatus.NOT_COLLECTED),
+                new ReportWindow("during", startedAt, finishedAt,
+                        ReportMetricsStatus.NOT_COLLECTED),
+                new ReportWindow("after", finishedAt, finishedAt.plus(duration),
+                        ReportMetricsStatus.NOT_COLLECTED)
         );
     }
 

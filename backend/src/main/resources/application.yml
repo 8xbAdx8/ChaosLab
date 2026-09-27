@@ -39,6 +39,8 @@ management:
 chaoslab:
   demo:
     binding-script: ${CHAOSLAB_DEMO_BINDING_SCRIPT:}
+  report:
+    prometheus-url: ${CHAOSLAB_REPORT_PROMETHEUS_URL:http://127.0.0.1:19090}
   execution:
     recovery-scan-interval-ms: 1000
     max-active-executions: ${CHAOSLAB_MAX_ACTIVE_EXECUTIONS:3}

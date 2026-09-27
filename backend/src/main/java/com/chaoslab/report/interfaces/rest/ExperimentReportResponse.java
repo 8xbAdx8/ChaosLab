@@ -2,6 +2,7 @@ package com.chaoslab.report.interfaces.rest;
 
 import com.chaoslab.report.domain.ExperimentReport;
 import com.chaoslab.report.domain.ReportConclusionStatus;
+import com.chaoslab.report.domain.ReportBindingStatus;
 import com.chaoslab.report.domain.ReportExecutionMode;
 import com.chaoslab.report.domain.ReportMetricsStatus;
 import com.chaoslab.report.domain.ReportWindow;
@@ -22,6 +23,11 @@ public record ExperimentReportResponse(
         ReportExecutionMode executionMode,
         ReportMetricsStatus metricsStatus,
         ReportConclusionStatus conclusionStatus,
+        ReportBindingStatus bindingStatus,
+        String containerId,
+        String imageId,
+        String metricsJob,
+        String route,
         String reason,
         List<ReportWindow> windows
 ) {
@@ -32,6 +38,11 @@ public record ExperimentReportResponse(
                 report.startAuditId(), report.recoveryAuditId(),
                 report.generatedAt(), report.executionMode(),
                 report.metricsStatus(), report.conclusionStatus(),
+                report.bindingStatus(), report.containerId(), report.imageId(),
+                report.bindingStatus() == ReportBindingStatus.VERIFIED_LOCAL_DEMO
+                        ? "order-service" : null,
+                report.bindingStatus() == ReportBindingStatus.VERIFIED_LOCAL_DEMO
+                        ? "/orders/{orderId}" : null,
                 report.reason(), report.windows()
         );
     }
