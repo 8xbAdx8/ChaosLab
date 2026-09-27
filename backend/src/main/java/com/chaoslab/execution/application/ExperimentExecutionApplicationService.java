@@ -20,6 +20,7 @@ import com.chaoslab.experiment.domain.Experiment;
 import com.chaoslab.experiment.domain.ExperimentStatus;
 import com.chaoslab.safety.application.model.SafetyCheck;
 import com.chaoslab.safety.application.model.SafetyDecision;
+import com.chaoslab.safety.application.model.VerifiedDockerTarget;
 import com.chaoslab.safety.application.port.SafetyGuard;
 import com.chaoslab.scenario.application.FaultScenarioNotFoundException;
 import com.chaoslab.scenario.application.port.FaultScenarioRepository;
@@ -230,7 +231,9 @@ public class ExperimentExecutionApplicationService {
                 .orElseThrow(() -> new FaultScenarioNotFoundException(
                         experiment.getScenarioId()
                 ));
-        requireSafe(safetyGuard.evaluate(experiment, target, scenario));
+        VerifiedDockerTarget verifiedTarget = requireSafe(
+                safetyGuard.evaluate(experiment, target, scenario)
+        );
         requireTargetAvailable(target.getId());
         requireGlobalCapacity();
 
@@ -257,7 +260,8 @@ public class ExperimentExecutionApplicationService {
                     target.getId(),
                     scenario.getCode(),
                     experiment.getDurationSeconds(),
-                    experiment.getParameters()
+                    experiment.getParameters(),
+                    verifiedTarget
             ));
         } catch (RuntimeException exception) {
             ExperimentExecution failed = executionRepository.update(
@@ -363,9 +367,9 @@ public class ExperimentExecutionApplicationService {
         }
     }
 
-    private void requireSafe(SafetyDecision decision) {
+    private VerifiedDockerTarget requireSafe(SafetyDecision decision) {
         if (decision.accepted()) {
-            return;
+            return decision.verifiedTarget();
         }
         List<SafetyCheck> failedChecks = decision.checks().stream()
                 .filter(check -> !check.passed())

@@ -8,6 +8,10 @@ import com.chaoslab.engine.application.model.ReadyExperimentRequest;
 
 public interface ChaosEngine {
 
+    default boolean simulated() {
+        return false;
+    }
+
     EngineCreateResult create(ReadyExperimentRequest request);
 
     EngineStatusResult status(EngineExperimentId engineExperimentId);

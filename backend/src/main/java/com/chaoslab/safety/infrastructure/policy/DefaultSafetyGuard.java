@@ -2,13 +2,18 @@ package com.chaoslab.safety.infrastructure.policy;
 
 import com.chaoslab.experiment.domain.Experiment;
 import com.chaoslab.experiment.domain.ExperimentStatus;
+import com.chaoslab.engine.application.port.ChaosEngine;
 import com.chaoslab.safety.application.model.DryRunPlan;
 import com.chaoslab.safety.application.model.SafetyCheck;
 import com.chaoslab.safety.application.model.SafetyDecision;
+import com.chaoslab.safety.application.model.TargetIdentityVerification;
+import com.chaoslab.safety.application.model.VerifiedDockerTarget;
 import com.chaoslab.safety.application.port.SafetyGuard;
+import com.chaoslab.safety.application.port.TargetIdentityVerifier;
 import com.chaoslab.scenario.domain.FaultScenario;
 import com.chaoslab.target.domain.Target;
 import com.chaoslab.target.domain.TargetEnvironment;
+import com.chaoslab.target.domain.TargetType;
 import org.springframework.stereotype.Component;
 
 import java.util.EnumSet;
@@ -27,6 +32,17 @@ public class DefaultSafetyGuard implements SafetyGuard {
             TargetEnvironment.TEST,
             TargetEnvironment.CHAOS_LAB
     );
+
+    private final TargetIdentityVerifier identityVerifier;
+    private final ChaosEngine chaosEngine;
+
+    public DefaultSafetyGuard(
+            TargetIdentityVerifier identityVerifier,
+            ChaosEngine chaosEngine
+    ) {
+        this.identityVerifier = Objects.requireNonNull(identityVerifier);
+        this.chaosEngine = Objects.requireNonNull(chaosEngine);
+    }
 
     @Override
     public SafetyDecision evaluate(
@@ -48,6 +64,25 @@ public class DefaultSafetyGuard implements SafetyGuard {
         boolean durationAllowed = experiment.getDurationSeconds()
                 <= PLATFORM_MAX_DURATION_SECONDS;
         boolean scenarioAllowed = scenario.isEnabled() && matchingScenario;
+        boolean engineTargetAllowed = chaosEngine.simulated()
+                || target.getType() == TargetType.DOCKER_CONTAINER;
+        TargetIdentityVerification identityVerification = null;
+        if (target.getType() == TargetType.DOCKER_CONTAINER
+                && target.isEnabled() && environmentAllowed && singleTarget) {
+            try {
+                identityVerification = identityVerifier.verify(target);
+            } catch (RuntimeException exception) {
+                identityVerification = TargetIdentityVerification.rejected(
+                        "target identity verification is unavailable"
+                );
+            }
+        }
+        VerifiedDockerTarget verifiedTarget = identityVerification != null
+                && identityVerification.verified()
+                && identityVerification.identity().targetId().equals(target.getId())
+                ? identityVerification.identity() : null;
+        boolean identityAllowed = target.getType() != TargetType.DOCKER_CONTAINER
+                || verifiedTarget != null;
 
         List<SafetyCheck> checks = List.of(
                 check(
@@ -93,6 +128,24 @@ public class DefaultSafetyGuard implements SafetyGuard {
                         singleTarget
                                 ? "blast radius is limited to one explicit target"
                                 : "dry run target does not match the experiment target"
+                ),
+                check(
+                        "ENGINE_TARGET_TYPE_ALLOWED",
+                        engineTargetAllowed,
+                        engineTargetAllowed
+                                ? "engine target type is allowed"
+                                : "real engine requires a verified Docker target"
+                ),
+                check(
+                        "TARGET_IDENTITY_VERIFIED",
+                        identityAllowed,
+                        identityAllowed
+                                ? target.getType() == TargetType.DOCKER_CONTAINER
+                                        ? "Docker target identity is verified"
+                                        : "target identity is not required for simulation"
+                                : identityVerification == null
+                                        ? "Docker identity was not checked"
+                                        : identityVerification.reason()
                 )
         );
 
@@ -107,7 +160,7 @@ public class DefaultSafetyGuard implements SafetyGuard {
                 experiment.getDurationSeconds(),
                 experiment.getParameters()
         );
-        return new SafetyDecision(checks, plan);
+        return new SafetyDecision(checks, plan, verifiedTarget);
     }
 
     private SafetyCheck check(String code, boolean passed, String message) {

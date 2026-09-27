@@ -5,7 +5,8 @@ import java.util.Objects;
 
 public record SafetyDecision(
         List<SafetyCheck> checks,
-        DryRunPlan plan
+        DryRunPlan plan,
+        VerifiedDockerTarget verifiedTarget
 ) {
 
     public SafetyDecision {

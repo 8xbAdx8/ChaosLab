@@ -23,6 +23,11 @@ public class FakeChaosEngine implements ChaosEngine {
             new ConcurrentHashMap<>();
 
     @Override
+    public boolean simulated() {
+        return true;
+    }
+
+    @Override
     public EngineCreateResult create(ReadyExperimentRequest request) {
         Objects.requireNonNull(request, "request must not be null");
         EngineExperimentId id = new EngineExperimentId(

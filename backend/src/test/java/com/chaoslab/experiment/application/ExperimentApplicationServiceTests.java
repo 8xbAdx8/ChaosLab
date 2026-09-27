@@ -9,6 +9,8 @@ import com.chaoslab.experiment.application.validation.ParameterViolation;
 import com.chaoslab.experiment.domain.Experiment;
 import com.chaoslab.experiment.domain.ExperimentStatus;
 import com.chaoslab.safety.infrastructure.policy.DefaultSafetyGuard;
+import com.chaoslab.safety.application.model.TargetIdentityVerification;
+import com.chaoslab.engine.infrastructure.fake.FakeChaosEngine;
 import com.chaoslab.scenario.application.FaultScenarioNotFoundException;
 import com.chaoslab.scenario.application.port.FaultScenarioRepository;
 import com.chaoslab.scenario.domain.FaultScenario;
@@ -44,7 +46,10 @@ class ExperimentApplicationServiceTests {
             targetRepository,
             scenarioRepository,
             parameterValidator,
-            new DefaultSafetyGuard()
+            new DefaultSafetyGuard(
+                    target -> TargetIdentityVerification.rejected("not configured"),
+                    new FakeChaosEngine()
+            )
     );
 
     @Test

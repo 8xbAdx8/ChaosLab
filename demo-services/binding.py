@@ -1,9 +1,12 @@
 """Read-only local Demo target-to-container-to-Prometheus binding checks."""
 
+import argparse
 import json
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.request import urlopen
 
 
 COMPOSE_FILE = Path(__file__).resolve().parent / "compose.yml"
@@ -146,3 +149,43 @@ def verify_local_demo_binding(target, registered_targets, expected_target_id,
         "scrape_url": scrape_url,
         "checked_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="只读核验本机隔离订单容器身份")
+    parser.add_argument("--target-id", required=True)
+    parser.add_argument("--name", required=True)
+    parser.add_argument("--type", required=True)
+    parser.add_argument("--environment", required=True)
+    parser.add_argument("--enabled", required=True, choices=("true", "false"))
+    parser.add_argument("--alias-count", required=True, type=int)
+    parser.add_argument("--window-start", required=True)
+    args = parser.parse_args(argv)
+    if args.alias_count != 1:
+        parser.error("订单服务的 Target 别名必须恰好一个")
+    target = {
+        "id": args.target_id,
+        "name": args.name,
+        "type": args.type,
+        "environment": args.environment,
+        "enabled": args.enabled == "true",
+    }
+    try:
+        window_start = parse_docker_time(args.window_start)
+        with urlopen("http://127.0.0.1:19090/api/v1/targets?state=active", timeout=5) as response:
+            payload = json.load(response)
+        if payload.get("status") != "success":
+            raise ValueError("Prometheus targets 查询失败")
+        targets = payload.get("data", {}).get("activeTargets")
+        binding = verify_local_demo_binding(
+            target, [target], args.target_id, window_start, targets
+        )
+        print(json.dumps(binding, ensure_ascii=False))
+    except (ValueError, OSError, subprocess.SubprocessError) as error:
+        print(f"绑定验证失败：{error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

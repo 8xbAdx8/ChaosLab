@@ -37,7 +37,16 @@ PowerShell 中可使用 `Invoke-WebRequest -SkipHttpErrorCheck` 查看非 2xx �
 
 ## 与平台的边界
 
-如果要在 ChaosLab 平台中描述靶场，请先显式注册 `type=DOCKER_CONTAINER`、`environment=CHAOS_LAB` 的目标。当前注册仅保存目标元数据；FakeChaosEngine 不读取容器 ID，也不会对容器注入故障。不要将 ChaosLab 后端或其他容器注册为靶场目标。
+如果要在 ChaosLab 平台中描述靶场，请显式注册唯一的 `name=order-service`、`type=DOCKER_CONTAINER`、`environment=CHAOS_LAB` 目标。Dry Run 与启动都会核验本机 Docker context、当前 Compose 项目中的订单容器及镜像、独立网络和 Prometheus 抓取目标；验证失败时拒绝启动，且不调用引擎。完整容器 ID 会传入引擎请求契约，但当前 `FakeChaosEngine` 仅模拟执行，不会对容器注入故障。不要将 ChaosLab 后端或其他容器注册为靶场目标。
+
+核验需先启动 `observability` profile，并在启动后端前设置校验脚本的绝对路径。本机需有 Python 3、Docker CLI 和可访问的 `127.0.0.1:19090` Prometheus。PowerShell 示例（从仓库根目录执行）：
+
+```powershell
+docker compose --profile observability -f demo-services/compose.yml up -d --wait
+$env:CHAOSLAB_DEMO_BINDING_SCRIPT = (Resolve-Path demo-services/binding.py).Path
+```
+
+未配置脚本、靶场重建、指标抓取不健康、别名不唯一或容器身份变化时，Docker Target 的安全检查将拒绝通过；普通 `JAVA_APPLICATION` 教学目标在 Fake 模式下仍可使用。这里的验证不构成真实注入能力，也不能消除验证与未来执行命令之间的容器状态变化风险；真实执行器仍须只使用已验证的完整容器 ID，并在注入前再次确认身份。
 
 容器带有 `com.chaoslab.role=demo-target` 等标签、资源上限、非 root 用户、只读根文件系统与独立网络。这些约束为未来真实引擎提供边界，但不能替代执行前的目标核验与恢复测试。
 

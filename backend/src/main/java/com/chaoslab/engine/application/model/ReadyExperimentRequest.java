@@ -1,5 +1,7 @@
 package com.chaoslab.engine.application.model;
 
+import com.chaoslab.safety.application.model.VerifiedDockerTarget;
+
 import java.util.Objects;
 import java.util.UUID;
 
@@ -9,8 +11,21 @@ public record ReadyExperimentRequest(
         UUID targetId,
         String scenarioCode,
         int durationSeconds,
-        String parameters
+        String parameters,
+        VerifiedDockerTarget verifiedTarget
 ) {
+
+    public ReadyExperimentRequest(
+            UUID executionId,
+            UUID experimentId,
+            UUID targetId,
+            String scenarioCode,
+            int durationSeconds,
+            String parameters
+    ) {
+        this(executionId, experimentId, targetId, scenarioCode,
+                durationSeconds, parameters, null);
+    }
 
     public ReadyExperimentRequest {
         Objects.requireNonNull(executionId, "executionId must not be null");
@@ -21,6 +36,9 @@ public record ReadyExperimentRequest(
             throw new IllegalArgumentException("durationSeconds must be positive");
         }
         parameters = requireText(parameters, "parameters");
+        if (verifiedTarget != null && !verifiedTarget.targetId().equals(targetId)) {
+            throw new IllegalArgumentException("verified target does not match targetId");
+        }
     }
 
     private static String requireText(String value, String field) {

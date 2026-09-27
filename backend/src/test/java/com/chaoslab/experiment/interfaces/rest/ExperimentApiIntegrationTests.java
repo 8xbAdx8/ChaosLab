@@ -69,7 +69,7 @@ class ExperimentApiIntegrationTests {
                 .andExpect(jsonPath("$.accepted").value(true))
                 .andExpect(jsonPath("$.experiment.status").value("READY"))
                 .andExpect(jsonPath("$.experiment.version").value(2))
-                .andExpect(jsonPath("$.checks.length()").value(6))
+                .andExpect(jsonPath("$.checks.length()").value(8))
                 .andExpect(jsonPath("$.plan.targetId").value(targetId))
                 .andExpect(jsonPath("$.plan.targetCount").value(1))
                 .andExpect(jsonPath("$.plan.durationSeconds").value(30))

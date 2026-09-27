@@ -1,8 +1,12 @@
 package com.chaoslab.safety.infrastructure.policy;
 
 import com.chaoslab.experiment.domain.Experiment;
+import com.chaoslab.engine.infrastructure.fake.FakeChaosEngine;
+import com.chaoslab.engine.application.port.ChaosEngine;
 import com.chaoslab.safety.application.model.SafetyCheck;
 import com.chaoslab.safety.application.model.SafetyDecision;
+import com.chaoslab.safety.application.model.TargetIdentityVerification;
+import com.chaoslab.safety.application.model.VerifiedDockerTarget;
 import com.chaoslab.scenario.domain.FaultScenario;
 import com.chaoslab.target.domain.Target;
 import com.chaoslab.target.domain.TargetEnvironment;
@@ -12,10 +16,14 @@ import org.junit.jupiter.api.Test;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 class DefaultSafetyGuardTests {
 
-    private final DefaultSafetyGuard guard = new DefaultSafetyGuard();
+    private final DefaultSafetyGuard guard = new DefaultSafetyGuard(
+            target -> TargetIdentityVerification.rejected("not configured"),
+            new FakeChaosEngine()
+    );
 
     @Test
     void shouldAcceptValidatedSingleTargetPlanInAllowedEnvironment() {
@@ -116,6 +124,54 @@ class DefaultSafetyGuardTests {
         );
 
         assertFailed(decision, "SINGLE_TARGET_SCOPE");
+    }
+
+    @Test
+    void shouldRejectDockerTargetWithoutVerifiedIdentity() {
+        Target target = Target.register(UUID.randomUUID(), "order-service",
+                TargetType.DOCKER_CONTAINER, TargetEnvironment.CHAOS_LAB);
+        FaultScenario scenario = scenario(true);
+        SafetyDecision decision = guard.evaluate(
+                experiment(target.getId(), scenario.getId(), 30).validate(),
+                target, scenario
+        );
+        assertFailed(decision, "TARGET_IDENTITY_VERIFIED");
+        assertThat(decision.verifiedTarget()).isNull();
+    }
+
+    @Test
+    void shouldPassExactDockerIdentityToAcceptedDecision() {
+        Target target = Target.register(UUID.randomUUID(), "order-service",
+                TargetType.DOCKER_CONTAINER, TargetEnvironment.CHAOS_LAB);
+        VerifiedDockerTarget identity = new VerifiedDockerTarget(
+                target.getId(), "a".repeat(64), "sha256:" + "b".repeat(64), "order-service"
+        );
+        DefaultSafetyGuard verifiedGuard = new DefaultSafetyGuard(
+                ignored -> TargetIdentityVerification.verified(identity),
+                new FakeChaosEngine()
+        );
+        FaultScenario scenario = scenario(true);
+        SafetyDecision decision = verifiedGuard.evaluate(
+                experiment(target.getId(), scenario.getId(), 30).validate(),
+                target, scenario
+        );
+        assertThat(decision.accepted()).isTrue();
+        assertThat(decision.verifiedTarget()).isEqualTo(identity);
+    }
+
+    @Test
+    void realEngineCannotAcceptNonDockerTarget() {
+        Target target = target(TargetEnvironment.CHAOS_LAB, true);
+        FaultScenario scenario = scenario(true);
+        DefaultSafetyGuard realGuard = new DefaultSafetyGuard(
+                ignored -> TargetIdentityVerification.rejected("not configured"),
+                mock(ChaosEngine.class)
+        );
+        SafetyDecision decision = realGuard.evaluate(
+                experiment(target.getId(), scenario.getId(), 30).validate(),
+                target, scenario
+        );
+        assertFailed(decision, "ENGINE_TARGET_TYPE_ALLOWED");
     }
 
     private void assertFailed(SafetyDecision decision, String code) {

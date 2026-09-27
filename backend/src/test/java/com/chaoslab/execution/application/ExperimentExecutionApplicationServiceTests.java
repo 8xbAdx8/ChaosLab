@@ -18,6 +18,9 @@ import com.chaoslab.experiment.application.port.ExperimentRepository;
 import com.chaoslab.experiment.domain.Experiment;
 import com.chaoslab.experiment.domain.ExperimentStatus;
 import com.chaoslab.safety.infrastructure.policy.DefaultSafetyGuard;
+import com.chaoslab.safety.application.model.TargetIdentityVerification;
+import com.chaoslab.safety.application.model.VerifiedDockerTarget;
+import com.chaoslab.engine.infrastructure.fake.FakeChaosEngine;
 import com.chaoslab.scenario.application.port.FaultScenarioRepository;
 import com.chaoslab.scenario.domain.FaultScenario;
 import com.chaoslab.target.application.port.TargetRepository;
@@ -69,7 +72,10 @@ class ExperimentExecutionApplicationServiceTests {
                     experimentRepository,
                     targetRepository,
                     scenarioRepository,
-                    new DefaultSafetyGuard(),
+                    new DefaultSafetyGuard(
+                            target -> TargetIdentityVerification.rejected("not configured"),
+                            new FakeChaosEngine()
+                    ),
                     chaosEngine,
                     CLOCK,
                     3
@@ -225,6 +231,67 @@ class ExperimentExecutionApplicationServiceTests {
                 .isEqualTo("SAFETY_CHECK_REJECTED");
         verify(executionRepository, never()).insert(any(ExperimentExecution.class));
         verifyNoInteractions(chaosEngine);
+    }
+
+    @Test
+    void shouldNeverCallEngineWhenDockerIdentityIsUnavailable() {
+        Target target = Target.register(UUID.randomUUID(), "order-service",
+                TargetType.DOCKER_CONTAINER, TargetEnvironment.CHAOS_LAB);
+        FaultScenario scenario = scenario(true);
+        Experiment ready = readyExperiment(target, scenario);
+        stubReadyExperiment(ready, target, scenario);
+
+        assertThatThrownBy(() -> service.start(ready.getId(), "request-docker"))
+                .isInstanceOf(ExperimentExecutionStartRejectedException.class)
+                .extracting("code")
+                .isEqualTo("SAFETY_CHECK_REJECTED");
+        verify(executionRepository, never()).insert(any(ExperimentExecution.class));
+        verifyNoInteractions(chaosEngine);
+    }
+
+    @Test
+    void shouldPassOnlyVerifiedContainerIdToEngineRequest() {
+        Target target = Target.register(UUID.randomUUID(), "order-service",
+                TargetType.DOCKER_CONTAINER, TargetEnvironment.CHAOS_LAB);
+        VerifiedDockerTarget identity = new VerifiedDockerTarget(
+                target.getId(), "a".repeat(64), "sha256:" + "b".repeat(64), "order-service"
+        );
+        FaultScenario scenario = scenario(true);
+        Experiment ready = readyExperiment(target, scenario);
+        stubReadyExperiment(ready, target, scenario);
+        given(executionRepository.insert(any(ExperimentExecution.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(executionRepository.update(any(ExperimentExecution.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(experimentRepository.update(any(Experiment.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(chaosEngine.create(any(ReadyExperimentRequest.class)))
+                .willAnswer(invocation -> {
+                    ReadyExperimentRequest request = invocation.getArgument(0);
+                    return new EngineCreateResult(
+                            new EngineExperimentId("fake-" + request.executionId()),
+                            EngineStatus.RUNNING
+                    );
+                });
+        ExperimentExecutionApplicationService verifiedService =
+                new ExperimentExecutionApplicationService(
+                        executionRepository, globalExecutionMutex, targetExecutionMutex,
+                        experimentRepository, targetRepository, scenarioRepository,
+                        new DefaultSafetyGuard(
+                                ignored -> TargetIdentityVerification.verified(identity),
+                                new FakeChaosEngine()
+                        ),
+                        chaosEngine, CLOCK, 3
+                );
+
+        verifiedService.start(ready.getId(), "request-verified");
+
+        ArgumentCaptor<ReadyExperimentRequest> request =
+                ArgumentCaptor.forClass(ReadyExperimentRequest.class);
+        verify(chaosEngine).create(request.capture());
+        assertThat(request.getValue().verifiedTarget()).isEqualTo(identity);
+        assertThat(request.getValue().verifiedTarget().containerId())
+                .isEqualTo("a".repeat(64));
     }
 
     @Test

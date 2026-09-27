@@ -1,6 +1,6 @@
-# 可观测性：阶段 6 增量 4
+# 可观测性：阶段 6 增量 5
 
-后端与 Demo 服务提供 Prometheus 指标出口；可选的本地 Prometheus 定期抓取两个 Demo 服务，并持久保存 7 天。`demo-services/report.py` 可从后端核验执行与审计事件，再对本机 Demo 容器和指标 job 做只读绑定检查，查询三段相等时长的指标窗口，生成 Markdown 或 JSON 报告文件。**没有真实故障注入、Grafana 看板或平台内持久化报告；本地绑定验证也不能代替真实引擎执行前的目标核验。**
+后端与 Demo 服务提供 Prometheus 指标出口；可选的本地 Prometheus 定期抓取两个 Demo 服务，并持久保存 7 天。`demo-services/report.py` 可从后端核验执行与审计事件，再对本机 Demo 容器和指标 job 做只读绑定检查，查询三段相等时长的指标窗口，生成 Markdown 或 JSON 报告文件。同一套只读绑定检查已接入 Docker Target 的 Dry Run 与启动安全门。**没有真实故障注入、Grafana 看板或平台内持久化报告；未来真实引擎还须在执行时核对完整容器 ID。**
 
 ## 指标定义
 
@@ -54,4 +54,4 @@ py -3 demo-services/report.py --backend http://127.0.0.1:8080 --experiment-id <�
 
 报告分为“生命周期证据”“观察事实”和“比较与结论”：审计 ID 可用于回查平台记录，容器 ID 和镜像 ID 可用于复核本地绑定。但这些检查仅证明**生成报告时**当前本机 Demo 容器、Prometheus job 与指定 Target 的一致性及容器启动早于基线；不证明 FakeChaosEngine 曾对容器注入故障，也不证明指标变化的因果关系。当前执行器不会影响 Demo 服务；其报告通常不应出现真实故障偏离。若要比较，请保持三个窗口的负载、目标与路由口径一致。验证脚本：`py -3 -m unittest discover -s demo-services -p 'test_*.py'`。
 
-当前 API 和指标端点都没有认证。仅绑定本机或保持在隔离网络内，不要暴露到公网。下一增量要让执行前 SafetyGuard 与真实引擎使用同一套目标核验，并补齐 Grafana 看板；在这之前不能把本地报告当作正式故障实验结论。
+当前 API 和指标端点都没有认证。仅绑定本机或保持在隔离网络内，不要暴露到公网。下一增量可补齐 Grafana 看板和平台内报告；真实执行器接入前，不能把 Fake 模式的本地报告当作真实故障实验结论。

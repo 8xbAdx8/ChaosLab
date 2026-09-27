@@ -259,6 +259,11 @@ class ExecutionAdmissionControlApiIntegrationTests {
         private volatile CountDownLatch createEntered = new CountDownLatch(0);
         private volatile CountDownLatch releaseCreate = new CountDownLatch(0);
 
+        @Override
+        public boolean simulated() {
+            return true;
+        }
+
         void blockNextCreate() {
             createEntered = new CountDownLatch(1);
             releaseCreate = new CountDownLatch(1);
