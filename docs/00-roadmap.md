@@ -1,8 +1,8 @@
 # ChaosLab 学习与交付路线图
 
-> 文档状态：初稿
-> 调研日期：2026-08-21
-> 本阶段范围：只做环境盘点、官方调研、架构设计和学习路线，不编写业务代码、不注入故障。
+> 文档状态：持续更新；已完成阶段 0–4，下一阶段为阶段 5
+> 初始调研：2026-08-21；最近更新：2026-09-27
+> 当前实现：Spring Boot 后端、MySQL/Flyway、实验状态机、安全守卫、自动恢复、审计与 FakeChaosEngine。尚无真实故障注入。
 
 ## 1. 项目目标
 
@@ -18,9 +18,9 @@ FakeChaosEngine / ChaosBladeEngine / KubernetesChaosEngine
 
 最终演示闭环是：定义稳态与假设 → 注册测试目标 → 安全检查 → Dry Run → 注入故障 → 观察指标 → 自动恢复 → 生成报告 → 保留审计证据。
 
-## 2. 本机环境基线
+## 2. 初始本机环境基线（2026-08-21，历史记录）
 
-以下结果来自只读命令检查，没有修改系统环境。
+以下结果是项目启动时的只读检查，不代表当前开发机状态。当前后端目标版本是 Java 21，并通过仓库内 Maven Wrapper 固定 Maven 3.9.16。
 
 | 项目 | 当前结果 | 对项目的影响 | 后续动作 |
 | --- | --- | --- | --- |
@@ -62,7 +62,7 @@ FakeChaosEngine / ChaosBladeEngine / KubernetesChaosEngine
 
 ## 4. 分阶段 Roadmap
 
-### 阶段 0：调研、架构和环境基线（当前阶段）
+### 阶段 0：调研、架构和环境基线
 
 目标：先理解要建设什么，以及工具、平台、Agent、Operator 的职责边界。
 
@@ -265,16 +265,8 @@ FakeChaosEngine / ChaosBladeEngine / KubernetesChaosEngine
 - 如何在 IDEA 选择 JDK、运行测试、启动应用并检查 Actuator health。
 - 如何阅读 Git diff、确认没有秘密信息并提交一个小而完整的 commit。
 
-## 7. 下一阶段开始前由学习者亲自验证
+## 7. 当前验收与下一步
 
-在 IDEA 的 Terminal 或 PowerShell 中执行：
+阶段 0–4 的实现已提交到仓库。公开展示时应将其标记为教学型 WIP：目前使用 FakeChaosEngine，不执行真实故障；没有认证与 RBAC，不应部署到公网或生产环境。实际运行与测试步骤以仓库根目录 `README.md` 为准。
 
-```powershell
-git status
-git log --oneline -1
-Get-Content .\docs\00-roadmap.md -TotalCount 20
-```
-
-预期：当前分支为 `main`；工作区干净；最近一次提交为 `docs: initialize ChaosLab learning roadmap`；文档可正常显示中文。
-
-下一阶段开始前还需要处理 Java 21。届时会先说明 JDK、JRE、`JAVA_HOME`、IDEA Project SDK 与 Maven Runner JDK 的区别，再由学习者完成安装/选择并共同复查。
+下一步是阶段 5：搭建隔离的 `order-service → inventory-service` 靶场。在此之前仍不接入真实 ChaosBlade，也不把平台自身当作故障目标。
