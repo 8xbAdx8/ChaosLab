@@ -55,4 +55,19 @@ public class JpaAuditLogRepositoryAdapter implements AuditLogRepository {
                 .map(AuditLogJpaEntity::toDomain)
                 .toList();
     }
+
+    @Override
+    public List<AuditLog> findByExecution(
+            UUID experimentId,
+            UUID executionId,
+            int limit
+    ) {
+        return repository.findAllByExperimentIdAndExecutionIdOrderByOccurredAtDescIdDesc(
+                        experimentId.toString(),
+                        executionId.toString(),
+                        PageRequest.of(0, limit)
+                ).stream()
+                .map(AuditLogJpaEntity::toDomain)
+                .toList();
+    }
 }

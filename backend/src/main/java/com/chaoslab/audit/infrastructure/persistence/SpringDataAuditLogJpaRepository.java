@@ -16,4 +16,10 @@ interface SpringDataAuditLogJpaRepository
             String experimentId,
             Pageable pageable
     );
+
+    List<AuditLogJpaEntity> findAllByExperimentIdAndExecutionIdOrderByOccurredAtDescIdDesc(
+            String experimentId,
+            String executionId,
+            Pageable pageable
+    );
 }

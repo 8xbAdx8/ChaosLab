@@ -8,9 +8,9 @@ ChaosLab 是一个教学型混沌工程平台，目前提供可运行的 Java �
 - 安全检查与 Dry Run；默认拒绝生产环境目标，限制时长和单次作用范围。
 - 带幂等键的启动、状态查询、手动销毁、超时自动恢复与紧急停止。
 - 单目标互斥、全局并发上限，以及记录成功、拒绝和失败的追加式审计日志。
-- MySQL + Flyway V1–V7；测试使用 H2 的 MySQL 兼容模式。
+- MySQL + Flyway V1–V8；测试使用 H2 的 MySQL 兼容模式。
 
-已加入独立的 [Demo Services 靶场](demo-services/README.md)，用于观察订单到库存的调用及慢/错传播；后端与靶场现可导出 [Prometheus 指标](docs/03-observability.md)。可选的本地 Prometheus 可采集 Demo 指标，脚本可生成实验前、中、后的观察报告。尚未实现真实 ChaosBlade 执行器、平台内正式报告、Grafana 看板、认证授权、前端和 Kubernetes 集成。完整计划见[路线图](docs/00-roadmap.md)，设计说明见[架构文档](docs/02-architecture.md)。当前 API 没有认证，请仅在本机运行，不要向公网开放。
+已加入独立的 [Demo Services 靶场](demo-services/README.md)，用于观察订单到库存的调用及慢/错传播；后端与靶场现可导出 [Prometheus 指标](docs/03-observability.md)。可选的本地 Prometheus 可采集 Demo 指标；报告脚本可核验后端执行与审计事件，生成实验前、中、后的观察文件。尚未实现目标到指标来源的可信绑定、真实 ChaosBlade 执行器、平台内持久化报告、Grafana 看板、认证授权、前端和 Kubernetes 集成。完整计划见[路线图](docs/00-roadmap.md)，设计说明见[架构文档](docs/02-architecture.md)。当前 API 没有认证，请仅在本机运行，不要向公网开放。
 
 ## 环境要求
 

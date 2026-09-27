@@ -45,6 +45,20 @@ class AuditLogApiIntegrationTests {
         mockMvc.perform(post(URI.create(location).getPath() + "/destroy"))
                 .andExpect(status().isOk());
 
+        String executionId = idFromPath(URI.create(location).getPath());
+        mockMvc.perform(get("/api/v1/audit-logs/by-execution/{experimentId}/{executionId}",
+                        ready.experimentId(), executionId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[*].operation").value(hasItems(
+                        "START_EXPERIMENT", "DESTROY_EXPERIMENT"
+                )))
+                .andExpect(jsonPath("$[*].executionId").value(hasItems(executionId)));
+        mockMvc.perform(get("/api/v1/audit-logs/by-execution/{experimentId}/{executionId}",
+                        ready.experimentId(), UUID.randomUUID()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+
         mockMvc.perform(get("/api/v1/audit-logs")
                         .param("experimentId", ready.experimentId())
                         .param("limit", "10"))

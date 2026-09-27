@@ -69,4 +69,23 @@ public class AuditLogApplicationService {
                 .map(AuditLogDetails::from)
                 .toList();
     }
+
+    public List<AuditLogDetails> findByExecution(
+            UUID experimentId,
+            UUID executionId
+    ) {
+        Objects.requireNonNull(experimentId, "experimentId must not be null");
+        Objects.requireNonNull(executionId, "executionId must not be null");
+        List<AuditLog> logs = auditLogRepository.findByExecution(
+                experimentId,
+                executionId,
+                MAX_QUERY_LIMIT + 1
+        );
+        if (logs.size() > MAX_QUERY_LIMIT) {
+            throw new InvalidAuditQueryException(
+                    "execution has more than " + MAX_QUERY_LIMIT + " audit events"
+            );
+        }
+        return logs.stream().map(AuditLogDetails::from).toList();
+    }
 }
