@@ -1,0 +1,4 @@
+spring:
+  web:
+    error:
+      path: /internal-error

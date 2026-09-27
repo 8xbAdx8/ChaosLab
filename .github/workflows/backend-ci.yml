@@ -1,4 +1,4 @@
-name: Backend CI
+name: Java CI
 
 on:
   push:
@@ -23,3 +23,5 @@ jobs:
       - name: Test backend
         working-directory: backend
         run: bash ./mvnw --batch-mode verify
+      - name: Test demo services
+        run: bash ./backend/mvnw -f demo-services/pom.xml --batch-mode verify

@@ -1,8 +1,8 @@
 # ChaosLab 学习与交付路线图
 
-> 文档状态：持续更新；已完成阶段 0–4，下一阶段为阶段 5
+> 文档状态：持续更新；已完成阶段 0–5，下一阶段为阶段 6
 > 初始调研：2026-08-21；最近更新：2026-09-27
-> 当前实现：Spring Boot 后端、MySQL/Flyway、实验状态机、安全守卫、自动恢复、审计与 FakeChaosEngine。尚无真实故障注入。
+> 当前实现：Spring Boot 后端、MySQL/Flyway、实验状态机、安全守卫、自动恢复、审计、FakeChaosEngine 与隔离 Demo Services。尚无真实故障注入。
 
 ## 1. 项目目标
 
@@ -267,6 +267,6 @@ FakeChaosEngine / ChaosBladeEngine / KubernetesChaosEngine
 
 ## 7. 当前验收与下一步
 
-阶段 0–4 的实现已提交到仓库。公开展示时应将其标记为教学型 WIP：目前使用 FakeChaosEngine，不执行真实故障；没有认证与 RBAC，不应部署到公网或生产环境。实际运行与测试步骤以仓库根目录 `README.md` 为准。
+阶段 0–5 的实现可作为教学型 WIP 展示：目前使用 FakeChaosEngine，不执行真实故障；没有认证与 RBAC，不应部署到公网或生产环境。阶段 5 的两个服务在独立 Compose 网络中运行；正常调用、超时/错误传播与容器重建已验收。当前 Target 注册仍仅保存元数据，尚未绑定或核验真实容器身份。实际运行与测试步骤以仓库根目录 `README.md` 为准。
 
-下一步是阶段 5：搭建隔离的 `order-service → inventory-service` 靶场。在此之前仍不接入真实 ChaosBlade，也不把平台自身当作故障目标。
+下一步是阶段 6：为平台与靶场添加指标和实验报告。在真实引擎接入前，还须实现目标到容器身份的安全绑定与核验；绝不把平台自身当作故障目标。

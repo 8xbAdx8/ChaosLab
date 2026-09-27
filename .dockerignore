@@ -1,0 +1,11 @@
+.git
+.github
+.idea
+docs
+README.md
+LICENSE
+**/target
+**/*.iml
+**/*.log
+.env
+.env.*

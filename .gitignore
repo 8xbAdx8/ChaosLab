@@ -6,6 +6,8 @@ out/
 # Maven build output
 /target/
 /backend/target/
+/demo-services/target/
+/demo-services/**/target/
 
 # Local environment and secrets
 .env

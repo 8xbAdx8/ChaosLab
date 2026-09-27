@@ -1,0 +1,76 @@
+name: chaoslab-demo
+
+services:
+  inventory-service:
+    build:
+      context: ..
+      dockerfile: demo-services/Dockerfile
+      args:
+        SERVICE: inventory-service
+    environment:
+      SERVER_PORT: 8080
+    labels:
+      com.chaoslab.role: demo-target
+      com.chaoslab.environment: CHAOS_LAB
+      com.chaoslab.service: inventory-service
+    networks:
+      - chaoslab-demo-net
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "--max-time", "2", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 384m
+    cpus: 1.0
+    pids_limit: 100
+
+  order-service:
+    build:
+      context: ..
+      dockerfile: demo-services/Dockerfile
+      args:
+        SERVICE: order-service
+    depends_on:
+      inventory-service:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: 8080
+      INVENTORY_BASE_URL: http://inventory-service:8080
+    labels:
+      com.chaoslab.role: demo-target
+      com.chaoslab.environment: CHAOS_LAB
+      com.chaoslab.service: order-service
+    networks:
+      - chaoslab-demo-net
+    ports:
+      - "127.0.0.1:18081:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "--max-time", "2", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 384m
+    cpus: 1.0
+    pids_limit: 100
+
+networks:
+  chaoslab-demo-net:
+    driver: bridge

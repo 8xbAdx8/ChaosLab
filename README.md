@@ -10,7 +10,7 @@ ChaosLab 是一个教学型混沌工程平台，目前提供可运行的 Java �
 - 单目标互斥、全局并发上限，以及记录成功、拒绝和失败的追加式审计日志。
 - MySQL + Flyway V1–V7；测试使用 H2 的 MySQL 兼容模式。
 
-尚未实现隔离 Demo Services、真实 ChaosBlade 执行器、指标与报告、认证授权、前端和 Kubernetes 集成。完整计划见[路线图](docs/00-roadmap.md)，设计说明见[架构文档](docs/02-architecture.md)。当前 API 没有认证，请仅在本机运行，不要向公网开放。
+已加入独立的 [Demo Services 靶场](demo-services/README.md)，用于观察订单到库存的调用及慢/错传播。尚未实现真实 ChaosBlade 执行器、指标与报告、认证授权、前端和 Kubernetes 集成。完整计划见[路线图](docs/00-roadmap.md)，设计说明见[架构文档](docs/02-architecture.md)。当前 API 没有认证，请仅在本机运行，不要向公网开放。
 
 ## 环境要求
 
@@ -37,7 +37,7 @@ cd backend
 bash ./mvnw verify
 ```
 
-GitHub Actions 在 Java 21 环境执行相同的 `verify` 流程。
+Demo Services 的测试命令为 `./backend/mvnw.cmd -f demo-services/pom.xml verify`。GitHub Actions 在 Java 21 环境分别执行后端与 Demo Services 的 `verify`。
 
 ## 本机启动
 
@@ -88,6 +88,7 @@ Invoke-RestMethod "$base/audit-logs?experimentId=$($experiment.id)"
 
 ```text
 backend/   Spring Boot 后端、Flyway 迁移、单元测试与集成测试
+demo-services/   独立的订单/库存靶场与 Docker Compose
 docs/      路线图、ChaosBlade 调研和架构设计
 ```
 
