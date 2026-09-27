@@ -9,6 +9,7 @@ import com.chaoslab.execution.application.dto.ExperimentExecutionDetails;
 import com.chaoslab.execution.application.dto.ExpiredExperimentExecution;
 import com.chaoslab.execution.application.dto.StartExperimentExecutionResult;
 import com.chaoslab.execution.domain.ExperimentExecutionStatus;
+import com.chaoslab.execution.application.port.ExecutionOperationMetrics;
 import com.chaoslab.experiment.application.ExperimentNotFoundException;
 import com.chaoslab.scenario.application.FaultScenarioNotFoundException;
 import com.chaoslab.target.application.TargetNotFoundException;
@@ -30,16 +31,19 @@ public class AuditedExperimentExecutionApplicationService {
 
     private final ExperimentExecutionApplicationService delegate;
     private final DangerousOperationAuditor auditor;
+    private final ExecutionOperationMetrics metrics;
 
     public AuditedExperimentExecutionApplicationService(
             ExperimentExecutionApplicationService delegate,
-            DangerousOperationAuditor auditor
+            DangerousOperationAuditor auditor,
+            ExecutionOperationMetrics metrics
     ) {
         this.delegate = Objects.requireNonNull(
                 delegate,
                 "delegate must not be null"
         );
         this.auditor = Objects.requireNonNull(auditor, "auditor must not be null");
+        this.metrics = Objects.requireNonNull(metrics, "metrics must not be null");
     }
 
     public StartExperimentExecutionResult start(
@@ -58,9 +62,17 @@ public class AuditedExperimentExecutionApplicationService {
                     idempotencyKey
             );
         } catch (RuntimeException exception) {
+            metrics.record(AuditOperation.START_EXPERIMENT, isRejected(exception)
+                    ? ExecutionOperationMetrics.Result.REJECTED
+                    : ExecutionOperationMetrics.Result.FAILED);
             auditException(intent, exception);
             throw exception;
         }
+        metrics.record(AuditOperation.START_EXPERIMENT, !result.created()
+                ? ExecutionOperationMetrics.Result.REPLAYED
+                : result.execution().status() == ExperimentExecutionStatus.RUNNING
+                        ? ExecutionOperationMetrics.Result.SUCCESS
+                        : ExecutionOperationMetrics.Result.FAILED);
         completeForStart(intent, result.execution());
         return result;
     }
@@ -122,9 +134,15 @@ public class AuditedExperimentExecutionApplicationService {
                     executionId
             );
         } catch (RuntimeException exception) {
+            metrics.record(operation, isRejected(exception)
+                    ? ExecutionOperationMetrics.Result.REJECTED
+                    : ExecutionOperationMetrics.Result.FAILED);
             auditException(intent, exception);
             throw exception;
         }
+        metrics.record(operation, result.status() == ExperimentExecutionStatus.SUCCESS
+                ? ExecutionOperationMetrics.Result.SUCCESS
+                : ExecutionOperationMetrics.Result.FAILED);
         completeForDestroy(intent, result);
         return result;
     }

@@ -1,4 +1,15 @@
 spring:
+  application:
+    name: inventory-service
   web:
     error:
       path: /internal-error
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: never

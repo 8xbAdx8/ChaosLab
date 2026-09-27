@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -28,6 +29,12 @@ class OrderHttpTests {
                     .build();
             assertThat(client.send(request, java.net.http.HttpResponse.BodyHandlers.discarding())
                     .statusCode()).isEqualTo(404);
+            HttpRequest scrape = HttpRequest.newBuilder()
+                    .uri(URI.create("http://127.0.0.1:" + port + "/actuator/prometheus"))
+                    .build();
+            HttpResponse<String> metrics = client.send(scrape, HttpResponse.BodyHandlers.ofString());
+            assertThat(metrics.statusCode()).isEqualTo(200);
+            assertThat(metrics.body()).contains("jvm_memory_used_bytes");
         }
     }
 }

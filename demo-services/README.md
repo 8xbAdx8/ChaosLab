@@ -13,6 +13,8 @@ docker compose -f demo-services/compose.yml ps
 
 首次构建会下载 Java 21 镜像、Maven 和项目依赖。只有 `order-service` 的 18081 端口发布到本机 `127.0.0.1`；库存服务仅可由同一 Demo 网络内的订单服务访问。检查预期结果：
 
+两服务都提供 `/actuator/prometheus` 指标出口；指标定义与安全注意事项见[可观测性文档](../docs/03-observability.md)。
+
 | 请求 | 预期状态 | 说明 |
 | --- | --- | --- |
 | `GET http://127.0.0.1:18081/health` | 200 | 订单服务自身存活 |

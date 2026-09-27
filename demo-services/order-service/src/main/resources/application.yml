@@ -3,6 +3,17 @@ demo:
     base-url: ${INVENTORY_BASE_URL:http://127.0.0.1:18082}
 
 spring:
+  application:
+    name: order-service
   web:
     error:
       path: /internal-error
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: never

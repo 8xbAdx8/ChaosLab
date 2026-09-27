@@ -4,6 +4,7 @@ import com.chaoslab.audit.application.DangerousOperationAuditor;
 import com.chaoslab.audit.application.model.AuditIntent;
 import com.chaoslab.audit.domain.AuditOperation;
 import com.chaoslab.audit.domain.AuditResult;
+import com.chaoslab.execution.application.port.ExecutionOperationMetrics;
 import com.chaoslab.safety.application.dto.EmergencyStopOutcome;
 import com.chaoslab.safety.application.dto.EmergencyStopResult;
 import org.slf4j.Logger;
@@ -21,16 +22,19 @@ public class AuditedEmergencyStopApplicationService {
 
     private final EmergencyStopApplicationService delegate;
     private final DangerousOperationAuditor auditor;
+    private final ExecutionOperationMetrics metrics;
 
     public AuditedEmergencyStopApplicationService(
             EmergencyStopApplicationService delegate,
-            DangerousOperationAuditor auditor
+            DangerousOperationAuditor auditor,
+            ExecutionOperationMetrics metrics
     ) {
         this.delegate = Objects.requireNonNull(
                 delegate,
                 "delegate must not be null"
         );
         this.auditor = Objects.requireNonNull(auditor, "auditor must not be null");
+        this.metrics = Objects.requireNonNull(metrics, "metrics must not be null");
     }
 
     public EmergencyStopResult activate() {
@@ -39,6 +43,7 @@ public class AuditedEmergencyStopApplicationService {
         try {
             result = delegate.activate();
         } catch (RuntimeException operationException) {
+            metrics.record(AuditOperation.EMERGENCY_STOP, ExecutionOperationMetrics.Result.FAILED);
             try {
                 auditor.complete(
                         intent,
@@ -59,6 +64,9 @@ public class AuditedEmergencyStopApplicationService {
         boolean incomplete = result.executions().stream()
                 .anyMatch(execution -> execution.outcome()
                         != EmergencyStopOutcome.RECOVERED);
+        metrics.record(AuditOperation.EMERGENCY_STOP, incomplete
+                ? ExecutionOperationMetrics.Result.FAILED
+                : ExecutionOperationMetrics.Result.SUCCESS);
         auditor.complete(
                 intent,
                 incomplete ? AuditResult.FAILED : AuditResult.SUCCESS,

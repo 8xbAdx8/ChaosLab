@@ -8,6 +8,7 @@ import com.chaoslab.audit.domain.AuditOperation;
 import com.chaoslab.audit.domain.AuditResult;
 import com.chaoslab.execution.application.dto.ExperimentExecutionDetails;
 import com.chaoslab.execution.application.dto.StartExperimentExecutionResult;
+import com.chaoslab.execution.application.port.ExecutionOperationMetrics;
 import com.chaoslab.execution.domain.ExperimentExecutionStatus;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -43,8 +44,9 @@ class AuditedExperimentExecutionApplicationServiceTests {
             mock(ExperimentExecutionApplicationService.class);
     private final DangerousOperationAuditor auditor =
             mock(DangerousOperationAuditor.class);
+    private final ExecutionOperationMetrics metrics = mock(ExecutionOperationMetrics.class);
     private final AuditedExperimentExecutionApplicationService service =
-            new AuditedExperimentExecutionApplicationService(delegate, auditor);
+            new AuditedExperimentExecutionApplicationService(delegate, auditor, metrics);
 
     @Test
     void shouldAuditCommittedStartWithCreatedExecutionId() {
@@ -71,6 +73,10 @@ class AuditedExperimentExecutionApplicationServiceTests {
         );
         assertThat(intentCaptor.getValue().subject().executionId())
                 .isEqualTo(EXECUTION_ID);
+        verify(metrics).record(
+                AuditOperation.START_EXPERIMENT,
+                ExecutionOperationMetrics.Result.SUCCESS
+        );
     }
 
     @Test
@@ -96,6 +102,10 @@ class AuditedExperimentExecutionApplicationServiceTests {
                 AuditResult.REJECTED,
                 "SAFETY_CHECK_REJECTED"
         );
+        verify(metrics).record(
+                AuditOperation.START_EXPERIMENT,
+                ExecutionOperationMetrics.Result.REJECTED
+        );
     }
 
     @Test
@@ -114,6 +124,10 @@ class AuditedExperimentExecutionApplicationServiceTests {
         assertThat(service.recoverAutomatically(EXPERIMENT_ID, EXECUTION_ID))
                 .isSameAs(result);
         verify(auditor).complete(intent, AuditResult.SUCCESS, null);
+        verify(metrics).record(
+                AuditOperation.AUTOMATIC_RECOVERY,
+                ExecutionOperationMetrics.Result.SUCCESS
+        );
     }
 
     @Test
@@ -139,6 +153,28 @@ class AuditedExperimentExecutionApplicationServiceTests {
         assertThatThrownBy(() -> service.destroy(EXPERIMENT_ID, EXECUTION_ID))
                 .isSameAs(operationFailure);
         assertThat(operationFailure.getSuppressed()).containsExactly(auditFailure);
+        verify(metrics).record(
+                AuditOperation.DESTROY_EXPERIMENT,
+                ExecutionOperationMetrics.Result.FAILED
+        );
+    }
+
+    @Test
+    void shouldCountIdempotentStartAsReplay() {
+        AuditIntent intent = intent(AuditOperation.START_EXPERIMENT);
+        StartExperimentExecutionResult result = new StartExperimentExecutionResult(
+                details(ExperimentExecutionStatus.RUNNING),
+                false
+        );
+        given(auditor.prepare(AuditOperation.START_EXPERIMENT, EXPERIMENT_ID, null))
+                .willReturn(intent);
+        given(delegate.start(EXPERIMENT_ID, "request-1")).willReturn(result);
+
+        assertThat(service.start(EXPERIMENT_ID, "request-1")).isSameAs(result);
+        verify(metrics).record(
+                AuditOperation.START_EXPERIMENT,
+                ExecutionOperationMetrics.Result.REPLAYED
+        );
     }
 
     private AuditIntent intent(AuditOperation operation) {

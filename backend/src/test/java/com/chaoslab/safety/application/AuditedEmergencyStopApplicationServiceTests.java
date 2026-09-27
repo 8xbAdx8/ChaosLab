@@ -6,6 +6,7 @@ import com.chaoslab.audit.application.model.AuditIntent;
 import com.chaoslab.audit.application.model.AuditSubject;
 import com.chaoslab.audit.domain.AuditOperation;
 import com.chaoslab.audit.domain.AuditResult;
+import com.chaoslab.execution.application.port.ExecutionOperationMetrics;
 import com.chaoslab.safety.application.dto.EmergencyStopExecutionResult;
 import com.chaoslab.safety.application.dto.EmergencyStopOutcome;
 import com.chaoslab.safety.application.dto.EmergencyStopResult;
@@ -33,8 +34,9 @@ class AuditedEmergencyStopApplicationServiceTests {
             mock(EmergencyStopApplicationService.class);
     private final DangerousOperationAuditor auditor =
             mock(DangerousOperationAuditor.class);
+    private final ExecutionOperationMetrics metrics = mock(ExecutionOperationMetrics.class);
     private final AuditedEmergencyStopApplicationService service =
-            new AuditedEmergencyStopApplicationService(delegate, auditor);
+            new AuditedEmergencyStopApplicationService(delegate, auditor, metrics);
 
     @Test
     void shouldAuditSuccessfulEmergencyStop() {
@@ -45,6 +47,10 @@ class AuditedEmergencyStopApplicationServiceTests {
 
         assertThat(service.activate()).isSameAs(result);
         verify(auditor).complete(INTENT, AuditResult.SUCCESS, null);
+        verify(metrics).record(
+                AuditOperation.EMERGENCY_STOP,
+                ExecutionOperationMetrics.Result.SUCCESS
+        );
     }
 
     @Test
@@ -62,6 +68,10 @@ class AuditedEmergencyStopApplicationServiceTests {
                 AuditResult.FAILED,
                 "RECOVERY_INCOMPLETE"
         );
+        verify(metrics).record(
+                AuditOperation.EMERGENCY_STOP,
+                ExecutionOperationMetrics.Result.FAILED
+        );
     }
 
     @Test
@@ -76,6 +86,10 @@ class AuditedEmergencyStopApplicationServiceTests {
                 INTENT,
                 AuditResult.FAILED,
                 "IllegalStateException"
+        );
+        verify(metrics).record(
+                AuditOperation.EMERGENCY_STOP,
+                ExecutionOperationMetrics.Result.FAILED
         );
     }
 

@@ -24,13 +24,20 @@ class InventoryHttpTests {
             assertThat(status(client, "/inventory/item-1")).isEqualTo(200);
             assertThat(status(client, "/slow?delayMs=2001")).isEqualTo(400);
             assertThat(status(client, "/error")).isEqualTo(503);
+            HttpResponse<String> metrics = client.send(request("/actuator/prometheus"),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(metrics.statusCode()).isEqualTo(200);
+            assertThat(metrics.body()).contains("jvm_memory_used_bytes");
         }
     }
 
     private int status(HttpClient client, String path) throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder()
+        return client.send(request(path), HttpResponse.BodyHandlers.discarding()).statusCode();
+    }
+
+    private HttpRequest request(String path) {
+        return HttpRequest.newBuilder()
                 .uri(URI.create("http://127.0.0.1:" + port + path))
                 .build();
-        return client.send(request, HttpResponse.BodyHandlers.discarding()).statusCode();
     }
 }
