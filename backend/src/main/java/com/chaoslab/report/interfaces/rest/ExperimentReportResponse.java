@@ -1,0 +1,38 @@
+package com.chaoslab.report.interfaces.rest;
+
+import com.chaoslab.report.domain.ExperimentReport;
+import com.chaoslab.report.domain.ReportConclusionStatus;
+import com.chaoslab.report.domain.ReportExecutionMode;
+import com.chaoslab.report.domain.ReportMetricsStatus;
+import com.chaoslab.report.domain.ReportWindow;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+
+public record ExperimentReportResponse(
+        UUID id,
+        UUID experimentId,
+        UUID executionId,
+        UUID targetId,
+        String scenarioCode,
+        UUID startAuditId,
+        UUID recoveryAuditId,
+        Instant generatedAt,
+        ReportExecutionMode executionMode,
+        ReportMetricsStatus metricsStatus,
+        ReportConclusionStatus conclusionStatus,
+        String reason,
+        List<ReportWindow> windows
+) {
+    public static ExperimentReportResponse from(ExperimentReport report) {
+        return new ExperimentReportResponse(
+                report.id(), report.experimentId(), report.executionId(),
+                report.targetId(), report.scenarioCode(),
+                report.startAuditId(), report.recoveryAuditId(),
+                report.generatedAt(), report.executionMode(),
+                report.metricsStatus(), report.conclusionStatus(),
+                report.reason(), report.windows()
+        );
+    }
+}

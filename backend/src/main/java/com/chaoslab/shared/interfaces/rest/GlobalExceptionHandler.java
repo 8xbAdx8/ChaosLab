@@ -11,6 +11,8 @@ import com.chaoslab.experiment.application.ExperimentNotFoundException;
 import com.chaoslab.experiment.application.ExperimentParametersInvalidException;
 import com.chaoslab.experiment.application.ExperimentValidationRejectedException;
 import com.chaoslab.experiment.application.InvalidFaultScenarioSchemaException;
+import com.chaoslab.report.application.ExperimentReportNotFoundException;
+import com.chaoslab.report.application.ReportCreationRejectedException;
 import com.chaoslab.scenario.application.FaultScenarioNotFoundException;
 import com.chaoslab.target.application.TargetNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -32,6 +34,25 @@ import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(ReportCreationRejectedException.class)
+    public ResponseEntity<ApiErrorResponse> handleReportCreationRejected(
+            ReportCreationRejectedException exception,
+            HttpServletRequest request
+    ) {
+        HttpStatus status = "INVALID_REPORT_GENERATION_KEY".equals(exception.getCode())
+                ? HttpStatus.BAD_REQUEST : HttpStatus.CONFLICT;
+        return error(status, exception.getCode(), exception.getMessage(), request, Map.of());
+    }
+
+    @ExceptionHandler(ExperimentReportNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleReportNotFound(
+            ExperimentReportNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return error(HttpStatus.NOT_FOUND, "EXPERIMENT_REPORT_NOT_FOUND",
+                exception.getMessage(), request, Map.of());
+    }
 
     @ExceptionHandler(InvalidAuditQueryException.class)
     public ResponseEntity<ApiErrorResponse> handleInvalidAuditQuery(
