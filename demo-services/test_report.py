@@ -112,7 +112,7 @@ class ReportTests(unittest.TestCase):
 
     def test_verified_output_is_created_but_never_overwritten(self):
         evidence = {"status": "lifecycle_verified", "target_metric_binding": "unverified",
-                    "audit_events": []}
+                    "target_id": "target", "audit_events": []}
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "report.md"
             args = ["--backend", "http://127.0.0.1:8080",
@@ -120,7 +120,15 @@ class ReportTests(unittest.TestCase):
                     "--execution-id", "00000000-0000-0000-0000-000000000002",
                     "--output", str(output)]
             with patch("report.load_execution_evidence", return_value=(self.start, self.end, evidence)), \
-                    patch("report.prometheus_value", side_effect=lambda base, expr, at: self.query(expr, at)):
+                    patch("report.prometheus_value", side_effect=lambda base, expr, at: self.query(expr, at)), \
+                    patch("report.backend_json", side_effect=lambda base, path: [
+                        {"id": "target"}
+                    ] if path == "/api/v1/targets" else {"id": "target"}), \
+                    patch("report.prometheus_targets", return_value=[]), \
+                    patch("report.verify_local_demo_binding", return_value={
+                        "status": "verified_local_demo", "container_id": "container",
+                        "image_id": "sha256:image", "job": "order-service"
+                    }):
                 self.assertEqual(main(args), 0)
                 original = output.read_text(encoding="utf-8")
                 self.assertIn("lifecycle_verified", original)

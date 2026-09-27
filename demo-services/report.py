@@ -7,12 +7,15 @@ import argparse
 import hashlib
 import json
 import math
+import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlencode, urlparse
 from urllib.request import urlopen
 from uuid import UUID
+
+from binding import verify_local_demo_binding
 
 
 SCRAPE_INTERVAL_SECONDS = 5
@@ -45,6 +48,17 @@ def prometheus_value(base_url, expression, at):
 def backend_json(base_url, path):
     with urlopen(base_url + path, timeout=10) as response:
         return json.load(response)
+
+
+def prometheus_targets(base_url):
+    with urlopen(base_url + "/api/v1/targets?state=active", timeout=10) as response:
+        payload = json.load(response)
+    if payload.get("status") != "success":
+        raise ValueError("Prometheus targets 查询失败")
+    targets = payload.get("data", {}).get("activeTargets")
+    if not isinstance(targets, list):
+        raise ValueError("Prometheus 未返回 active targets 列表")
+    return targets
 
 
 def load_execution_evidence(fetch, experiment_id, execution_id):
@@ -176,6 +190,7 @@ def build_report(query, start, end, uri, experiment_id, execution_id,
             ),
         }
     verified = evidence is not None and evidence.get("status") == "lifecycle_verified"
+    bound = verified and evidence.get("target_metric_binding") == "verified_local_demo"
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "source": source,
@@ -189,6 +204,9 @@ def build_report(query, start, end, uri, experiment_id, execution_id,
         "phases": phases,
         "comparison": comparison,
         "conclusion": (
+            "生命周期与本地 Demo 容器／指标绑定已有证据，但时间相关差异仍不能"
+            "独自证明故障效果或因果关系；当前 FakeChaosEngine 不执行真实故障。"
+            if bound else
             "生命周期已有执行记录和审计事件佐证，但目标与指标来源尚未绑定；"
             "这些差异不能证明故障效果或因果关系。"
             if verified else
@@ -234,8 +252,15 @@ def render_markdown(report):
                 f"`{event['operation']}` (`{event['id']}`)"
                 for event in report["evidence"]["audit_events"]
             ),
-            "",
         ])
+        if "binding" in report["evidence"]:
+            binding = report["evidence"]["binding"]
+            lines.append(
+                "绑定的容器：`" + binding["container_id"] + "`；"
+                "镜像：`" + binding["image_id"] + "`；"
+                "指标 job：`" + binding["job"] + "`。"
+            )
+        lines.append("")
     if report["comparison"] is not None:
         delta = report["comparison"]
         lines.append(
@@ -289,6 +314,16 @@ def main(argv=None):
         if args.backend:
             fetch = lambda path: backend_json(args.backend.rstrip("/"), path)
             start, end, evidence = load_execution_evidence(fetch, experiment_id, execution_id)
+            target = fetch(f"/api/v1/targets/{evidence['target_id']}")
+            binding = verify_local_demo_binding(
+                target,
+                fetch("/api/v1/targets"),
+                evidence["target_id"],
+                start - (end - start),
+                prometheus_targets(args.prometheus.rstrip("/")),
+            )
+            evidence["binding"] = binding
+            evidence["target_metric_binding"] = binding["status"]
         else:
             start = parse_instant(args.started_at)
             end = parse_instant(args.finished_at)
@@ -303,7 +338,7 @@ def main(argv=None):
             print(f"已保存 {args.output}；SHA-256: {hashlib.sha256((content + chr(10)).encode('utf-8')).hexdigest()}")
         else:
             print(content)
-    except (ValueError, OSError) as exception:
+    except (ValueError, OSError, subprocess.SubprocessError) as exception:
         print(f"报告生成失败：{exception}", file=sys.stderr)
         return 1
     return 0
