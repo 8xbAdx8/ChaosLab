@@ -37,8 +37,34 @@ GET /api/v1/experiments/{experimentId}/executions/{executionId}/reports/{reportI
 
 首次生成返回 `201` 和 `Location`；同一执行、同一幂等键重试返回原快照及 `200`。不同幂等键生成新的快照，旧快照不修改。数据库迁移 V9 创建 `experiment_reports`，V10 增加绑定状态、容器/镜像 ID 和三窗口 JSON；生成时锁定执行行，避免并发重试重复插入。报告记录由服务端执行、审计与只读指标构成，不接受客户端上传的“已验证指标”或结论。已存在的 V9 报告保持 `NOT_VERIFIED` 与未采集状态。
 
+首次响应也从持久化后的快照读取，使数据库的时间精度和 JSON 数字表示在首次返回、后续 GET 与幂等重放中保持一致。
+
 未恢复、缺少审计证据、目标不一致或无正时长窗口时返回明确的 `409` 错误；错误实验/执行/报告 ID 返回 `404`。当前 API 仍无认证，只能在本机使用。
+
+## 本机 MySQL 端到端验收
+
+`scripts/verify_report_e2e.py` 使用 Python 标准库、真实 MySQL 8.4 容器和当前仓库的 Demo Compose，验证平台报告的完整链路。需要运行中的 Docker Desktop Linux engine、Java 21+、Python 3，以及本机已有的 `mysql:8.4`、Demo 和观测服务镜像。先打包当前后端；如果 Demo 镜像尚未构建，先执行 `docker compose --profile observability -f demo-services/compose.yml build`，并准备 Compose 中的观测镜像。
+
+在仓库根目录运行（Java 路径替换为本机实际路径）：
+
+```powershell
+$env:JAVA_HOME = 'C:\path\to\jdk-21'
+.\backend\mvnw.cmd -f backend/pom.xml --batch-mode -DskipTests package
+py -3 scripts/verify_report_e2e.py --java "$env:JAVA_HOME\bin\java.exe"
+```
+
+脚本启动默认监听 `127.0.0.1:18080` 的验收后端（可用 `--port` 修改），以及带随机密码、动态本机端口和 tmpfs 数据目录的专用 MySQL。现有 MySQL 服务和数据库不参与验收。Demo 服务在结束后继续运行；脚本结束时停止自己的后端，并核验唯一运行标签后删除自己的 MySQL 容器及临时数据。
+
+验收覆盖：V10 迁移应用、Docker Target 安全门、持续订单流量、Fake 执行与恢复、提前生成的未采集快照、三个完整指标窗口、MySQL JSON 数组、报告幂等重放，以及后端重启后的快照读回。重启后将**验收后端**的指标查询地址指向一个不可用的本机端口，检查新报告降级为 `INSUFFICIENT_DATA`，而已有报告仍可读回和重放；不需要停止共享 Prometheus。
+
+每次生成唯一的 `backend/target/report-acceptance/<run-id>/` 目录，保留 `evidence.json` 与后端日志，目录受 Git 忽略。脚本会创建目标、实验、执行和报告，但这些只存在于本次专用数据库；它只用于当前 Fake 引擎阶段。验收约需 2–4 分钟，失败以非零退出码结束，证据中记录失败原因。该检查需要实际容器与时间窗口，因此不加入默认单元测试任务。
+
+### 验收记录：2026-09-29
+
+在 Windows、JDK 24、Docker Desktop Linux engine、MySQL 8.4.11 和现有 Demo 镜像上，16 项端到端断言全部通过。流量生成器完成 229 次成功订单请求、0 次失败；三个窗口各有 6 个抓取样本，均为 `OBSERVED`，结论保持 `SIMULATED_ONLY`。后端完整 `verify` 的 165 项测试通过。
+
+此次验收发现首次报告响应与数据库读回值有末位浮点和时间精度差异。持久化适配器现会在写入后解除新实体的托管状态，再从数据库读取同一快照作为响应；回归断言覆盖含纳秒生成时间的保存/读回一致性，实际 MySQL 验收覆盖整份响应一致性。最终通过的本机证据目录为 `backend/target/report-acceptance/e34cf1981f1041ba97e4f1af9669e75f/`。临时数据库已删除，日志与 JSON 证据保留在本机；该结果证明观察报告链路可运行，不证明真实故障效果或生产部署能力。
 
 ## 下一增量边界
 
-下一步需要对真实本机 Demo 运行一次端到端验收，并检查 MySQL 上的 V10 迁移与窗口持久化；真实故障效果结论仍属于后续执行器与因果证据阶段。
+真实故障效果结论仍属于后续执行器与因果证据阶段。接入真实引擎前，应先明确允许攻击的本机容器、命令范围及恢复保障。

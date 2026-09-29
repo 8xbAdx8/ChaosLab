@@ -51,7 +51,12 @@ public class JpaExperimentReportRepositoryAdapter implements ExperimentReportRep
         );
         entityManager.persist(entity);
         entityManager.flush();
-        return entity.toDomain(report.observations());
+        // Return the stored snapshot, including database timestamp/JSON precision,
+        // so the initial response matches later reads and idempotent replays.
+        entityManager.detach(entity);
+        return repository.findById(report.id().toString())
+                .map(this::toDomain)
+                .orElseThrow(() -> new IllegalStateException("stored report is missing"));
     }
 
     @Override

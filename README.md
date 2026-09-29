@@ -39,6 +39,8 @@ bash ./mvnw verify
 
 Demo Services 的测试命令为 `./backend/mvnw.cmd -f demo-services/pom.xml verify`；报告与看板配置的测试命令为 `py -3 -m unittest discover -s demo-services -p 'test_*.py'`。GitHub Actions 在 Java 21 环境执行两个 Maven 项目的 `verify`，并运行 Python 标准库测试。
 
+真实 MySQL 与 Demo 的报告验收可运行 `py -3 scripts/verify_report_e2e.py --java <Java可执行文件路径>`；先打包后端并准备 Docker 镜像。脚本使用独立临时数据库，检查指标采集、自动恢复、报告持久化及后端重启后的读回，详见[端到端验收说明](docs/04-experiment-report.md#本机-mysql-端到端验收)。
+
 ## 本机启动
 
 先用具备管理权限的 MySQL 账号在本机创建专用数据库和用户（将示例密码换成你自己的本机密码）：

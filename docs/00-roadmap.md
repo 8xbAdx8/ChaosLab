@@ -269,4 +269,4 @@ FakeChaosEngine / ChaosBladeEngine / KubernetesChaosEngine
 
 阶段 0–5 的实现可作为教学型 WIP 展示：目前使用 FakeChaosEngine，不执行真实故障；没有认证与 RBAC，不应部署到公网或生产环境。阶段 5 的两个服务在独立 Compose 网络中运行；正常调用、超时/错误传播与容器重建已验收。Target 注册保存元数据；对本机 Demo Docker Target，Dry Run 与启动时另行核验容器身份，失败则拒绝。此核验尚未经真实执行器验证，不能视为已实现故障注入。实际运行与测试步骤以仓库根目录 `README.md` 为准。
 
-阶段 6 已加入平台操作计数与三项服务的 Prometheus 指标出口，并提供 Demo 服务的可选定期抓取、Grafana 初始看板与三阶段观察报告脚本；脚本可核验后端执行记录、精确审计事件及本机 Demo Target／容器／Prometheus job 的绑定。目标身份核验已接入 Docker Target 的 Dry Run、启动安全门及报告生成，见 `docs/03-observability.md`。平台内报告持久化生命周期证据，并可只读采集三阶段指标；绑定或样本不满足条件时明确标记未采集/样本不足，见 `docs/04-experiment-report.md`。下一步对本机 Demo 和 MySQL 进行端到端验收；真实执行器接入前，绝不把平台自身当作故障目标，也不把 Fake 模式报告当成真实故障结论。
+阶段 6 已加入平台操作计数与三项服务的 Prometheus 指标出口，并提供 Demo 服务的可选定期抓取、Grafana 初始看板与三阶段观察报告脚本；脚本可核验后端执行记录、精确审计事件及本机 Demo Target／容器／Prometheus job 的绑定。目标身份核验已接入 Docker Target 的 Dry Run、启动安全门及报告生成，见 `docs/03-observability.md`。平台内报告持久化生命周期证据，并可只读采集三阶段指标；绑定或样本不满足条件时明确标记未采集/样本不足。2026-09-29 已通过真实 MySQL 8.4.11 与本机 Demo 的 16 项端到端验收，覆盖三窗口采集、自动恢复、幂等快照、重启读回和指标源不可用时的降级，复现方式见 `docs/04-experiment-report.md`。下一开发增量是明确真实执行器的命令白名单与恢复契约；真实执行器接入前，绝不把平台自身当作故障目标，也不把 Fake 模式报告当成真实故障结论。

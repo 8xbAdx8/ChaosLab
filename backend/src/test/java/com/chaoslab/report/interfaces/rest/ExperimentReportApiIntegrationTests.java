@@ -88,7 +88,7 @@ class ExperimentReportApiIntegrationTests {
                 UUID.randomUUID(), base.experimentId(), base.executionId(),
                 "observed-json-roundtrip", base.targetId(), base.scenarioCode(),
                 base.startAuditId(), base.recoveryAuditId(), base.startedAt(),
-                base.finishedAt(), base.generatedAt(), base.executionMode(),
+                base.finishedAt(), base.generatedAt().plusNanos(123), base.executionMode(),
                 ReportMetricsStatus.OBSERVED, ReportConclusionStatus.SIMULATED_ONLY,
                 "synthetic test fixture; no fault-effect conclusion",
                 ReportBindingStatus.VERIFIED_LOCAL_DEMO, "a".repeat(64),
@@ -98,8 +98,9 @@ class ExperimentReportApiIntegrationTests {
                         ReportMetricsStatus.OBSERVED, 8.0, 12.0, 1.0,
                         1.0 / 12.0, 0.25, null)).toList()
         );
-        reports.insert(observed);
+        ExperimentReport inserted = reports.insert(observed);
         ExperimentReport reloaded = reports.findById(observed.id()).orElseThrow();
+        assertThat(inserted).isEqualTo(reloaded);
         assertThat(reloaded.windows()).containsExactlyElementsOf(observed.windows());
         mockMvc.perform(get(executionPath + "/reports/" + observed.id()))
                 .andExpect(status().isOk())
