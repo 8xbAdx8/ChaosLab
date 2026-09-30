@@ -12,7 +12,7 @@ ChaosLab 是一个教学型混沌工程平台，目前提供可运行的 Java �
 
 已加入独立的 [Demo Services 靶场](demo-services/README.md)，用于观察订单到库存的调用及慢/错传播；后端与靶场现可导出 [Prometheus 指标](docs/03-observability.md)。可选的本地 Prometheus 可采集 Demo 指标，Grafana 看板展示订单请求量、5xx 错误率和 P95；报告脚本可核验后端执行、审计事件和本机 Demo 容器／指标 job 的绑定，生成实验前、中、后的观察文件。平台内[实验报告](docs/04-experiment-report.md)已持久化生命周期证据，并在本机 Demo 绑定通过、恢复窗口结束且样本充足时，只读采集三阶段请求数、5xx、错误率与 P95；**仍不给出真实故障效果结论**。Docker Target 的 Dry Run 和启动已接入本机 Demo 身份安全门，未通过校验会拒绝启动；当前仍只有 Fake 执行器，尚无真实 ChaosBlade 故障注入、认证授权、前端和 Kubernetes 集成。完整计划见[路线图](docs/00-roadmap.md)，设计说明见[架构文档](docs/02-architecture.md)。当前 API 没有认证，请仅在本机运行，不要向公网开放。
 
-真实执行器的准备工作见[命令白名单与恢复契约](docs/05-chaosblade-executor-contract.md)。已加入可测试的 Docker CPU 命令计划和恢复判定；这些类不运行进程，当前仍使用 Fake 引擎。
+真实执行器的准备工作见[命令白名单与恢复契约](docs/05-chaosblade-executor-contract.md)。已加入 Docker CPU 命令计划、恢复判定和独立的受限进程通道；通道仅使用无故障注入的桩进程验收，未接入应用，当前仍使用 Fake 引擎。
 
 ## 环境要求
 
