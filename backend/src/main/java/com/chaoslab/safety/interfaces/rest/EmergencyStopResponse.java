@@ -9,6 +9,7 @@ public record EmergencyStopResponse(
         int recoveredCount,
         int rollbackFailedCount,
         int processingFailedCount,
+        int manualInterventionCount,
         List<EmergencyStopExecutionResponse> executions
 ) {
 }

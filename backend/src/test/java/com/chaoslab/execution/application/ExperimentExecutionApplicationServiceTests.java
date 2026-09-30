@@ -304,6 +304,7 @@ class ExperimentExecutionApplicationServiceTests {
                 target.getId(),
                 Set.of(
                         ExperimentExecutionStatus.PREPARING,
+                        ExperimentExecutionStatus.CREATE_UNCERTAIN,
                         ExperimentExecutionStatus.RUNNING,
                         ExperimentExecutionStatus.DESTROYING,
                         ExperimentExecutionStatus.ROLLBACK_FAILED
@@ -331,6 +332,7 @@ class ExperimentExecutionApplicationServiceTests {
         stubReadyExperiment(ready, target, scenario);
         given(executionRepository.countByStatuses(Set.of(
                 ExperimentExecutionStatus.PREPARING,
+                ExperimentExecutionStatus.CREATE_UNCERTAIN,
                 ExperimentExecutionStatus.RUNNING,
                 ExperimentExecutionStatus.DESTROYING,
                 ExperimentExecutionStatus.ROLLBACK_FAILED

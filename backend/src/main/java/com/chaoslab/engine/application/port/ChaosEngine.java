@@ -12,6 +12,11 @@ public interface ChaosEngine {
         return false;
     }
 
+    /**
+     * Implementations must report a possibly applied create without a trustworthy
+     * recovery identity via EngineCreateUncertainException, never as a definite failure.
+     * This signal does not provide pre-dispatch durability or crash recovery by itself.
+     */
     EngineCreateResult create(ReadyExperimentRequest request);
 
     EngineStatusResult status(EngineExperimentId engineExperimentId);

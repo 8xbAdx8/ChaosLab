@@ -13,6 +13,29 @@ class ExperimentExecutionTests {
     private static final Instant CREATED_AT = Instant.parse("2026-08-22T00:00:00Z");
 
     @Test
+    void uncertainCreateHasNoInventedRecoveryIdentityOrAutomaticExit() {
+        var uncertain = execution().markCreateUncertain();
+        assertThat(uncertain.getStatus()).isEqualTo(ExperimentExecutionStatus.CREATE_UNCERTAIN);
+        assertThat(uncertain.getEngineExperimentId()).isNull();
+        assertThat(uncertain.getStartedAt()).isNull();
+        assertThat(uncertain.getFinishedAt()).isNull();
+        assertThat(uncertain.markCreateUncertain()).isSameAs(uncertain);
+        assertThatThrownBy(() -> uncertain.markRunning("guessed", CREATED_AT)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> uncertain.markFailed("assumed failure")).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(uncertain::beginDestroy).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> uncertain.markSuccess(CREATED_AT)).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void cannotHideAnExistingEngineHandleAsAnUncertainCreate() {
+        var running = execution().markRunning("fake-id", CREATED_AT);
+        assertThatThrownBy(running::markCreateUncertain).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> ExperimentExecution.rehydrate(UUID.randomUUID(), UUID.randomUUID(), 1,
+                "key", ExperimentExecutionStatus.CREATE_UNCERTAIN, "guessed", "uncertain",
+                CREATED_AT, null, null, 0)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void shouldPrepareFirstExecutionAttempt() {
         ExperimentExecution execution = execution();
 

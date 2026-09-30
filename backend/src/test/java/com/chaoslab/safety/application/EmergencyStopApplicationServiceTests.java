@@ -27,7 +27,8 @@ class EmergencyStopApplicationServiceTests {
     private static final List<ExperimentExecutionStatus> RECOVERABLE_STATUSES =
             List.of(
                     ExperimentExecutionStatus.RUNNING,
-                    ExperimentExecutionStatus.ROLLBACK_FAILED
+                    ExperimentExecutionStatus.ROLLBACK_FAILED,
+                    ExperimentExecutionStatus.CREATE_UNCERTAIN
             );
 
     private final ExperimentExecutionRepository executionRepository =
@@ -96,6 +97,17 @@ class EmergencyStopApplicationServiceTests {
                 second.getExperimentId(),
                 second.getId()
         );
+    }
+
+    @Test
+    void uncertainCreationRequiresManualInterventionWithoutCallingDestroy() {
+        var uncertain = ExperimentExecution.prepare(UUID.randomUUID(), UUID.randomUUID(),
+                1, "uncertain", NOW).markCreateUncertain();
+        given(executionRepository.findAllByStatuses(RECOVERABLE_STATUSES)).willReturn(List.of(uncertain));
+        var result = emergencyStopService.activate();
+        assertThat(result.executions()).extracting(execution -> execution.outcome())
+                .containsExactly(EmergencyStopOutcome.MANUAL_INTERVENTION);
+        org.mockito.Mockito.verifyNoInteractions(executionService);
     }
 
     private ExperimentExecutionDetails successfulDetails(

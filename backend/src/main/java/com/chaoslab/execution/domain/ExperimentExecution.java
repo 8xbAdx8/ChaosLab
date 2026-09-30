@@ -173,6 +173,14 @@ public final class ExperimentExecution {
         );
     }
 
+    /** No automatic outgoing transition: recovery identity must not be guessed. */
+    public ExperimentExecution markCreateUncertain() {
+        if (status == ExperimentExecutionStatus.CREATE_UNCERTAIN) return this;
+        requireStatus(ExperimentExecutionStatus.PREPARING, "mark create uncertain");
+        return copy(ExperimentExecutionStatus.CREATE_UNCERTAIN, null,
+                "engine create outcome uncertain; manual intervention required", null, null);
+    }
+
     public ExperimentExecution beginDestroy() {
         if (status == ExperimentExecutionStatus.DESTROYING) {
             return this;
@@ -311,13 +319,13 @@ public final class ExperimentExecution {
             case RUNNING -> requireActiveEngineState("running", false);
             case DESTROYING -> requireActiveEngineState("destroying", false);
             case SUCCESS -> requireActiveEngineState("successful", true);
-            case FAILED -> {
+            case FAILED, CREATE_UNCERTAIN -> {
                 if (errorMessage == null
                         || engineExperimentId != null
                         || startedAt != null
                         || finishedAt != null) {
                     throw new IllegalArgumentException(
-                            "failed execution requires only an error message"
+                            "failed or create-uncertain execution requires only an error message"
                     );
                 }
             }

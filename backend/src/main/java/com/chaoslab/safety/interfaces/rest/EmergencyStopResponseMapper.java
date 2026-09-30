@@ -24,6 +24,7 @@ class EmergencyStopResponseMapper {
                 count(executions, EmergencyStopOutcome.RECOVERED),
                 count(executions, EmergencyStopOutcome.ROLLBACK_FAILED),
                 count(executions, EmergencyStopOutcome.PROCESSING_FAILED),
+                count(executions, EmergencyStopOutcome.MANUAL_INTERVENTION),
                 executions
         );
     }

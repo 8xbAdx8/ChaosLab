@@ -27,7 +27,8 @@ public class EmergencyStopApplicationService {
     private static final List<ExperimentExecutionStatus> RECOVERABLE_STATUSES =
             List.of(
                     ExperimentExecutionStatus.RUNNING,
-                    ExperimentExecutionStatus.ROLLBACK_FAILED
+                    ExperimentExecutionStatus.ROLLBACK_FAILED,
+                    ExperimentExecutionStatus.CREATE_UNCERTAIN
             );
 
     private final ExperimentExecutionRepository executionRepository;
@@ -68,6 +69,10 @@ public class EmergencyStopApplicationService {
     private EmergencyStopExecutionResult recover(
             ExperimentExecution candidate
     ) {
+        if (candidate.getStatus() == ExperimentExecutionStatus.CREATE_UNCERTAIN) {
+            logFailure(candidate, EmergencyStopOutcome.MANUAL_INTERVENTION.name());
+            return result(candidate, EmergencyStopOutcome.MANUAL_INTERVENTION);
+        }
         try {
             ExperimentExecutionDetails result = executionService.recoverForEmergency(
                     candidate.getExperimentId(),

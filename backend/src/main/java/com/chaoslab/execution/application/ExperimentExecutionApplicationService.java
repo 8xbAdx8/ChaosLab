@@ -1,6 +1,7 @@
 package com.chaoslab.execution.application;
 
 import com.chaoslab.engine.application.model.EngineCreateResult;
+import com.chaoslab.engine.application.EngineCreateUncertainException;
 import com.chaoslab.engine.application.model.EngineDestroyResult;
 import com.chaoslab.engine.application.model.EngineExperimentId;
 import com.chaoslab.engine.application.model.EngineStatus;
@@ -45,6 +46,7 @@ public class ExperimentExecutionApplicationService {
 
     private static final Set<ExperimentExecutionStatus> ACTIVE_STATUSES = Set.of(
             ExperimentExecutionStatus.PREPARING,
+            ExperimentExecutionStatus.CREATE_UNCERTAIN,
             ExperimentExecutionStatus.RUNNING,
             ExperimentExecutionStatus.DESTROYING,
             ExperimentExecutionStatus.ROLLBACK_FAILED
@@ -263,6 +265,8 @@ public class ExperimentExecutionApplicationService {
                     experiment.getParameters(),
                     verifiedTarget
             ));
+        } catch (EngineCreateUncertainException exception) {
+            return created(executionRepository.update(execution.markCreateUncertain()));
         } catch (RuntimeException exception) {
             ExperimentExecution failed = executionRepository.update(
                     execution.markFailed(engineFailureMessage(exception))
