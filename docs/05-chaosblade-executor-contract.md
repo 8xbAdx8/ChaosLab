@@ -1,6 +1,6 @@
 # ChaosBlade 执行器：命令白名单与恢复契约
 
-状态：2026-09-30，阶段 7 的契约与受限进程通道增量。当前生产代码仍只注册 `FakeChaosEngine`。命令模型和恢复判定保持纯 Java；新增进程通道未注册为 Spring Bean、未接入引擎或 HTTP 路由，也不改变现有 Dry Run 的范围。测试仅启动无故障注入的 Java 桩进程。
+状态：2026-09-30，阶段 7 的契约、受限进程通道与严格响应解析增量。当前生产代码仍只注册 `FakeChaosEngine`。命令模型、恢复判定和解析器保持纯 Java；进程通道未注册为 Spring Bean、未接入引擎或 HTTP 路由，也不改变现有 Dry Run 的范围。测试仅使用合成响应及无故障注入的 Java 桩进程。
 
 ## 首个场景的范围
 
@@ -44,7 +44,27 @@ create docker cpu load
 | 同一 UID 为 `Created`、`Success` 或 `Error` | `DESTROY_REQUIRED`，错误状态也可能留有故障效果 |
 | 同一执行节点、目标身份和 UID，查询状态为 `Destroyed` | `CONFIRMED_RECOVERED`，仅确认引擎侧恢复 |
 
-`destroy` 进程退出码为零或响应 `success=true`，不能替代后续状态核对。CLI 结果解析器还须校验完整 JSON、类型、UID、状态值与响应大小；未知字符串不能被映射为 `DESTROYED`。本增量尚未实现该解析器。
+`destroy` 进程退出码为零或响应 `success=true`，不能替代后续状态核对。独立的 `BladeResponseDecoder` 已实现完整 JSON、类型、UID、状态值与响应大小校验，但尚未接入应用；未知字符串不能被映射为 `DESTROYED`。
+
+## 严格响应解析（候选 v1.7.4 方言）
+
+解析器是无副作用的纯 Java 类，不执行命令、不保存 UID、不自动重试，也不返回“实验已恢复”。测试响应按官方源码构造，并非真实工具的录制结果；最终部署版本仍需锁定并做兼容验收。
+
+入口必须收到 `EXITED`、退出码 0、`cleanupComplete=true` 的完整进程结果，否则抛出 `TRANSPORT_UNCERTAIN`。只读取 stdout，不合并或从日志中提取 JSON；非空白 stderr、UTF-8 替换字符、总输出超过 64 KiB 均拒绝。JSON 限制深度为 16，拒绝重复键、尾随文档、未知顶层字段及隐式类型转换。顶层 `code` 必须是 int32 范围整数，`success` 必须是布尔值且与 `code=200` 一致，成功响应不能带非空 `error`。
+
+| 方法 | 接受的成功结果 | 输出的含义 |
+| --- | --- | --- |
+| `decodeCreate` | `result` 为 16–64 位小写十六进制 UID 字符串 | 创建回执，仍需可靠持久化，不是恢复证据 |
+| `decodeStatus` | `result` 为单个 Docker CPU 实验记录，含官方八个字符串字段；`Command=docker`、`SubCommand=cpu load` | UID 与精确状态 `Created/Success/Error/Destroyed`，必须再交恢复契约核对节点、目标及保存的 UID |
+| `decodeDestroy` | `result` 为非空对象或非空白字符串，兼容模型/已销毁描述两种外形 | 仅 `REQUIRES_STATUS_CHECK`；不验证结果载荷的全部业务语义，也不从描述中猜 UID |
+
+状态字段严格使用 `Uid`、`Command`、`SubCommand`、`Flag`、`Status`、`Error`、`CreateTime`、`UpdateTime`。后三类诊断/时间文本和 `Flag` 只核验字符串类型，不用于证明目标身份；目标身份必须由独立安全门重新取得。准备记录、列表、未知/大小写变化的状态均拒绝。解析得到不同 UID 时保留该值，让恢复契约判定人工处置，绝不替换成请求 UID。
+
+完整的失败响应按数字错误码区分 `DATA_NOT_FOUND`（67002）与 `TOOL_REPORTED_FAILURE`，不匹配错误文本。非零退出码或异常通道优先作为传输不确定处理，不尝试挽救其中的失败 JSON。异常只含固定分类，不携带原始输出或 JSON 解析异常，防止将敏感诊断内容带到日志/API。
+
+未来调用方必须显式处理这些分类：create 解析失败仍属于“创建结果不确定”，不能释放占用或盲目重试；status 的 `DATA_NOT_FOUND` 进入人工处置，其他不可用结果进入有预算的状态核对；destroy 回执或解析失败都不能确认恢复。当前没有新增这些持久化状态或接入现有 Fake 调度流程。
+
+方言依据：[v1.7.4 Response 定义及错误码](https://github.com/chaosblade-io/chaosblade-spec-go/blob/v1.7.4/spec/response.go)、[实验记录字段](https://github.com/chaosblade-io/chaosblade/blob/v1.7.4/data/experiment.go)、[status 实现](https://github.com/chaosblade-io/chaosblade/blob/v1.7.4/cli/cmd/status.go)及下文 create/destroy 实现。保守拒绝策略可能拒绝其他版本的合法响应，这种情况应保持结果不确定，不能放宽为默认成功。
 
 ## 接入前必须完成的执行流程
 
@@ -83,6 +103,8 @@ create docker cpu load
 后续需选择并锁定 Linux 工具包及摘要，在隔离执行环境核对帮助输出、UID 格式、权限、结果 JSON 与超时销毁行为，再实现实际适配器。当前代码没有任何开关可切换为真实注入。
 
 ## 验证
+
+严格解析增量在 Windows JDK 24 下通过后端 `verify` 全量 251 项测试，其中 45 项解析测试覆盖创建 UID、四种状态、UID 不匹配、销毁回执、字段/结构错误、重复键、尾随文档、未知状态、异常通道、输出大小、嵌套深度和失败分类。以下 206 项及 Linux 验证记录属于此前进程通道增量。
 
 命令白名单测试覆盖非法参数、额外参数、重复键、尾随 JSON、非整数、超时长、未核验/变更容器及镜像；恢复测试覆盖危险 UID、UID 不匹配、数据丢失、节点/容器变更和通信失败。
 
