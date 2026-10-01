@@ -32,6 +32,9 @@ import com.chaoslab.target.domain.Target;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -62,6 +65,7 @@ public class ExperimentExecutionApplicationService {
     private final ChaosEngine chaosEngine;
     private final Clock clock;
     private final int maxActiveExecutions;
+    private final TransactionTemplate startTransaction;
 
     public ExperimentExecutionApplicationService(
             ExperimentExecutionRepository executionRepository,
@@ -74,7 +78,8 @@ public class ExperimentExecutionApplicationService {
             ChaosEngine chaosEngine,
             Clock clock,
             @Value("${chaoslab.execution.max-active-executions:3}")
-            int maxActiveExecutions
+            int maxActiveExecutions,
+            PlatformTransactionManager transactionManager
     ) {
         this.executionRepository = Objects.requireNonNull(
                 executionRepository,
@@ -115,15 +120,37 @@ public class ExperimentExecutionApplicationService {
             );
         }
         this.maxActiveExecutions = maxActiveExecutions;
+        this.startTransaction = new TransactionTemplate(Objects.requireNonNull(transactionManager));
+        this.startTransaction.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public StartExperimentExecutionResult start(
             UUID experimentId,
             String rawIdempotencyKey
     ) {
         Objects.requireNonNull(experimentId, "experimentId must not be null");
         String idempotencyKey = normalizeIdempotencyKey(rawIdempotencyKey);
+        StartIntent intent = startTransaction.execute(status -> prepareStart(experimentId, idempotencyKey));
+        if (intent.request() == null) {
+            return new StartExperimentExecutionResult(ExperimentExecutionDetails.from(intent.execution()), false);
+        }
+        // The reservation is committed before calling the engine. Never retry this call here.
+        EngineCreateResult result;
+        try {
+            result = chaosEngine.create(intent.request());
+        } catch (EngineCreateUncertainException exception) {
+            return startTransaction.execute(status -> created(
+                    executionRepository.update(intent.execution().markCreateUncertain())));
+        } catch (RuntimeException exception) {
+            return startTransaction.execute(status -> created(executionRepository.update(
+                    intent.execution().markFailed(engineFailureMessage(exception)))));
+        }
+        // Persistence failures propagate; the already committed PREPARING reservation remains.
+        return startTransaction.execute(status -> finishStart(intent, result));
+    }
+
+    private StartIntent prepareStart(UUID experimentId, String idempotencyKey) {
         globalExecutionMutex.lock();
         targetExecutionMutex.lockForExperiment(experimentId);
 
@@ -131,11 +158,8 @@ public class ExperimentExecutionApplicationService {
                         experimentId,
                         idempotencyKey
                 )
-                .map(execution -> new StartExperimentExecutionResult(
-                        ExperimentExecutionDetails.from(execution),
-                        false
-                ))
-                .orElseGet(() -> startNew(experimentId, idempotencyKey));
+                .map(execution -> new StartIntent(execution, null, null))
+                .orElseGet(() -> prepareNew(experimentId, idempotencyKey));
     }
 
     public ExperimentExecutionDetails findById(
@@ -219,7 +243,7 @@ public class ExperimentExecutionApplicationService {
                 .toList();
     }
 
-    private StartExperimentExecutionResult startNew(
+    private StartIntent prepareNew(
             UUID experimentId,
             String idempotencyKey
     ) {
@@ -254,9 +278,7 @@ public class ExperimentExecutionApplicationService {
                 )
         );
 
-        EngineCreateResult engineResult;
-        try {
-            engineResult = chaosEngine.create(new ReadyExperimentRequest(
+        return new StartIntent(execution, experiment, new ReadyExperimentRequest(
                     execution.getId(),
                     experiment.getId(),
                     target.getId(),
@@ -265,14 +287,14 @@ public class ExperimentExecutionApplicationService {
                     experiment.getParameters(),
                     verifiedTarget
             ));
-        } catch (EngineCreateUncertainException exception) {
-            return created(executionRepository.update(execution.markCreateUncertain()));
-        } catch (RuntimeException exception) {
-            ExperimentExecution failed = executionRepository.update(
-                    execution.markFailed(engineFailureMessage(exception))
-            );
-            return created(failed);
-        }
+    }
+
+    private record StartIntent(ExperimentExecution execution, Experiment experiment, ReadyExperimentRequest request) { }
+
+    private StartExperimentExecutionResult finishStart(StartIntent intent, EngineCreateResult engineResult) {
+        ExperimentExecution execution = intent.execution();
+        Experiment experiment = intent.experiment();
+        Instant createdAt = execution.getCreatedAt();
 
         if (engineResult.status() != EngineStatus.RUNNING) {
             ExperimentExecution failed = executionRepository.update(

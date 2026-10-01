@@ -27,11 +27,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -85,8 +83,7 @@ class ExecutionAdmissionControlApiIntegrationTests {
                 return start(secondExperiment, "mutex-second-" + suffix);
             });
             assertThat(secondRequestStarted.await(5, TimeUnit.SECONDS)).isTrue();
-            assertThatThrownBy(() -> second.get(300, TimeUnit.MILLISECONDS))
-                    .isInstanceOf(TimeoutException.class);
+            assertThat(second.get(5, TimeUnit.SECONDS).getResponse().getStatus()).isEqualTo(409);
 
             chaosEngine.releaseBlockedCreate();
             MvcResult firstResult = first.get(5, TimeUnit.SECONDS);
@@ -149,8 +146,7 @@ class ExecutionAdmissionControlApiIntegrationTests {
                 return start(secondExperiment, "global-second-" + suffix);
             });
             assertThat(secondRequestStarted.await(5, TimeUnit.SECONDS)).isTrue();
-            assertThatThrownBy(() -> second.get(300, TimeUnit.MILLISECONDS))
-                    .isInstanceOf(TimeoutException.class);
+            assertThat(second.get(5, TimeUnit.SECONDS).getResponse().getStatus()).isEqualTo(409);
 
             chaosEngine.releaseBlockedCreate();
             MvcResult firstResult = first.get(5, TimeUnit.SECONDS);

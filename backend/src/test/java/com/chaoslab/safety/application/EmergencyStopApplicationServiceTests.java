@@ -28,7 +28,8 @@ class EmergencyStopApplicationServiceTests {
             List.of(
                     ExperimentExecutionStatus.RUNNING,
                     ExperimentExecutionStatus.ROLLBACK_FAILED,
-                    ExperimentExecutionStatus.CREATE_UNCERTAIN
+                    ExperimentExecutionStatus.CREATE_UNCERTAIN,
+                    ExperimentExecutionStatus.PREPARING
             );
 
     private final ExperimentExecutionRepository executionRepository =
@@ -99,10 +100,13 @@ class EmergencyStopApplicationServiceTests {
         );
     }
 
-    @Test
-    void uncertainCreationRequiresManualInterventionWithoutCallingDestroy() {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(value = ExperimentExecutionStatus.class,
+            names = {"PREPARING", "CREATE_UNCERTAIN"})
+    void uncertainCreationRequiresManualInterventionWithoutCallingDestroy(ExperimentExecutionStatus state) {
         var uncertain = ExperimentExecution.prepare(UUID.randomUUID(), UUID.randomUUID(),
-                1, "uncertain", NOW).markCreateUncertain();
+                1, "uncertain", NOW);
+        if (state == ExperimentExecutionStatus.CREATE_UNCERTAIN) uncertain = uncertain.markCreateUncertain();
         given(executionRepository.findAllByStatuses(RECOVERABLE_STATUSES)).willReturn(List.of(uncertain));
         var result = emergencyStopService.activate();
         assertThat(result.executions()).extracting(execution -> execution.outcome())

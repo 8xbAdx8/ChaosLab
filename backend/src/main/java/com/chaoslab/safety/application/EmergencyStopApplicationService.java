@@ -28,7 +28,8 @@ public class EmergencyStopApplicationService {
             List.of(
                     ExperimentExecutionStatus.RUNNING,
                     ExperimentExecutionStatus.ROLLBACK_FAILED,
-                    ExperimentExecutionStatus.CREATE_UNCERTAIN
+                    ExperimentExecutionStatus.CREATE_UNCERTAIN,
+                    ExperimentExecutionStatus.PREPARING
             );
 
     private final ExperimentExecutionRepository executionRepository;
@@ -69,7 +70,8 @@ public class EmergencyStopApplicationService {
     private EmergencyStopExecutionResult recover(
             ExperimentExecution candidate
     ) {
-        if (candidate.getStatus() == ExperimentExecutionStatus.CREATE_UNCERTAIN) {
+        if (candidate.getStatus() == ExperimentExecutionStatus.CREATE_UNCERTAIN
+                || candidate.getStatus() == ExperimentExecutionStatus.PREPARING) {
             logFailure(candidate, EmergencyStopOutcome.MANUAL_INTERVENTION.name());
             return result(candidate, EmergencyStopOutcome.MANUAL_INTERVENTION);
         }

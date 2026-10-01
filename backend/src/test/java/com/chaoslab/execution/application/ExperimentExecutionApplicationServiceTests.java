@@ -78,7 +78,8 @@ class ExperimentExecutionApplicationServiceTests {
                     ),
                     chaosEngine,
                     CLOCK,
-                    3
+                    3,
+                    mock(org.springframework.transaction.PlatformTransactionManager.class)
             );
 
     @Test
@@ -281,7 +282,7 @@ class ExperimentExecutionApplicationServiceTests {
                                 ignored -> TargetIdentityVerification.verified(identity),
                                 new FakeChaosEngine()
                         ),
-                        chaosEngine, CLOCK, 3
+                        chaosEngine, CLOCK, 3, mock(org.springframework.transaction.PlatformTransactionManager.class)
                 );
 
         verifiedService.start(ready.getId(), "request-verified");
