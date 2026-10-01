@@ -4,6 +4,7 @@ import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
@@ -13,17 +14,24 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+@Timeout(15)
 class OrderControllerTests {
 
     private HttpServer inventory;
     private OrderController controller;
+    private CountDownLatch slowRequestReceived;
+    private CountDownLatch releaseSlowResponse;
 
     @BeforeEach
     void startInventoryStub() throws IOException {
+        slowRequestReceived = new CountDownLatch(1);
+        releaseSlowResponse = new CountDownLatch(1);
         inventory = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         inventory.createContext("/inventory/item-1", exchange -> respond(
                 exchange, 200, "{\"itemId\":\"item-1\",\"availableQuantity\":5}"
@@ -33,28 +41,36 @@ class OrderControllerTests {
         ));
         inventory.createContext("/error", exchange -> respond(exchange, 503, "unavailable"));
         inventory.createContext("/slow", exchange -> {
+            slowRequestReceived.countDown();
             try {
-                Thread.sleep(250);
-                respond(exchange, 200, "slow");
+                // Do not race a short sleep against a short client deadline.
+                // The test releases this handler only after observing the timeout.
+                releaseSlowResponse.await(10, TimeUnit.SECONDS);
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
+            } finally {
+                exchange.close();
             }
         });
         inventory.start();
+        controller = controllerWithReadTimeout(Duration.ofSeconds(5));
+    }
 
+    private OrderController controllerWithReadTimeout(Duration readTimeout) {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(Duration.ofMillis(100));
-        factory.setReadTimeout(Duration.ofMillis(100));
+        factory.setConnectTimeout(Duration.ofSeconds(5));
+        factory.setReadTimeout(readTimeout);
         RestClient client = RestClient.builder()
                 .baseUrl("http://127.0.0.1:" + inventory.getAddress().getPort())
                 .requestFactory(factory)
                 .build();
-        controller = new OrderController(client);
+        return new OrderController(client);
     }
 
     @AfterEach
     void stopInventoryStub() {
-        inventory.stop(0);
+        releaseSlowResponse.countDown();
+        if (inventory != null) inventory.stop(0);
     }
 
     @Test
@@ -75,8 +91,15 @@ class OrderControllerTests {
     }
 
     @Test
-    void inventorySlownessBecomesGatewayTimeout() {
-        assertStatus(HttpStatus.GATEWAY_TIMEOUT, controller::slow);
+    void inventorySlownessBecomesGatewayTimeout() throws InterruptedException {
+        OrderController timeoutController = controllerWithReadTimeout(Duration.ofMillis(200));
+        try {
+            assertStatus(HttpStatus.GATEWAY_TIMEOUT, timeoutController::slow);
+            // A connection failure must not accidentally satisfy the read-timeout test.
+            assertThat(slowRequestReceived.await(5, TimeUnit.SECONDS)).isTrue();
+        } finally {
+            releaseSlowResponse.countDown();
+        }
     }
 
     private void assertStatus(HttpStatus expected, Runnable action) {
