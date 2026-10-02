@@ -152,6 +152,74 @@ class BladeExecutionJournalTests {
         }
     }
 
+    @Test
+    void inventorySurvivesNewReaderAndIsReadOnlyWithBoundedPages() {
+        var missing = intent();
+        var bound = intent();
+        var corrupt = intent();
+        journal.recordIntent(missing);
+        journal.recordIntent(bound);
+        journal.recordIntent(corrupt);
+        journal.recordUid(handle(bound, "abcdef0123456789"), "state-1");
+        // Even a platform-terminal row must not disappear: it is not proof of native recovery.
+        jdbc.update("UPDATE experiment_executions SET status = 'FAILED' WHERE id = ?", bound.executionId().toString());
+        jdbc.update("UPDATE blade_execution_snapshots SET snapshot_format = 'UNKNOWN' WHERE execution_id = ?",
+                corrupt.executionId().toString());
+        var beforeSnapshots = jdbc.queryForList("SELECT * FROM blade_execution_snapshots ORDER BY execution_id");
+        var beforeExecutions = jdbc.queryForList("SELECT * FROM experiment_executions ORDER BY id");
+        var now = bound.recoveryDeadline();
+        var entries = new java.util.ArrayList<BladeRecoveryInventory.Entry>();
+        var reader = new JdbcBladeExecutionJournal(jdbc);
+        String cursor = null;
+        int pages = 0;
+        do {
+            var page = reader.inventory(cursor, 2, now);
+            assertThat(page.entries()).hasSizeLessThanOrEqualTo(2);
+            assertThat(page.checkedAt()).isEqualTo(now);
+            entries.addAll(page.entries());
+            cursor = page.nextCursor();
+            assertThat(++pages).isLessThan(100);
+        } while (cursor != null);
+        assertThat(entries).extracting(BladeRecoveryInventory.Entry::executionId).doesNotHaveDuplicates().isSorted();
+        assertThat(entries).contains(
+                new BladeRecoveryInventory.Entry(missing.executionId().toString(),
+                        BladeRecoveryInventory.Disposition.MANUAL_INTERVENTION,
+                        BladeRecoveryInventory.Reason.MISSING_UID, missing.recoveryDeadline(),
+                        !now.isBefore(missing.recoveryDeadline())),
+                new BladeRecoveryInventory.Entry(bound.executionId().toString(),
+                        BladeRecoveryInventory.Disposition.LIVE_VERIFICATION_REQUIRED,
+                        BladeRecoveryInventory.Reason.UNVERIFIED_LIVE_IDENTITY, bound.recoveryDeadline(), true),
+                new BladeRecoveryInventory.Entry(corrupt.executionId().toString(),
+                        BladeRecoveryInventory.Disposition.MANUAL_INTERVENTION,
+                        BladeRecoveryInventory.Reason.INVALID_SNAPSHOT, null, null));
+        assertThat(jdbc.queryForList("SELECT * FROM blade_execution_snapshots ORDER BY execution_id")).isEqualTo(beforeSnapshots);
+        assertThat(jdbc.queryForList("SELECT * FROM experiment_executions ORDER BY id")).isEqualTo(beforeExecutions);
+    }
+
+    @Test
+    void inventoryRejectsInvalidBoundsAndReturnsEmptyFinalPage() {
+        assertThatThrownBy(() -> journal.inventory(null, 0, Instant.now())).isInstanceOf(DataAccessException.class)
+                .hasRootCauseInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> journal.inventory(null, 101, Instant.now())).isInstanceOf(DataAccessException.class)
+                .hasRootCauseInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> journal.inventory("x".repeat(37), 1, Instant.now())).isInstanceOf(DataAccessException.class)
+                .hasRootCauseInstanceOf(IllegalArgumentException.class);
+        var page = journal.inventory("ffffffff-ffff-ffff-ffff-ffffffffffff", 100, Instant.now());
+        assertThat(page.entries()).isEmpty();
+        assertThat(page.nextCursor()).isNull();
+    }
+
+    @Test
+    void inventoryDoesNotTreatFutureDeadlineAsRecovered() {
+        var saved = intent();
+        journal.recordIntent(saved);
+        journal.recordUid(handle(saved, "abcdef0123456789"), "state-1");
+        var entry = journal.inventory(null, 100, saved.recordedAt()).entries().stream()
+                .filter(item -> item.executionId().equals(saved.executionId().toString())).findFirst().orElseThrow();
+        assertThat(entry.overdue()).isFalse();
+        assertThat(entry.disposition()).isEqualTo(BladeRecoveryInventory.Disposition.LIVE_VERIFICATION_REQUIRED);
+    }
+
     private BladeRecoveryHandle handle(BladeExecutionSnapshot intent, String uid) {
         return new BladeRecoveryHandle(intent.executionId(), intent.executorInstanceId(), intent.target(), uid);
     }

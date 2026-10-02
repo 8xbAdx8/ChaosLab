@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -64,6 +65,37 @@ public class JdbcBladeExecutionJournal {
     public Optional<BladeExecutionSnapshot> findByExecutionId(UUID executionId) {
         return jdbc.query("SELECT * FROM blade_execution_snapshots WHERE execution_id = ?",
                 this::map, executionId.toString()).stream().findFirst();
+    }
+
+    /** Keyset page over ALL journal rows, including platform-terminal executions. No external calls. */
+    public BladeRecoveryInventory inventory(String after, int limit, Instant now) {
+        if (limit < 1 || limit > 100 || (after != null && after.length() > 36)) {
+            throw new IllegalArgumentException("invalid inventory page");
+        }
+        java.util.Objects.requireNonNull(now);
+        var rows = jdbc.query("SELECT * FROM blade_execution_snapshots WHERE execution_id > ? "
+                        + "ORDER BY execution_id LIMIT ?", (row, index) -> {
+                    String id = row.getString("execution_id");
+                    BladeExecutionSnapshot snapshot;
+                    try {
+                        snapshot = map(row, index);
+                    } catch (IllegalArgumentException | IllegalStateException | NullPointerException invalid) {
+                        // Do not expose raw persisted data/errors, or hide subsequent valid rows.
+                        return new BladeRecoveryInventory.Entry(id,
+                                BladeRecoveryInventory.Disposition.MANUAL_INTERVENTION,
+                                BladeRecoveryInventory.Reason.INVALID_SNAPSHOT, null, null);
+                    }
+                    boolean missingUid = snapshot.uid() == null;
+                    return new BladeRecoveryInventory.Entry(id,
+                            missingUid ? BladeRecoveryInventory.Disposition.MANUAL_INTERVENTION
+                                    : BladeRecoveryInventory.Disposition.LIVE_VERIFICATION_REQUIRED,
+                            missingUid ? BladeRecoveryInventory.Reason.MISSING_UID
+                                    : BladeRecoveryInventory.Reason.UNVERIFIED_LIVE_IDENTITY,
+                            snapshot.recoveryDeadline(), !now.isBefore(snapshot.recoveryDeadline()));
+                }, after == null ? "" : after, limit + 1);
+        boolean more = rows.size() > limit;
+        var page = rows.subList(0, Math.min(rows.size(), limit));
+        return new BladeRecoveryInventory(page, more ? page.getLast().executionId() : null, now);
     }
 
     private BladeExecutionSnapshot map(ResultSet row, int index) throws SQLException {

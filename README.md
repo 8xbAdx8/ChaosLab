@@ -18,6 +18,8 @@ ChaosLab 是一个教学型混沌工程平台，目前提供可运行的 Java �
 
 V11 新增独立的 Blade 执行快照存储：保存 Docker CPU 参数、目标身份、执行节点/状态目录标识、工具版本/摘要和恢复截止时间，并支持原生 UID 的一次性绑定。存储组件尚未接入 Fake 或真实引擎；已保存的版本/摘要也不等于已对实际工具做过验证。
 
+可通过 `GET /api/v1/blade/recovery-inventory?limit=50` 分页核对已保存的 Blade 快照，后续页传入返回的 `nextCursor` 作为 `after`。缺 UID 或快照损坏标记人工处置，其余仍需现场身份核验；到期不等于已恢复。该接口只读，不自动调用工具或释放占用。Fake 执行不写入此日志，因此空列表不代表平台没有活动执行。详见[执行器契约](docs/05-chaosblade-executor-contract.md)。
+
 ## 环境要求
 
 - JDK 21 或更高版本；编译目标是 Java 21。
