@@ -179,6 +179,8 @@ FakeChaosEngine / ChaosBladeEngine / KubernetesChaosEngine
 
 ### 阶段 7：ChaosBladeEngine（Linux / Docker）
 
+2026-10-02 快照存储增量：V11 新增 Docker CPU 执行快照与原生 UID 一次性绑定，包含节点/状态目录、工具版本/摘要及恢复截止时间；已验证独立事务读回和并发冲突。当前仅有独立存储组件，未接入实际派发；执行节点核验、结果日志、重启核对和销毁事务仍待完成。
+
 2026-10-01 创建事务增量：已实现平台 `PREPARING` 占用预提交、事务外 create 与独立结果事务；中断/结果写入失败保留占用，重放不重复创建。`PREPARING` 纳入紧急停止人工处置提示。下一开发增量需补齐完整执行快照、恢复句柄及重启核对；此增量不启用真实注入，也没有完成销毁事务拆分。
 
 目标：在安全门之后接入真实 ChaosBlade，只攻击本地 Linux 靶场。

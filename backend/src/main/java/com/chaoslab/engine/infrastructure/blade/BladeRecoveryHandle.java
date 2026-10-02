@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
-/** Must eventually be persisted before acknowledging a real execution as running. */
+/** Persist via the Blade journal before acknowledging a real execution as running. */
 public record BladeRecoveryHandle(
         UUID executionId, String executorInstanceId, VerifiedDockerTarget target, String uid
 ) {

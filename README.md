@@ -8,13 +8,15 @@ ChaosLab 是一个教学型混沌工程平台，目前提供可运行的 Java �
 - 安全检查与 Dry Run；默认拒绝生产环境目标，限制时长和单次作用范围。
 - 带幂等键的启动、状态查询、手动销毁、超时自动恢复与紧急停止。
 - 单目标互斥、全局并发上限，以及记录成功、拒绝和失败的追加式审计日志。
-- MySQL + Flyway V1–V10；测试使用 H2 的 MySQL 兼容模式。
+- MySQL + Flyway V1–V11；测试使用 H2 的 MySQL 兼容模式。
 
 已加入独立的 [Demo Services 靶场](demo-services/README.md)，用于观察订单到库存的调用及慢/错传播；后端与靶场现可导出 [Prometheus 指标](docs/03-observability.md)。可选的本地 Prometheus 可采集 Demo 指标，Grafana 看板展示订单请求量、5xx 错误率和 P95；报告脚本可核验后端执行、审计事件和本机 Demo 容器／指标 job 的绑定，生成实验前、中、后的观察文件。平台内[实验报告](docs/04-experiment-report.md)已持久化生命周期证据，并在本机 Demo 绑定通过、恢复窗口结束且样本充足时，只读采集三阶段请求数、5xx、错误率与 P95；**仍不给出真实故障效果结论**。Docker Target 的 Dry Run 和启动已接入本机 Demo 身份安全门，未通过校验会拒绝启动；当前仍只有 Fake 执行器，尚无真实 ChaosBlade 故障注入、认证授权、前端和 Kubernetes 集成。完整计划见[路线图](docs/00-roadmap.md)，设计说明见[架构文档](docs/02-architecture.md)。当前 API 没有认证，请仅在本机运行，不要向公网开放。
 
 真实执行器的准备工作见[命令白名单与恢复契约](docs/05-chaosblade-executor-contract.md)。已加入 Docker CPU 命令计划、恢复判定、独立受限进程通道及严格响应解析器；验证使用无故障注入的桩进程与合成响应，未接入应用，当前仍使用 Fake 引擎。
 
 执行记录已支持 `CREATE_UNCERTAIN`，创建流程已拆为“提交 `PREPARING` 占用 → 事务外调用引擎 → 独立事务保存结果”。中断或结果保存失败时保留已提交占用，同一幂等键只读回原记录；紧急停止对 `PREPARING/CREATE_UNCERTAIN` 返回 `MANUAL_INTERVENTION`。这不代表真实执行器的恢复句柄、重启扫描或销毁事务已完成；无可靠 UID 时不会猜测销毁，也没有自动清除占用的接口。
+
+V11 新增独立的 Blade 执行快照存储：保存 Docker CPU 参数、目标身份、执行节点/状态目录标识、工具版本/摘要和恢复截止时间，并支持原生 UID 的一次性绑定。存储组件尚未接入 Fake 或真实引擎；已保存的版本/摘要也不等于已对实际工具做过验证。
 
 ## 环境要求
 

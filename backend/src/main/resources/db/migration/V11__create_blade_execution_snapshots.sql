@@ -1,0 +1,22 @@
+CREATE TABLE blade_execution_snapshots (
+    execution_id CHAR(36) PRIMARY KEY,
+    snapshot_format VARCHAR(32) NOT NULL,
+    target_id CHAR(36) NOT NULL,
+    container_id VARCHAR(64) NOT NULL,
+    image_id VARCHAR(71) NOT NULL,
+    metrics_job VARCHAR(100) NOT NULL,
+    executor_instance_id VARCHAR(64) NOT NULL,
+    state_directory_id VARCHAR(64) NOT NULL,
+    tool_version VARCHAR(64) NOT NULL,
+    tool_sha256 VARCHAR(64) NOT NULL,
+    cpu_percent INTEGER NOT NULL,
+    duration_seconds INTEGER NOT NULL,
+    recorded_at TIMESTAMP(6) NOT NULL,
+    recovery_deadline TIMESTAMP(6) NOT NULL,
+    blade_uid VARCHAR(64),
+    CONSTRAINT fk_blade_snapshot_execution FOREIGN KEY (execution_id) REFERENCES experiment_executions(id),
+    CONSTRAINT fk_blade_snapshot_target FOREIGN KEY (target_id) REFERENCES targets(id),
+    CONSTRAINT uk_blade_recovery_identity UNIQUE (executor_instance_id, state_directory_id, blade_uid),
+    CONSTRAINT ck_blade_snapshot_cpu CHECK (cpu_percent >= 10 AND cpu_percent <= 40),
+    CONSTRAINT ck_blade_snapshot_duration CHECK (duration_seconds >= 1 AND duration_seconds <= 30)
+);

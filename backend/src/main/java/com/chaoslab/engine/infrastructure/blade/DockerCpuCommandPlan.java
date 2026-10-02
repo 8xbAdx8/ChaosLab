@@ -72,6 +72,14 @@ public final class DockerCpuCommandPlan {
     }
 
     public List<String> createArguments() {
+        return cpuArguments(target, percent, durationSeconds);
+    }
+
+    public int percent() { return percent; }
+
+    public int durationSeconds() { return durationSeconds; }
+
+    static List<String> cpuArguments(VerifiedDockerTarget target, int percent, int durationSeconds) {
         return List.of(EXECUTABLE, "create", "docker", "cpu", "load",
                 "--container-id", target.containerId(), "--cpu-percent", Integer.toString(percent),
                 "--cpu-count", "1", "--timeout", Integer.toString(durationSeconds));
