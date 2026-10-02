@@ -20,6 +20,8 @@ V11 新增独立的 Blade 执行快照存储：保存 Docker CPU 参数、目标
 
 可通过 `GET /api/v1/blade/recovery-inventory?limit=50` 分页核对已保存的 Blade 快照，后续页传入返回的 `nextCursor` 作为 `after`。缺 UID 或快照损坏标记人工处置，其余仍需现场身份核验；到期不等于已恢复。该接口只读，不自动调用工具或释放占用。Fake 执行不写入此日志，因此空列表不代表平台没有活动执行。详见[执行器契约](docs/05-chaosblade-executor-contract.md)。
 
+恢复前的本地证据探针 `BladeLocalIdentityVerifier` 已加入：读取部署标识文件并计算工具 SHA-256，不执行工具或修改文件。它尚未接入恢复清单、引擎或调度器；匹配后仍需现场目标核验及原生状态确认。项目完成度的口径与缺口见[进度评估](docs/06-progress-assessment.md)。
+
 ## 环境要求
 
 - JDK 21 或更高版本；编译目标是 Java 21。
