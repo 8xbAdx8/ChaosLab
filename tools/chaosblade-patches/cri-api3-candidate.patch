@@ -53,7 +53,7 @@ index 8b5f1f7..2f48940 100644
  
  func (c *Client) GetPidById(ctx context.Context, containerId string) (int32, error, int32) {
 diff --git a/exec/executor_common_linux.go b/exec/executor_common_linux.go
-index 819e256..da92358 100644
+index 819e256..6a4e477 100644
 --- a/exec/executor_common_linux.go
 +++ b/exec/executor_common_linux.go
 @@ -36,7 +36,6 @@ package exec
@@ -75,10 +75,12 @@ index 819e256..da92358 100644
  	chaosOsBin := path.Join(util.GetProgramPath(), spec.BinPath, spec.ChaosOsBin)
  
  	args = fmt.Sprintf("-s -t %d -p -n -- %s %s", pid, chaosOsBin, args)
-@@ -173,6 +176,14 @@ func execForHangAction(uid string, ctx context.Context, expModel *spec.ExpModel,
+@@ -172,7 +175,15 @@ func execForHangAction(uid string, ctx context.Context, expModel *spec.ExpModel,
+ 	log.Debugf(ctx, "run command, %s %s", bin, args)
  
  	command := exec.CommandContext(ctx, bin, argsArray...)
- 	command.SysProcAttr = &syscall.SysProcAttr{}
+-	command.SysProcAttr = &syscall.SysProcAttr{}
++	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 +	handedOff := false
 +	defer func() {
 +		if !handedOff {
@@ -430,7 +432,7 @@ diff --git a/exec/handshake_guard_linux.go b/exec/handshake_guard_linux.go
 new file mode 100644
 --- /dev/null
 +++ b/exec/handshake_guard_linux.go
-@@ -0,0 +1,48 @@
+@@ -0,0 +1,60 @@
 +//go:build linux
 +
 +package exec
@@ -439,6 +441,7 @@ new file mode 100644
 +	"context"
 +	"fmt"
 +	"os/exec"
++	"syscall"
 +	"time"
 +)
 +
@@ -464,17 +467,28 @@ new file mode 100644
 +	}
 +}
 +
-+// Reaps only the direct helper. Descendant containment remains unverified.
++// Reaps the direct helper and kills its dedicated process group when verified.
++// Descendants that changed group/session are outside this limited guarantee.
 +func cleanupFailedHelper(command *exec.Cmd) error {
-+	if command.Process == nil {
++	if command.Process == nil || command.ProcessState != nil {
 +		return nil
++	}
++	var groupErr error
++	if command.SysProcAttr != nil && command.SysProcAttr.Setpgid && command.SysProcAttr.Pgid == 0 {
++		pid := command.Process.Pid
++		pgid, err := syscall.Getpgid(pid)
++		if err != nil || pgid != pid {
++			groupErr = fmt.Errorf("helper process group identity unconfirmed")
++		} else if err := syscall.Kill(-pgid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
++			groupErr = fmt.Errorf("helper process group termination failed: %w", err)
++		}
 +	}
 +	_ = command.Process.Kill()
 +	done := make(chan error, 1)
 +	go func() { done <- command.Wait() }()
 +	select {
 +	case <-done:
-+		return nil // A killed process normally returns an ExitError.
++		return groupErr // Reaping alone does not confirm escaped descendants.
 +	case <-time.After(2 * time.Second):
 +		return fmt.Errorf("helper reap unconfirmed")
 +	}
@@ -483,17 +497,69 @@ diff --git a/exec/handshake_guard_linux_test.go b/exec/handshake_guard_linux_tes
 new file mode 100644
 --- /dev/null
 +++ b/exec/handshake_guard_linux_test.go
-@@ -0,0 +1,41 @@
+@@ -0,0 +1,93 @@
 +//go:build linux
 +
 +package exec
 +
 +import (
 +	"context"
++	"fmt"
++	"os"
 +	"os/exec"
++	"path/filepath"
++	"strconv"
++	"strings"
++	"syscall"
 +	"testing"
 +	"time"
 +)
++
++func TestCleanupDedicatedHelperGroup(t *testing.T) {
++	receipt := filepath.Join(t.TempDir(), "child-pid")
++	c := exec.Command("/bin/sh", "-c", `sleep 30 & echo $! > "$1"; wait`, "fixture", receipt)
++	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
++	if err := c.Start(); err != nil {
++		t.Fatal(err)
++	}
++	defer func() {
++		if c.ProcessState == nil {
++			_ = cleanupFailedHelper(c)
++		}
++	}()
++	deadline := time.Now().Add(2 * time.Second)
++	child := 0
++	for time.Now().Before(deadline) {
++		data, _ := os.ReadFile(receipt)
++		child, _ = strconv.Atoi(strings.TrimSpace(string(data)))
++		if child > 0 {
++			break
++		}
++		time.Sleep(time.Millisecond)
++	}
++	if child <= 0 {
++		t.Fatal("child did not start")
++	}
++	if group, err := syscall.Getpgid(child); err != nil || group != c.Process.Pid {
++		t.Fatal("child not in dedicated group")
++	}
++	if err := cleanupFailedHelper(c); err != nil {
++		t.Fatal(err)
++	}
++	deadline = time.Now().Add(2 * time.Second)
++	for time.Now().Before(deadline) {
++		data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", child))
++		if os.IsNotExist(err) {
++			return
++		}
++		end := strings.LastIndex(string(data), ") ")
++		if end >= 0 && strings.HasPrefix(string(data)[end+2:], "Z ") {
++			return
++		} // stopped, orphan reaping belongs to PID 1
++		time.Sleep(time.Millisecond)
++	}
++	t.Fatal("same-group descendant still running")
++}
 +
 +func TestHandshakeTimeoutAndReap(t *testing.T) {
 +	c := exec.Command("/bin/sleep", "30")
