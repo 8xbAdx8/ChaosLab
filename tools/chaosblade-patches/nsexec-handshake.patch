@@ -1,0 +1,102 @@
+diff --git a/nsexec.c b/nsexec.c
+index 5d0687c..99e678f 100644
+--- a/nsexec.c
++++ b/nsexec.c
+@@ -26,6 +26,7 @@
+ #include <getopt.h>
+ #include <sys/types.h>
+ #include <sys/wait.h>
++#include <signal.h>
+ #ifdef __linux__
+ #include <sys/prctl.h>
+ #endif
+@@ -115,14 +116,32 @@ int main(int argc, char *argv[]) {
+     // pause
+     if(stop) {
+ #ifdef __linux__
+-            char *pe = "pause";
+-            prctl(PR_SET_NAME, pe);
+-#endif
++            sigset_t resume_set, previous_mask;
++            sigemptyset(&resume_set);
++            sigaddset(&resume_set, SIGCONT);
++            if (sigprocmask(SIG_BLOCK, &resume_set, &previous_mask) != 0) {
++                perror("block resume signal");
++                return 1;
++            }
++            if (prctl(PR_SET_NAME, "pause") != 0) {
++                perror("publish pause state");
++                return 1;
++            }
++            // SIGCONT arriving after readiness remains pending until sigwait.
++            int received = 0;
++            int wait_error = sigwait(&resume_set, &received);
++            if (wait_error != 0 || received != SIGCONT) {
++                fprintf(stderr, "resume handshake failed: %d\n", wait_error);
++                return 1;
++            }
++            if (prctl(PR_SET_NAME, "nsexec") != 0 ||
++                sigprocmask(SIG_SETMASK, &previous_mask, NULL) != 0) {
++                perror("complete resume handshake");
++                return 1;
++            }
++#else
+             signal(SIGCONT,sig);
+             pause();
+-#ifdef __linux__
+-            char *nc = "nsexec";
+-            prctl(PR_SET_NAME, nc);
+ #endif
+     }
+ 
+diff --git a/nsexec_handshake_test.go b/nsexec_handshake_test.go
+new file mode 100644
+--- /dev/null
++++ b/nsexec_handshake_test.go
+@@ -0,0 +1,46 @@
++package main
++
++import (
++	"context"
++	"fmt"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"strings"
++	"syscall"
++	"testing"
++	"time"
++)
++
++func TestResumeHandshake(t *testing.T) {
++	binary := filepath.Join(t.TempDir(), "nsexec-test")
++	if out, err := exec.Command("gcc", "-O2", "-o", binary, "nsexec.c").CombinedOutput(); err != nil {
++		t.Fatalf("compile: %v %s", err, out)
++	}
++	for i := 0; i < 50; i++ {
++		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
++		// No namespace flags: only a harmless command in this test container.
++		c := exec.CommandContext(ctx, binary, "-s", "-t", fmt.Sprint(os.Getpid()), "--", "/bin/true")
++		if err := c.Start(); err != nil {
++			cancel()
++			t.Fatal(err)
++		}
++		ready := false
++		for ctx.Err() == nil {
++			comm, _ := os.ReadFile(fmt.Sprintf("/proc/%d/comm", c.Process.Pid))
++			if strings.TrimSpace(string(comm)) == "pause" {
++				ready = true
++				break
++			}
++			time.Sleep(time.Millisecond)
++		}
++		if ready {
++			_ = c.Process.Signal(syscall.SIGCONT)
++		}
++		err := c.Wait()
++		cancel()
++		if !ready || err != nil {
++			t.Fatalf("iteration %d: ready=%v err=%v", i, ready, err)
++		}
++	}
++}

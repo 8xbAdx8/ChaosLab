@@ -44,9 +44,61 @@ CGO_ENABLED=0 go build -p 2 -ldflags '-X github.com/chaosblade-io/chaosblade-exe
 ## 仍然阻止真实注入的问题
 
 - 定时恢复仍是非持久化后台 shell；宿主机重启和计时进程丢失未闭环。
-- 故障进程先启动再加入 cgroup，存在隔离窗口；PID 复用/目标删除竞态未解决。
+- nsexec 进程先启动再加入 cgroup，但 `-s` 会在执行负载前等待 SIGCONT，
+  不能把此顺序直接解释为“负载先于隔离启动”。信号握手竞态、异常退出清理、
+  PID 复用/目标删除仍未完成验证。
 - 异步 create 保留上游路径逻辑，不得使用。
 - 尚未验证真实 create/status/destroy 响应、限时恢复和残留清理。
 - ChaosLab 平台仍使用 Fake 引擎，现有 docker 命令/解析器未迁移至 cri 方言。
 
 不上传虚拟机磁盘、镜像、SSH 密钥、可执行文件或私有环境日志。
+
+### 恢复定时器追加验证
+
+`TestRecoveryTimerExecutesExactCandidate` 在 Linux Go 容器内连续三次通过。
+假程序路径包含空格和引号，旁边放置同名 blade 干扰程序；约 2 秒后仅指定
+假程序收到 `destroy` 和原 UID。测试未调用 Docker、ChaosBlade 或真实负载。
+这只验证正常定时调用，不证明机器重启、定时进程被杀、目标消失后能恢复。
+
+暂停协议的源码依据：[v1.8.1 nsexec.c](https://github.com/chaosblade-io/chaosblade/blob/v1.8.1/nsexec.c)。
+其中先设置进程名，再安装信号处理器和调用 pause；父进程仅凭进程名判断就绪，
+仍可能存在过早发信号的窗口，必须进一步测试，不能据此宣布注入安全。
+
+### nsexec 握手修补增量（尚未部署到虚拟机）
+
+在 CLI 源码应用 api2 后，再应用 `nsexec-handshake.patch`。Linux 路径改为：
+先阻塞 SIGCONT → 发布 pause 进程名 → sigwait 接收信号 → 恢复进程名与信号掩码。
+这样就绪之后、等待之前到达的信号不会丢失。非 Linux 路径保留原行为。
+
+在带 GCC 的 Linux Go 环境、CLI 源码目录运行：
+
+```sh
+go test nsexec_handshake_test.go -count=3 -v
+```
+
+2026-10-03：三轮、每轮 50 次，共 150 次通过。测试只运行 /bin/true，
+不传命名空间切换参数、不操作 cgroup、不执行注入。这是握手回归测试，
+不是资源隔离、目标退出、宿主机重启或真实恢复验收。尚未替换发布包的 bin/nsexec。
+下一步仍需验证异常分支能回收辅助进程，以及 PID/目标身份变化时拒绝执行。
+
+### api3 源码候选：有界握手与直接子进程回收（未部署）
+
+`cri-api3-candidate.patch` 是相对于同一 exec-cri 官方基线的完整替代补丁，
+不能叠加到 `cri-api2.patch` 上。必须配套 CLI 的 `nsexec-handshake.patch`，
+不能搭配未修补的官方 nsexec；当前虚拟机 api2 未替换。
+
+握手共用 2 秒预算，取消原先无限轮询与重复发信号；失败出口尝试杀死并 Wait
+直接辅助进程，回收等待上限 2 秒，未确认则记录日志，不声称已恢复。
+Linux 下 cgroup guard、未就绪超时回收、缺失进程三个测试连续三轮通过。
+运行方式：`go test github.com/chaosblade-io/chaosblade-exec-cri/exec -run 'TestHandshake|TestTargetCgroupGuard' -count=3 -v`。
+
+未完成：后代进程回收、目标 PID 启动时间/容器身份重新核验、负载启动后失败的
+恢复证据、CLI 中断和系统重启恢复。上述测试没有执行故障或命名空间切换。
+
+api3 追加目标进程身份复核：启动辅助进程前记录 /proc/PID/stat 的 starttime
+与 cgroup，发送 SIGCONT 前再次读取比较；拒绝退出目标、僵尸进程、变化的
+启动时间和 cgroup。stat 读取前后也比较启动时间，解析兼容含括号的进程名。
+六项测试（cgroup、握手超时回收、缺失进程、身份变化、目标退出、stat 解析）
+连续三轮通过。身份变化测试使用合成不匹配快照，不是真实强制 PID 复用实验。
+该复核尚非原子操作，不能阻止检查后再退出/复用，也没有再次核对 Docker
+容器 ID 和镜像 ID；后代进程清理仍未完成。虚拟机中的 api2 未替换。

@@ -127,13 +127,58 @@ diff --git a/cli/cmd/recovery_command_test.go b/cli/cmd/recovery_command_test.go
 new file mode 100644
 --- /dev/null
 +++ b/cli/cmd/recovery_command_test.go
-@@ -0,0 +1,32 @@
+@@ -0,0 +1,77 @@
 +package cmd
 +
 +import (
++	"os"
++	"path/filepath"
 +	"reflect"
 +	"testing"
++	"time"
 +)
++
++// Executes only a fake script in a temporary directory. No Docker or Blade
++// command is executed, and no real recovery is claimed by this test.
++func TestRecoveryTimerExecutesExactCandidate(t *testing.T) {
++	dir := filepath.Join(t.TempDir(), "candidate 'quoted' with spaces")
++	if err := os.Mkdir(dir, 0700); err != nil {
++		t.Fatal(err)
++	}
++	output := filepath.Join(dir, "receipt")
++	t.Setenv("CHAOSLAB_TEST_RECEIPT", output)
++	candidate := filepath.Join(dir, "blade-chaoslab-api2")
++	if err := os.WriteFile(candidate, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$CHAOSLAB_TEST_RECEIPT\"\n"), 0700); err != nil {
++		t.Fatal(err)
++	}
++	// A sibling named blade must never be selected by the timer.
++	if err := os.WriteFile(filepath.Join(dir, "blade"), []byte("#!/bin/sh\nprintf wrong > \"$CHAOSLAB_TEST_RECEIPT\"\n"), 0700); err != nil {
++		t.Fatal(err)
++	}
++	c, err := recoveryCommandFor(candidate, 2, "0123456789abcdef")
++	if err != nil {
++		t.Fatal(err)
++	}
++	start := time.Now()
++	if err := c.Run(); err != nil {
++		t.Fatal(err)
++	}
++	deadline := time.Now().Add(6 * time.Second)
++	for time.Now().Before(deadline) {
++		data, err := os.ReadFile(output)
++		if err == nil && len(data) > 0 {
++			if string(data) != "destroy\n0123456789abcdef\n" {
++				t.Fatalf("wrong invocation: %q", data)
++			}
++			if time.Since(start) < 1900*time.Millisecond {
++				t.Fatal("timer fired too early")
++			}
++			return
++		}
++		time.Sleep(25 * time.Millisecond)
++	}
++	t.Fatal("timer failed to execute candidate within deadline")
++}
 +
 +func TestRecoveryUsesCandidateAsArgument(t *testing.T) {
 +	name := "/tmp/candidate with 'quotes'/blade-chaoslab-api2"

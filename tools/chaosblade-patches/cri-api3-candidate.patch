@@ -1,0 +1,671 @@
+diff --git a/exec/container/docker/docker.go b/exec/container/docker/docker.go
+index 8b5f1f7..2f48940 100644
+--- a/exec/container/docker/docker.go
++++ b/exec/container/docker/docker.go
+@@ -30,7 +30,6 @@ import (
+ 	"github.com/docker/docker/api/types/filters"
+ 	"github.com/docker/docker/api/types/image"
+ 	"github.com/docker/docker/api/types/network"
+-	"github.com/docker/docker/api/types/versions"
+ 	"github.com/docker/docker/client"
+ 
+ 	"github.com/chaosblade-io/chaosblade-exec-cri/exec/container"
+@@ -65,9 +64,9 @@ func checkAndCreateClient(endpoint string, cli *client.Client) (*client.Client,
+ 	if cli == nil {
+ 		var err error
+ 		if endpoint == "" {
+-			cli, err = client.NewClientWithOpts(client.FromEnv, client.WithVersion("1.24"))
++			cli, err = client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+ 		} else {
+-			cli, err = client.NewClientWithOpts(client.FromEnv, client.WithVersion("1.24"), client.WithHost(endpoint))
++			cli, err = client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation(), client.WithHost(endpoint))
+ 		}
+ 		if err != nil {
+ 			return nil, err
+@@ -84,22 +83,16 @@ func ping(cli *client.Client) (*client.Client, error) {
+ 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+ 	defer cancel()
+ 	p, err := cli.Ping(ctx)
+-	if err == nil {
+-		return cli, nil
+-	}
+-	if p.APIVersion == "" {
++	if err != nil {
+ 		return nil, err
+ 	}
+-	// if server version is lower than the client version, downgrade
+-	if versions.LessThan(p.APIVersion, cli.ClientVersion()) {
+-		client.WithVersion(p.APIVersion)(cli)
+-		_, err = cli.Ping(ctx)
+-		if err == nil {
+-			return cli, nil
+-		}
+-		return nil, err
++	// A successful unversioned ping is not enough: negotiate the version used
++	// by subsequent container requests, without exceeding the SDK's version.
++	if p.APIVersion == "" {
++		return nil, errors.New("docker ping did not report an API version")
+ 	}
+-	return nil, err
++	cli.NegotiateAPIVersionPing(p)
++	return cli, nil
+ }
+ 
+ func (c *Client) GetPidById(ctx context.Context, containerId string) (int32, error, int32) {
+diff --git a/exec/executor_common_linux.go b/exec/executor_common_linux.go
+index 819e256..da92358 100644
+--- a/exec/executor_common_linux.go
++++ b/exec/executor_common_linux.go
+@@ -36,7 +36,6 @@ package exec
+ 
+ import (
+ 	"context"
+-	"errors"
+ 	"fmt"
+ 	"io"
+ 	"os"
+@@ -162,6 +161,10 @@ func (r *CommonExecutor) DeployChaosBlade(ctx context.Context, containerId strin
+ }
+ 
+ func execForHangAction(uid string, ctx context.Context, expModel *spec.ExpModel, pid int32, args string) *spec.Response {
++	targetIdentity, err := readTargetIdentity(pid)
++	if err != nil {
++		return spec.ReturnFail(spec.OsCmdExecFailed, fmt.Sprintf("target identity unavailable: %s", err))
++	}
+ 	chaosOsBin := path.Join(util.GetProgramPath(), spec.BinPath, spec.ChaosOsBin)
+ 
+ 	args = fmt.Sprintf("-s -t %d -p -n -- %s %s", pid, chaosOsBin, args)
+@@ -173,6 +176,14 @@ func execForHangAction(uid string, ctx context.Context, expModel *spec.ExpModel,
+ 
+ 	command := exec.CommandContext(ctx, bin, argsArray...)
+ 	command.SysProcAttr = &syscall.SysProcAttr{}
++	handedOff := false
++	defer func() {
++		if !handedOff {
++			if err := cleanupFailedHelper(command); err != nil {
++				log.Errorf(ctx, "helper cleanup unconfirmed: %s", err)
++			}
++		}
++	}()
+ 
+ 	cgroupRoot := os.Getenv("CGROUP_ROOT")
+ 	if cgroupRoot == "" {
+@@ -197,57 +208,12 @@ func execForHangAction(uid string, ctx context.Context, expModel *spec.ExpModel,
+ 
+ 		log.Debugf(ctx, "cgroup2 group path for pid %d: %s", pid, g)
+ 
+-		if g == "" || g == "/" {
+-			sprintf := fmt.Sprintf("invalid cgroup path: %s, pid: %d", g, pid)
+-			return spec.ReturnFail(spec.OsCmdExecFailed, sprintf)
++		if err := validateExistingTargetCgroup(cgroupRoot, g); err != nil {
++			return spec.ReturnFail(spec.OsCmdExecFailed, err.Error())
+ 		}
+-
+-		cgPath := path.Join(cgroupRoot, g)
+-		log.Debugf(ctx, "full cgroup path: %s", cgPath)
+-
+-		if _, err := os.Stat(cgPath); os.IsNotExist(err) {
+-			log.Warnf(ctx, "cgroup path does not exist: %s, trying to create", cgPath)
+-			if err := os.MkdirAll(cgPath, 0o755); err != nil {
+-				sprintf := fmt.Sprintf("failed to create cgroup path %s: %s", cgPath, err.Error())
+-				return spec.ReturnFail(spec.OsCmdExecFailed, sprintf)
+-			}
+-		}
+-
+-		// 注意：LoadManager 和 NewManager 的第二个参数应该是相对路径，不包含 cgroupRoot 前缀
+ 		cg, err := cgroupsv2.LoadManager(cgroupRoot, g)
+ 		if err != nil {
+-			if errors.Is(err, cgroups.ErrCgroupDeleted) {
+-				log.Warnf(ctx, "Cgroup was deleted, trying to recreate with relative path: %s", g)
+-				// 当cgroup被删除时，确保路径存在
+-				if _, err := os.Stat(cgPath); os.IsNotExist(err) {
+-					log.Warnf(ctx, "Cgroup path does not exist after deletion: %s, trying to create", cgPath)
+-					if err := os.MkdirAll(cgPath, 0o755); err != nil {
+-						log.Warnf(ctx, "Failed to recreate cgroup path %s: %s", cgPath, err.Error())
+-					}
+-				}
+-			} else {
+-				log.Debugf(ctx, "LoadManager failed, trying NewManager with relative path: %s", g)
+-			}
+-
+-			// 创建一个空的 Resources 对象，用于创建新的 cgroup 管理器
+-			resources := &cgroupsv2.Resources{}
+-			if cg, err = cgroupsv2.NewManager(cgroupRoot, g, resources); err != nil {
+-				// 如果 NewManager 也失败，尝试使用根路径作为回退
+-				log.Warnf(ctx, "NewManager failed with path %s, trying root path as fallback", g)
+-				if cg, err = cgroupsv2.NewManager(cgroupRoot, "/", resources); err != nil {
+-					sprintf := fmt.Sprintf("cgroups V2 new manager failed, cgroupRoot: %s, relativePath: %s, error: %s", cgroupRoot, g, err.Error())
+-					return spec.ReturnFail(spec.OsCmdExecFailed, sprintf)
+-				}
+-				log.Infof(ctx, "Successfully created cgroup manager with root path as fallback")
+-			} else {
+-				if errors.Is(err, cgroups.ErrCgroupDeleted) {
+-					log.Infof(ctx, "Successfully recreated cgroup manager after deletion with relative path: %s", g)
+-				} else {
+-					log.Infof(ctx, "Successfully created cgroup manager with relative path: %s", g)
+-				}
+-			}
+-		} else {
+-			log.Infof(ctx, "Successfully loaded existing cgroup manager with relative path: %s", g)
++			return spec.ReturnFail(spec.OsCmdExecFailed, fmt.Sprintf("target cgroup load failed: %s", err))
+ 		}
+ 		if err := command.Start(); err != nil {
+ 			sprintf := fmt.Sprintf("command start failed, %s", err.Error())
+@@ -280,70 +246,19 @@ func execForHangAction(uid string, ctx context.Context, expModel *spec.ExpModel,
+ 		}
+ 	}
+ 
+-	signal := make(chan bool, 1)
+-	errorSignal := make(chan bool, 1)
+-	go func() {
+-		for {
+-			if comm, err := getProcessComm(command.Process.Pid); err != nil {
+-				log.Errorf(ctx, "get process comm failed, %s", err.Error())
+-				errorSignal <- true
+-				break
+-			} else {
+-				if cmdline, err := getProcessCmdline(command.Process.Pid); err != nil {
+-					log.Errorf(ctx, "get process cmdline failed, %s", err.Error())
+-					errorSignal <- true
+-					break
+-				} else {
+-					if cmdline == "" {
+-						log.Errorf(ctx, "unknown err, process exit.")
+-						errorSignal <- true
+-						break
+-					}
+-				}
+-
+-				log.Infof(ctx, "wait nsexec process pasue, current comm: %s, pid: %d", comm, command.Process.Pid)
+-				if comm == "pause\n" {
+-					signal <- true
+-					break
+-				}
+-			}
+-			time.Sleep(time.Millisecond)
+-		}
+-	}()
+-
+-	select {
+-	case <-signal:
+-		// Process successfully paused, continue with resume logic
+-		for {
+-			if err := command.Process.Signal(syscall.SIGCONT); err != nil {
+-				sprintf := fmt.Sprintf("send signal failed, %s", err.Error())
+-				return spec.ReturnFail(spec.OsCmdExecFailed, sprintf)
+-			}
+-			time.Sleep(time.Millisecond)
+-
+-			if comm, err := getProcessComm(command.Process.Pid); err != nil {
+-				log.Errorf(ctx, "get process comm failed, %s", err.Error())
+-				return spec.ReturnFail(spec.OsCmdExecFailed, fmt.Sprintf("get process comm failed during resume, %s", err.Error()))
+-			} else {
+-				if cmdline, err := getProcessCmdline(command.Process.Pid); err != nil {
+-					log.Errorf(ctx, "get process cmdline failed, %s", err.Error())
+-					return spec.ReturnFail(spec.OsCmdExecFailed, fmt.Sprintf("get process cmdline failed during resume, %s", err.Error()))
+-				} else {
+-					if cmdline == "" {
+-						log.Errorf(ctx, "unknown err, process exit during resume.")
+-						return spec.ReturnFail(spec.OsCmdExecFailed, "nsexec process exited unexpectedly during resume")
+-					}
+-				}
+-
+-				log.Infof(ctx, "wait nsexec process resume, current comm: %s, pid: %d", comm, command.Process.Pid)
+-				if comm == "nsexec\n" {
+-					break
+-				}
+-			}
+-		}
+-	case <-errorSignal:
+-		// Process failed during pause phase
+-		return spec.ReturnFail(spec.OsCmdExecFailed, "nsexec process exited unexpectedly during pause")
++	handshakeCtx, cancelHandshake := context.WithTimeout(ctx, 2*time.Second)
++	defer cancelHandshake()
++	if err := waitForHelperState(handshakeCtx, command.Process.Pid, "pause\n"); err != nil {
++		return spec.ReturnFail(spec.OsCmdExecFailed, fmt.Sprintf("helper pause failed: %s", err))
++	}
++	if err := recheckTargetIdentity(pid, targetIdentity); err != nil {
++		return spec.ReturnFail(spec.OsCmdExecFailed, fmt.Sprintf("target identity recheck failed: %s", err))
++	}
++	if err := command.Process.Signal(syscall.SIGCONT); err != nil {
++		return spec.ReturnFail(spec.OsCmdExecFailed, fmt.Sprintf("helper resume failed: %s", err))
++	}
++	if err := waitForHelperState(handshakeCtx, command.Process.Pid, "nsexec\n"); err != nil {
++		return spec.ReturnFail(spec.OsCmdExecFailed, fmt.Sprintf("helper resume unconfirmed: %s", err))
+ 	}
+ 
+ 	if expModel.Target == "mem" && expModel.ActionFlags["avoid-being-killed"] == "true" {
+@@ -355,6 +270,7 @@ func execForHangAction(uid string, ctx context.Context, expModel *spec.ExpModel,
+ 		}
+ 	}
+ 
++	handedOff = true
+ 	return spec.ReturnSuccess(command.Process.Pid)
+ }
+ 
+diff --git a/cmd/chaoslab-api-probe/main.go b/cmd/chaoslab-api-probe/main.go
+new file mode 100644
+--- /dev/null
++++ b/cmd/chaoslab-api-probe/main.go
+@@ -0,0 +1,27 @@
++// A read-only probe. It never creates, starts, stops or modifies containers.
++package main
++
++import (
++	"context"
++	"fmt"
++	"os"
++
++	docker "github.com/chaosblade-io/chaosblade-exec-cri/exec/container/docker"
++	"github.com/chaosblade-io/chaosblade-spec-go/spec"
++)
++
++func main() {
++	c, err := docker.NewClient("unix:///var/run/docker.sock")
++	if err != nil {
++		fmt.Fprintln(os.Stderr, "Docker handshake failed:", err)
++		os.Exit(1)
++	}
++	// An impossible-to-use test identity is queried only via ContainerList.
++	// Both a valid response with no match and an actual match prove the GET worked.
++	_, err, code := c.GetContainerById(context.Background(), "0000000000000000000000000000000000000000000000000000000000000000")
++	if code != spec.OK.Code && code != spec.ParameterInvalidDockContainerId.Code {
++		fmt.Fprintln(os.Stderr, "Docker read-only list failed:", err)
++		os.Exit(1)
++	}
++	fmt.Println("PASS: patched Docker handshake and read-only container list; no injection performed")
++}
+diff --git a/exec/cgroup_guard_linux.go b/exec/cgroup_guard_linux.go
+new file mode 100644
+--- /dev/null
++++ b/exec/cgroup_guard_linux.go
+@@ -0,0 +1,33 @@
++//go:build linux
++
++package exec
++
++import (
++	"fmt"
++	"os"
++	"path/filepath"
++	"strings"
++)
++
++// Existing directories only. PID reuse and concurrent removal need additional
++// execution-time identity checks; this helper is not a full containment proof.
++func validateExistingTargetCgroup(root, group string) error {
++	root = filepath.Clean(root)
++	if !filepath.IsAbs(root) || root == "/" || !strings.HasPrefix(group, "/") || group == "/" || filepath.Clean(group) != group {
++		return fmt.Errorf("invalid target cgroup path")
++	}
++	target := filepath.Join(root, strings.TrimPrefix(group, "/"))
++	for current := target; ; current = filepath.Dir(current) {
++		info, err := os.Lstat(current)
++		if err != nil {
++			return fmt.Errorf("target cgroup unavailable: %w", err)
++		}
++		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
++			return fmt.Errorf("unsafe cgroup directory")
++		}
++		if current == "/" {
++			break
++		}
++	}
++	return nil
++}
+diff --git a/exec/cgroup_guard_linux_test.go b/exec/cgroup_guard_linux_test.go
+new file mode 100644
+--- /dev/null
++++ b/exec/cgroup_guard_linux_test.go
+@@ -0,0 +1,33 @@
++//go:build linux
++
++package exec
++
++import (
++	"os"
++	"path/filepath"
++	"testing"
++)
++
++func TestTargetCgroupGuard(t *testing.T) {
++	root := t.TempDir()
++	if err := os.Mkdir(filepath.Join(root, "target"), 0700); err != nil {
++		t.Fatal(err)
++	}
++	if err := validateExistingTargetCgroup(root, "/target"); err != nil {
++		t.Fatal(err)
++	}
++	for _, group := range []string{"", "/", "/../", "/target/..", "target", "/missing", "/target//child"} {
++		if err := validateExistingTargetCgroup(root, group); err == nil {
++			t.Fatalf("accepted %q", group)
++		}
++	}
++	if err := os.Symlink(filepath.Join(root, "target"), filepath.Join(root, "link")); err != nil {
++		t.Fatal(err)
++	}
++	if err := validateExistingTargetCgroup(root, "/link"); err == nil {
++		t.Fatal("accepted symlink")
++	}
++	if _, err := os.Stat(filepath.Join(root, "missing")); !os.IsNotExist(err) {
++		t.Fatal("created missing group")
++	}
++}
+diff --git a/exec/container/docker/api_negotiation_test.go b/exec/container/docker/api_negotiation_test.go
+new file mode 100644
+--- /dev/null
++++ b/exec/container/docker/api_negotiation_test.go
+@@ -0,0 +1,70 @@
++package docker
++
++import (
++	"context"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"testing"
++
++	"github.com/docker/docker/api/types/container"
++)
++
++func TestNegotiatedContainerList(t *testing.T) {
++	for _, version := range []string{"1.40", "1.51", "1.56"} {
++		t.Run(version, func(t *testing.T) {
++			t.Setenv("DOCKER_API_VERSION", "")
++			var listPath string
++			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++				if r.URL.Path == "/_ping" {
++					w.Header().Set("API-Version", version)
++					w.WriteHeader(http.StatusOK)
++					return
++				}
++				listPath = r.URL.Path
++				w.Header().Set("Content-Type", "application/json")
++				_, _ = w.Write([]byte("[]"))
++			}))
++			defer srv.Close()
++			c, err := checkAndCreateClient(srv.URL, nil)
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer c.Close()
++			_, err = c.ContainerList(context.Background(), container.ListOptions{})
++			if err != nil {
++				t.Fatal(err)
++			}
++			want := version
++			if version == "1.56" {
++				want = "1.51"
++			}
++			if listPath != "/v"+want+"/containers/json" {
++				t.Fatalf("unexpected negotiated request: %s", listPath)
++			}
++		})
++	}
++}
++
++func TestHandshakeFailureDoesNotReturnClient(t *testing.T) {
++	for _, mode := range []string{"http-error", "missing-version"} {
++		t.Run(mode, func(t *testing.T) {
++			t.Setenv("DOCKER_API_VERSION", "")
++			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++				if !strings.HasSuffix(r.URL.Path, "/_ping") {
++					t.Errorf("unexpected request: %s", r.URL.Path)
++				}
++				if mode == "http-error" {
++					http.Error(w, "unavailable", http.StatusServiceUnavailable)
++					return
++				}
++				w.WriteHeader(http.StatusOK)
++			}))
++			defer srv.Close()
++			c, err := checkAndCreateClient(srv.URL, nil)
++			if err == nil || c != nil {
++				t.Fatalf("failed handshake returned client: %v, %v", c, err)
++			}
++		})
++	}
++}
+diff --git a/exec/handshake_guard_linux.go b/exec/handshake_guard_linux.go
+new file mode 100644
+--- /dev/null
++++ b/exec/handshake_guard_linux.go
+@@ -0,0 +1,48 @@
++//go:build linux
++
++package exec
++
++import (
++	"context"
++	"fmt"
++	"os/exec"
++	"time"
++)
++
++func waitForHelperState(ctx context.Context, pid int, want string) error {
++	ticker := time.NewTicker(time.Millisecond)
++	defer ticker.Stop()
++	for {
++		if err := ctx.Err(); err != nil {
++			return err
++		}
++		comm, err := getProcessComm(pid)
++		if err != nil {
++			return err
++		}
++		if comm == want {
++			return nil
++		}
++		select {
++		case <-ctx.Done():
++			return ctx.Err()
++		case <-ticker.C:
++		}
++	}
++}
++
++// Reaps only the direct helper. Descendant containment remains unverified.
++func cleanupFailedHelper(command *exec.Cmd) error {
++	if command.Process == nil {
++		return nil
++	}
++	_ = command.Process.Kill()
++	done := make(chan error, 1)
++	go func() { done <- command.Wait() }()
++	select {
++	case <-done:
++		return nil // A killed process normally returns an ExitError.
++	case <-time.After(2 * time.Second):
++		return fmt.Errorf("helper reap unconfirmed")
++	}
++}
+diff --git a/exec/handshake_guard_linux_test.go b/exec/handshake_guard_linux_test.go
+new file mode 100644
+--- /dev/null
++++ b/exec/handshake_guard_linux_test.go
+@@ -0,0 +1,41 @@
++//go:build linux
++
++package exec
++
++import (
++	"context"
++	"os/exec"
++	"testing"
++	"time"
++)
++
++func TestHandshakeTimeoutAndReap(t *testing.T) {
++	c := exec.Command("/bin/sleep", "30")
++	if err := c.Start(); err != nil {
++		t.Fatal(err)
++	}
++	defer func() {
++		if c.ProcessState == nil {
++			_ = cleanupFailedHelper(c)
++		}
++	}()
++	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
++	defer cancel()
++	if err := waitForHelperState(ctx, c.Process.Pid, "pause\n"); err == nil {
++		t.Fatal("accepted unready helper")
++	}
++	if err := cleanupFailedHelper(c); err != nil {
++		t.Fatal(err)
++	}
++	if c.ProcessState == nil {
++		t.Fatal("helper not reaped")
++	}
++}
++
++func TestHandshakeMissingProcess(t *testing.T) {
++	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
++	defer cancel()
++	if err := waitForHelperState(ctx, -1, "pause\n"); err == nil {
++		t.Fatal("accepted missing process")
++	}
++}
+diff --git a/exec/target_identity_linux.go b/exec/target_identity_linux.go
+new file mode 100644
+--- /dev/null
++++ b/exec/target_identity_linux.go
+@@ -0,0 +1,67 @@
++//go:build linux
++
++package exec
++
++import (
++	"fmt"
++	"os"
++	"strconv"
++	"strings"
++)
++
++type targetProcessIdentity struct{ startTime, cgroup string }
++
++func processStartTime(stat string) (string, error) {
++	end := strings.LastIndex(stat, ") ")
++	if end < 0 {
++		return "", fmt.Errorf("invalid process stat")
++	}
++	fields := strings.Fields(stat[end+2:])
++	// fields starts at field 3 (state); starttime is field 22.
++	if len(fields) < 20 || fields[0] == "Z" || fields[0] == "X" {
++		return "", fmt.Errorf("target not live")
++	}
++	if _, err := strconv.ParseUint(fields[19], 10, 64); err != nil {
++		return "", fmt.Errorf("invalid start time")
++	}
++	return fields[19], nil
++}
++
++func readTargetIdentity(pid int32) (targetProcessIdentity, error) {
++	if pid <= 0 {
++		return targetProcessIdentity{}, fmt.Errorf("invalid target pid")
++	}
++	base := fmt.Sprintf("/proc/%d/", pid)
++	before, err := os.ReadFile(base + "stat")
++	if err != nil {
++		return targetProcessIdentity{}, err
++	}
++	start, err := processStartTime(string(before))
++	if err != nil {
++		return targetProcessIdentity{}, err
++	}
++	group, err := os.ReadFile(base + "cgroup")
++	if err != nil || len(group) == 0 {
++		return targetProcessIdentity{}, fmt.Errorf("target cgroup unavailable")
++	}
++	after, err := os.ReadFile(base + "stat")
++	if err != nil {
++		return targetProcessIdentity{}, err
++	}
++	end, err := processStartTime(string(after))
++	if err != nil || start != end {
++		return targetProcessIdentity{}, fmt.Errorf("target changed during identity read")
++	}
++	return targetProcessIdentity{start, string(group)}, nil
++}
++
++func recheckTargetIdentity(pid int32, expected targetProcessIdentity) error {
++	actual, err := readTargetIdentity(pid)
++	if err != nil {
++		return err
++	}
++	if expected.startTime == "" || actual != expected {
++		return fmt.Errorf("target identity changed")
++	}
++	return nil
++}
+diff --git a/exec/target_identity_linux_test.go b/exec/target_identity_linux_test.go
+new file mode 100644
+--- /dev/null
++++ b/exec/target_identity_linux_test.go
+@@ -0,0 +1,67 @@
++//go:build linux
++
++package exec
++
++import (
++	"os"
++	"os/exec"
++	"strings"
++	"testing"
++)
++
++func TestTargetIdentityRecheck(t *testing.T) {
++	pid := int32(os.Getpid())
++	identity, err := readTargetIdentity(pid)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if err := recheckTargetIdentity(pid, identity); err != nil {
++		t.Fatal(err)
++	}
++	changed := identity
++	changed.startTime = "0"
++	if err := recheckTargetIdentity(pid, changed); err == nil {
++		t.Fatal("accepted changed start time")
++	}
++	changed = identity
++	changed.cgroup = "different"
++	if err := recheckTargetIdentity(pid, changed); err == nil {
++		t.Fatal("accepted changed cgroup")
++	}
++}
++
++func TestTargetExitRejected(t *testing.T) {
++	c := exec.Command("/bin/sleep", "30")
++	if err := c.Start(); err != nil {
++		t.Fatal(err)
++	}
++	defer func() {
++		if c.ProcessState == nil {
++			_ = c.Process.Kill()
++			_ = c.Wait()
++		}
++	}()
++	identity, err := readTargetIdentity(int32(c.Process.Pid))
++	if err != nil {
++		t.Fatal(err)
++	}
++	_ = c.Process.Kill()
++	_ = c.Wait()
++	if err := recheckTargetIdentity(int32(c.Process.Pid), identity); err == nil {
++		t.Fatal("accepted exited target")
++	}
++}
++
++func TestProcessStatParsing(t *testing.T) {
++	fields := append([]string{"S"}, strings.Fields(strings.Repeat("0 ", 18))...)
++	fields = append(fields, "12345")
++	value, err := processStartTime("123 (name with ) spaces) " + strings.Join(fields, " "))
++	if err != nil || value != "12345" {
++		t.Fatalf("%q %v", value, err)
++	}
++	for _, text := range []string{"", "broken", "1 (a) Z", "1 (a) S invalid"} {
++		if _, err := processStartTime(text); err == nil {
++			t.Fatal("accepted invalid stat")
++		}
++	}
++}
