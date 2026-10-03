@@ -1,0 +1,162 @@
+diff --git a/cli/cmd/create.go b/cli/cmd/create.go
+index bb9fc0d..520b9fd 100644
+--- a/cli/cmd/create.go
++++ b/cli/cmd/create.go
+@@ -20,7 +20,6 @@ import (
+ 	"context"
+ 	"encoding/json"
+ 	"fmt"
+-	"os/exec"
+ 	"path"
+ 	"strconv"
+ 	"time"
+@@ -251,7 +250,6 @@ func endpointCallBack(ctx context.Context, endpoint, uid string, response *spec.
+ 
+ func (cc *CreateCommand) actionPostRunEFunc(actionCommand *actionCommand) func(cmd *cobra.Command, args []string) error {
+ 	return func(cmd *cobra.Command, args []string) error {
+-		const bladeBin = "blade"
+ 		if actionCommand.expModel != nil {
+ 			tt := actionCommand.expModel.ActionFlags["timeout"]
+ 			async := actionCommand.expModel.ActionFlags[AsyncFlag] == "true"
+@@ -271,10 +269,10 @@ func (cc *CreateCommand) actionPostRunEFunc(actionCommand *actionCommand) func(c
+ 				if actionCommand.expModel.Scope == "container" || actionCommand.expModel.Scope == "pod" {
+ 					timeout = timeout + 60
+ 				}
+-				script := path.Join(util.GetProgramPath(), bladeBin)
+-				args := fmt.Sprintf("nohup /bin/sh -c 'sleep %d; %s destroy %s' > /dev/null 2>&1 &",
+-					timeout, script, actionCommand.uid)
+-				cmd := exec.CommandContext(context.TODO(), "/bin/sh", "-c", args)
++				cmd, err := recoveryCommand(timeout, actionCommand.uid)
++				if err != nil {
++					return err
++				}
+ 				return cmd.Run()
+ 			}
+ 		}
+diff --git a/go.mod b/go.mod
+index f034455..ff8e899 100644
+--- a/go.mod
++++ b/go.mod
+@@ -14,6 +14,9 @@
+ 
+ module github.com/chaosblade-io/chaosblade
+ 
++// ChaosLab candidate: local Docker API negotiation patch, not an upstream release.
++replace github.com/chaosblade-io/chaosblade-exec-cri => ../chaosblade-cri-patched
++
+ go 1.25
+ 
+ require (
+@@ -155,4 +158,4 @@ require (
+         sigs.k8s.io/randfill v1.0.0 // indirect
+         sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
+         sigs.k8s.io/yaml v1.6.0 // indirect
+-)
+\ No newline at end of file
++)
+diff --git a/version/version_info.go b/version/version_info.go
+index b5c10e6..8c41236 100644
+--- a/version/version_info.go
++++ b/version/version_info.go
+@@ -6,19 +6,19 @@ import "time"
+ 
+ var (
+ 	// Ver 版本号
+-	Ver = "1.7.5"
++	Ver = "1.8.1"
+ 
+ 	// GitTag Git标签
+-	GitTag = "v1.7.5"
++	GitTag = "dev"
+ 
+ 	// GitCommit Git提交哈希
+-	GitCommit = "e2cb4f8"
++	GitCommit = "e8e0d3adc90c414d9dc9a04a13f53ebadfbda8dc+chaoslab-api2"
+ 
+ 	// GitBranch Git分支
+-	GitBranch = "1.8.0-dev"
++	GitBranch = "chaoslab-isolated-candidate"
+ 
+ 	// BuildTime 构建时间
+-	BuildTime = "2025-10-20 01:58:16 UTC"
++	BuildTime = "unrecorded; see local build evidence 2026-10-03 Asia/Shanghai"
+ 
+ 	// BuildTimeParsed 解析后的构建时间
+ 	BuildTimeParsed, _ = time.Parse("2006-01-02 15:04:05 UTC", BuildTime)
+diff --git a/cli/cmd/recovery_command.go b/cli/cmd/recovery_command.go
+new file mode 100644
+--- /dev/null
++++ b/cli/cmd/recovery_command.go
+@@ -0,0 +1,35 @@
++package cmd
++
++import (
++	"fmt"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"regexp"
++	"strconv"
++)
++
++var recoveryUID = regexp.MustCompile(`^[0-9a-f]{16,64}$`)
++
++func recoveryCommand(seconds uint64, uid string) (*exec.Cmd, error) {
++	executable, err := os.Executable()
++	if err != nil {
++		return nil, err
++	}
++	executable, err = filepath.EvalSymlinks(executable)
++	if err != nil {
++		return nil, err
++	}
++	return recoveryCommandFor(executable, seconds, uid)
++}
++
++func recoveryCommandFor(executable string, seconds uint64, uid string) (*exec.Cmd, error) {
++	if !filepath.IsAbs(executable) || seconds == 0 || !recoveryUID.MatchString(uid) {
++		return nil, fmt.Errorf("invalid recovery identity or delay")
++	}
++	// All dynamic values are positional arguments, never shell source. Preserve
++	// the upstream detached timer for now; this is not a durable recovery service.
++	return exec.Command("/bin/sh", "-c",
++		`nohup /bin/sh -c 'sleep "$1"; exec "$2" destroy "$3"' chaoslab-recovery "$1" "$2" "$3" >/dev/null 2>&1 &`,
++		"chaoslab-launch", strconv.FormatUint(seconds, 10), executable, uid), nil
++}
+diff --git a/cli/cmd/recovery_command_test.go b/cli/cmd/recovery_command_test.go
+new file mode 100644
+--- /dev/null
++++ b/cli/cmd/recovery_command_test.go
+@@ -0,0 +1,32 @@
++package cmd
++
++import (
++	"reflect"
++	"testing"
++)
++
++func TestRecoveryUsesCandidateAsArgument(t *testing.T) {
++	name := "/tmp/candidate with 'quotes'/blade-chaoslab-api2"
++	uid := "0123456789abcdef"
++	c, err := recoveryCommandFor(name, 10, uid)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if !reflect.DeepEqual(c.Args[3:], []string{"chaoslab-launch", "10", name, uid}) {
++		t.Fatalf("unexpected arguments: %q", c.Args)
++	}
++}
++
++func TestRecoveryRejectsInvalidIdentity(t *testing.T) {
++	for _, uid := range []string{"", "abc;id", "../target", "0123456789ABCDEF"} {
++		if _, err := recoveryCommandFor("/tmp/blade", 10, uid); err == nil {
++			t.Fatalf("accepted %q", uid)
++		}
++	}
++	if _, err := recoveryCommandFor("blade", 10, "0123456789abcdef"); err == nil {
++		t.Fatal("accepted relative executable")
++	}
++	if _, err := recoveryCommandFor("/tmp/blade", 0, "0123456789abcdef"); err == nil {
++		t.Fatal("accepted zero delay")
++	}
++}

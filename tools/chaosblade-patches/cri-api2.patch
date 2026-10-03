@@ -1,0 +1,310 @@
+diff --git a/exec/container/docker/docker.go b/exec/container/docker/docker.go
+index 8b5f1f7..2f48940 100644
+--- a/exec/container/docker/docker.go
++++ b/exec/container/docker/docker.go
+@@ -30,7 +30,6 @@ import (
+ 	"github.com/docker/docker/api/types/filters"
+ 	"github.com/docker/docker/api/types/image"
+ 	"github.com/docker/docker/api/types/network"
+-	"github.com/docker/docker/api/types/versions"
+ 	"github.com/docker/docker/client"
+ 
+ 	"github.com/chaosblade-io/chaosblade-exec-cri/exec/container"
+@@ -65,9 +64,9 @@ func checkAndCreateClient(endpoint string, cli *client.Client) (*client.Client,
+ 	if cli == nil {
+ 		var err error
+ 		if endpoint == "" {
+-			cli, err = client.NewClientWithOpts(client.FromEnv, client.WithVersion("1.24"))
++			cli, err = client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+ 		} else {
+-			cli, err = client.NewClientWithOpts(client.FromEnv, client.WithVersion("1.24"), client.WithHost(endpoint))
++			cli, err = client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation(), client.WithHost(endpoint))
+ 		}
+ 		if err != nil {
+ 			return nil, err
+@@ -84,22 +83,16 @@ func ping(cli *client.Client) (*client.Client, error) {
+ 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+ 	defer cancel()
+ 	p, err := cli.Ping(ctx)
+-	if err == nil {
+-		return cli, nil
+-	}
+-	if p.APIVersion == "" {
++	if err != nil {
+ 		return nil, err
+ 	}
+-	// if server version is lower than the client version, downgrade
+-	if versions.LessThan(p.APIVersion, cli.ClientVersion()) {
+-		client.WithVersion(p.APIVersion)(cli)
+-		_, err = cli.Ping(ctx)
+-		if err == nil {
+-			return cli, nil
+-		}
+-		return nil, err
++	// A successful unversioned ping is not enough: negotiate the version used
++	// by subsequent container requests, without exceeding the SDK's version.
++	if p.APIVersion == "" {
++		return nil, errors.New("docker ping did not report an API version")
+ 	}
+-	return nil, err
++	cli.NegotiateAPIVersionPing(p)
++	return cli, nil
+ }
+ 
+ func (c *Client) GetPidById(ctx context.Context, containerId string) (int32, error, int32) {
+diff --git a/exec/executor_common_linux.go b/exec/executor_common_linux.go
+index 819e256..96e7163 100644
+--- a/exec/executor_common_linux.go
++++ b/exec/executor_common_linux.go
+@@ -36,7 +36,6 @@ package exec
+ 
+ import (
+ 	"context"
+-	"errors"
+ 	"fmt"
+ 	"io"
+ 	"os"
+@@ -197,57 +196,12 @@ func execForHangAction(uid string, ctx context.Context, expModel *spec.ExpModel,
+ 
+ 		log.Debugf(ctx, "cgroup2 group path for pid %d: %s", pid, g)
+ 
+-		if g == "" || g == "/" {
+-			sprintf := fmt.Sprintf("invalid cgroup path: %s, pid: %d", g, pid)
+-			return spec.ReturnFail(spec.OsCmdExecFailed, sprintf)
++		if err := validateExistingTargetCgroup(cgroupRoot, g); err != nil {
++			return spec.ReturnFail(spec.OsCmdExecFailed, err.Error())
+ 		}
+-
+-		cgPath := path.Join(cgroupRoot, g)
+-		log.Debugf(ctx, "full cgroup path: %s", cgPath)
+-
+-		if _, err := os.Stat(cgPath); os.IsNotExist(err) {
+-			log.Warnf(ctx, "cgroup path does not exist: %s, trying to create", cgPath)
+-			if err := os.MkdirAll(cgPath, 0o755); err != nil {
+-				sprintf := fmt.Sprintf("failed to create cgroup path %s: %s", cgPath, err.Error())
+-				return spec.ReturnFail(spec.OsCmdExecFailed, sprintf)
+-			}
+-		}
+-
+-		// 注意：LoadManager 和 NewManager 的第二个参数应该是相对路径，不包含 cgroupRoot 前缀
+ 		cg, err := cgroupsv2.LoadManager(cgroupRoot, g)
+ 		if err != nil {
+-			if errors.Is(err, cgroups.ErrCgroupDeleted) {
+-				log.Warnf(ctx, "Cgroup was deleted, trying to recreate with relative path: %s", g)
+-				// 当cgroup被删除时，确保路径存在
+-				if _, err := os.Stat(cgPath); os.IsNotExist(err) {
+-					log.Warnf(ctx, "Cgroup path does not exist after deletion: %s, trying to create", cgPath)
+-					if err := os.MkdirAll(cgPath, 0o755); err != nil {
+-						log.Warnf(ctx, "Failed to recreate cgroup path %s: %s", cgPath, err.Error())
+-					}
+-				}
+-			} else {
+-				log.Debugf(ctx, "LoadManager failed, trying NewManager with relative path: %s", g)
+-			}
+-
+-			// 创建一个空的 Resources 对象，用于创建新的 cgroup 管理器
+-			resources := &cgroupsv2.Resources{}
+-			if cg, err = cgroupsv2.NewManager(cgroupRoot, g, resources); err != nil {
+-				// 如果 NewManager 也失败，尝试使用根路径作为回退
+-				log.Warnf(ctx, "NewManager failed with path %s, trying root path as fallback", g)
+-				if cg, err = cgroupsv2.NewManager(cgroupRoot, "/", resources); err != nil {
+-					sprintf := fmt.Sprintf("cgroups V2 new manager failed, cgroupRoot: %s, relativePath: %s, error: %s", cgroupRoot, g, err.Error())
+-					return spec.ReturnFail(spec.OsCmdExecFailed, sprintf)
+-				}
+-				log.Infof(ctx, "Successfully created cgroup manager with root path as fallback")
+-			} else {
+-				if errors.Is(err, cgroups.ErrCgroupDeleted) {
+-					log.Infof(ctx, "Successfully recreated cgroup manager after deletion with relative path: %s", g)
+-				} else {
+-					log.Infof(ctx, "Successfully created cgroup manager with relative path: %s", g)
+-				}
+-			}
+-		} else {
+-			log.Infof(ctx, "Successfully loaded existing cgroup manager with relative path: %s", g)
++			return spec.ReturnFail(spec.OsCmdExecFailed, fmt.Sprintf("target cgroup load failed: %s", err))
+ 		}
+ 		if err := command.Start(); err != nil {
+ 			sprintf := fmt.Sprintf("command start failed, %s", err.Error())
+diff --git a/cmd/chaoslab-api-probe/main.go b/cmd/chaoslab-api-probe/main.go
+new file mode 100644
+--- /dev/null
++++ b/cmd/chaoslab-api-probe/main.go
+@@ -0,0 +1,27 @@
++// A read-only probe. It never creates, starts, stops or modifies containers.
++package main
++
++import (
++	"context"
++	"fmt"
++	"os"
++
++	docker "github.com/chaosblade-io/chaosblade-exec-cri/exec/container/docker"
++	"github.com/chaosblade-io/chaosblade-spec-go/spec"
++)
++
++func main() {
++	c, err := docker.NewClient("unix:///var/run/docker.sock")
++	if err != nil {
++		fmt.Fprintln(os.Stderr, "Docker handshake failed:", err)
++		os.Exit(1)
++	}
++	// An impossible-to-use test identity is queried only via ContainerList.
++	// Both a valid response with no match and an actual match prove the GET worked.
++	_, err, code := c.GetContainerById(context.Background(), "0000000000000000000000000000000000000000000000000000000000000000")
++	if code != spec.OK.Code && code != spec.ParameterInvalidDockContainerId.Code {
++		fmt.Fprintln(os.Stderr, "Docker read-only list failed:", err)
++		os.Exit(1)
++	}
++	fmt.Println("PASS: patched Docker handshake and read-only container list; no injection performed")
++}
+diff --git a/exec/cgroup_guard_linux.go b/exec/cgroup_guard_linux.go
+new file mode 100644
+--- /dev/null
++++ b/exec/cgroup_guard_linux.go
+@@ -0,0 +1,33 @@
++//go:build linux
++
++package exec
++
++import (
++	"fmt"
++	"os"
++	"path/filepath"
++	"strings"
++)
++
++// Existing directories only. PID reuse and concurrent removal need additional
++// execution-time identity checks; this helper is not a full containment proof.
++func validateExistingTargetCgroup(root, group string) error {
++	root = filepath.Clean(root)
++	if !filepath.IsAbs(root) || root == "/" || !strings.HasPrefix(group, "/") || group == "/" || filepath.Clean(group) != group {
++		return fmt.Errorf("invalid target cgroup path")
++	}
++	target := filepath.Join(root, strings.TrimPrefix(group, "/"))
++	for current := target; ; current = filepath.Dir(current) {
++		info, err := os.Lstat(current)
++		if err != nil {
++			return fmt.Errorf("target cgroup unavailable: %w", err)
++		}
++		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
++			return fmt.Errorf("unsafe cgroup directory")
++		}
++		if current == "/" {
++			break
++		}
++	}
++	return nil
++}
+diff --git a/exec/cgroup_guard_linux_test.go b/exec/cgroup_guard_linux_test.go
+new file mode 100644
+--- /dev/null
++++ b/exec/cgroup_guard_linux_test.go
+@@ -0,0 +1,33 @@
++//go:build linux
++
++package exec
++
++import (
++	"os"
++	"path/filepath"
++	"testing"
++)
++
++func TestTargetCgroupGuard(t *testing.T) {
++	root := t.TempDir()
++	if err := os.Mkdir(filepath.Join(root, "target"), 0700); err != nil {
++		t.Fatal(err)
++	}
++	if err := validateExistingTargetCgroup(root, "/target"); err != nil {
++		t.Fatal(err)
++	}
++	for _, group := range []string{"", "/", "/../", "/target/..", "target", "/missing", "/target//child"} {
++		if err := validateExistingTargetCgroup(root, group); err == nil {
++			t.Fatalf("accepted %q", group)
++		}
++	}
++	if err := os.Symlink(filepath.Join(root, "target"), filepath.Join(root, "link")); err != nil {
++		t.Fatal(err)
++	}
++	if err := validateExistingTargetCgroup(root, "/link"); err == nil {
++		t.Fatal("accepted symlink")
++	}
++	if _, err := os.Stat(filepath.Join(root, "missing")); !os.IsNotExist(err) {
++		t.Fatal("created missing group")
++	}
++}
+diff --git a/exec/container/docker/api_negotiation_test.go b/exec/container/docker/api_negotiation_test.go
+new file mode 100644
+--- /dev/null
++++ b/exec/container/docker/api_negotiation_test.go
+@@ -0,0 +1,70 @@
++package docker
++
++import (
++	"context"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"testing"
++
++	"github.com/docker/docker/api/types/container"
++)
++
++func TestNegotiatedContainerList(t *testing.T) {
++	for _, version := range []string{"1.40", "1.51", "1.56"} {
++		t.Run(version, func(t *testing.T) {
++			t.Setenv("DOCKER_API_VERSION", "")
++			var listPath string
++			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++				if r.URL.Path == "/_ping" {
++					w.Header().Set("API-Version", version)
++					w.WriteHeader(http.StatusOK)
++					return
++				}
++				listPath = r.URL.Path
++				w.Header().Set("Content-Type", "application/json")
++				_, _ = w.Write([]byte("[]"))
++			}))
++			defer srv.Close()
++			c, err := checkAndCreateClient(srv.URL, nil)
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer c.Close()
++			_, err = c.ContainerList(context.Background(), container.ListOptions{})
++			if err != nil {
++				t.Fatal(err)
++			}
++			want := version
++			if version == "1.56" {
++				want = "1.51"
++			}
++			if listPath != "/v"+want+"/containers/json" {
++				t.Fatalf("unexpected negotiated request: %s", listPath)
++			}
++		})
++	}
++}
++
++func TestHandshakeFailureDoesNotReturnClient(t *testing.T) {
++	for _, mode := range []string{"http-error", "missing-version"} {
++		t.Run(mode, func(t *testing.T) {
++			t.Setenv("DOCKER_API_VERSION", "")
++			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++				if !strings.HasSuffix(r.URL.Path, "/_ping") {
++					t.Errorf("unexpected request: %s", r.URL.Path)
++				}
++				if mode == "http-error" {
++					http.Error(w, "unavailable", http.StatusServiceUnavailable)
++					return
++				}
++				w.WriteHeader(http.StatusOK)
++			}))
++			defer srv.Close()
++			c, err := checkAndCreateClient(srv.URL, nil)
++			if err == nil || c != nil {
++				t.Fatalf("failed handshake returned client: %v, %v", c, err)
++			}
++		})
++	}
++}
