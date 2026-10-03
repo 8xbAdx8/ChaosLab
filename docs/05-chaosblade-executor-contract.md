@@ -34,6 +34,19 @@ create docker cpu load
 
 ## 恢复判定
 
+### 完整恢复证据策略增量（2026-10-03）
+
+`BladeRecoveryEvidenceGate` 是未接入 Spring、调度器或执行状态迁移的纯判定组件。
+原有 `CONFIRMED_RECOVERED` 仍仅表示引擎侧确认，不改变已有含义。
+新组件只有在引擎确认、可信残留观察为 CLEAR、目标健康观察为 HEALTHY 时返回
+VERIFIED；证据缺失或未知返回 INCOMPLETE，明确残留或引擎要求人工处置返回
+MANUAL_INTERVENTION。进程组 kill 成功不能转换成 CLEAR。
+
+调用者未来必须保证证据来自同一执行、目标身份一致、足够新鲜，并由可信探针
+产生；组件自身不采集、不验证时间、不证明不存在逃逸进程，也不释放占用。
+36 种枚举组合测试只有一个完整证据组合得到 VERIFIED，另有空值/未知证据测试。
+真实探针与原子化身份验证仍待实现，不代表真实恢复验收通过。
+
 以下规则已由 `BladeRecoveryContract` 和测试固定，但尚未接入调度器：
 
 | 可核对的事实 | 决策 |

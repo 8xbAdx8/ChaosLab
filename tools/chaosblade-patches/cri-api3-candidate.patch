@@ -497,7 +497,7 @@ diff --git a/exec/handshake_guard_linux_test.go b/exec/handshake_guard_linux_tes
 new file mode 100644
 --- /dev/null
 +++ b/exec/handshake_guard_linux_test.go
-@@ -0,0 +1,93 @@
+@@ -0,0 +1,145 @@
 +//go:build linux
 +
 +package exec
@@ -590,6 +590,58 @@ new file mode 100644
 +	if err := waitForHelperState(ctx, -1, "pause\n"); err == nil {
 +		t.Fatal("accepted missing process")
 +	}
++}
++
++// A negative test: process-group cleanup must NOT be interpreted as proof of
++// complete recovery. The test itself explicitly terminates its escaped child.
++func TestEscapedDescendantIsOutsideGroupCleanup(t *testing.T) {
++	setsid, err := exec.LookPath("setsid")
++	if err != nil {
++		t.Fatal("test requires setsid")
++	}
++	receipt := filepath.Join(t.TempDir(), "escaped-pid")
++	c := exec.Command("/bin/sh", "-c", `"$1" /bin/sleep 30 & echo $! > "$2"; wait`, "fixture", setsid, receipt)
++	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
++	if err := c.Start(); err != nil {
++		t.Fatal(err)
++	}
++	defer func() {
++		if c.ProcessState == nil {
++			_ = cleanupFailedHelper(c)
++		}
++	}()
++	var escaped int
++	deadline := time.Now().Add(2 * time.Second)
++	for time.Now().Before(deadline) {
++		data, _ := os.ReadFile(receipt)
++		escaped, _ = strconv.Atoi(strings.TrimSpace(string(data)))
++		if escaped > 0 {
++			if group, err := syscall.Getpgid(escaped); err == nil && group == escaped {
++				break
++			}
++		}
++		time.Sleep(time.Millisecond)
++	}
++	if escaped <= 0 {
++		t.Fatal("escaped fixture did not start")
++	}
++	// Only this known test PID is signalled, never a discovered host process.
++	defer syscall.Kill(escaped, syscall.SIGKILL)
++	group, err := syscall.Getpgid(escaped)
++	if err != nil || group != escaped || group == c.Process.Pid {
++		t.Fatal("fixture did not detach")
++	}
++	if err := cleanupFailedHelper(c); err != nil {
++		t.Fatal(err)
++	}
++	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", escaped))
++	if err != nil {
++		t.Fatal("cannot observe escaped fixture", err)
++	}
++	if _, err := processStartTime(string(data)); err != nil {
++		t.Fatal("escaped fixture not live", err)
++	}
++	t.Log("confirmed: group cleanup returned nil while escaped child remained live; not recovery evidence")
 +}
 diff --git a/exec/target_identity_linux.go b/exec/target_identity_linux.go
 new file mode 100644
