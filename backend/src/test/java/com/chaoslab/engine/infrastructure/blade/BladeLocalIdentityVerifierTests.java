@@ -119,7 +119,7 @@ class BladeLocalIdentityVerifierTests {
         assertThat(verifier().verify(saved)).isEqualTo(LOCAL_EVIDENCE_UNAVAILABLE);
         Files.delete(binary);
         try (var channel = Files.newByteChannel(binary, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
-            channel.position(64L * 1024 * 1024);
+            channel.position(128L * 1024 * 1024);
             channel.write(ByteBuffer.wrap(new byte[] {1}));
         }
         assertThat(verifier().verify(saved)).isEqualTo(LOCAL_EVIDENCE_UNAVAILABLE);
@@ -135,6 +135,25 @@ class BladeLocalIdentityVerifierTests {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new BladeLocalIdentityVerifier(node, state, binary, "1.7.4", ""))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void boundedLimitAcceptsCandidateSizedFile() throws Exception {
+        try (var channel = Files.newByteChannel(binary, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
+            channel.position(74921321L);
+            channel.write(ByteBuffer.wrap(new byte[]{1}));
+        }
+        var digest = MessageDigest.getInstance("SHA-256");
+        try (var input = Files.newInputStream(binary)) {
+            byte[] buffer = new byte[8192];
+            int n;
+            while ((n = input.read(buffer)) != -1) digest.update(buffer, 0, n);
+        }
+        sha = HexFormat.of().formatHex(digest.digest());
+        saved = new BladeExecutionSnapshot(saved.executionId(), saved.target(), saved.executorInstanceId(),
+                saved.stateDirectoryId(), saved.toolVersion(), sha, saved.cpuPercent(), saved.durationSeconds(),
+                saved.recordedAt(), saved.recoveryDeadline(), saved.uid());
+        assertThat(verifier().verify(saved)).isEqualTo(LOCAL_IDENTITY_MATCHED_NEEDS_TARGET_CHECK);
     }
 
     @Test

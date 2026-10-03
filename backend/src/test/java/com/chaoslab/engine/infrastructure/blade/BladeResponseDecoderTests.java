@@ -19,7 +19,7 @@ class BladeResponseDecoderTests {
 
     @Test
     void readsCreateUidWithoutClaimingRecovery() {
-        assertThat(decoder.decodeCreate(ok(" \n" + CREATE + "\n")).uid()).isEqualTo(UID);
+        assertThat(decoder.decodeCreate(handoff(" \n" + CREATE + "\n")).uid()).isEqualTo(UID);
     }
 
     @ParameterizedTest
@@ -42,7 +42,7 @@ class BladeResponseDecoderTests {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"\"already destroyed description\"", "{\"target\":\"cpu\"}"})
+    @ValueSource(strings = {"\"command: cri cpu fullload --cpu-count=1, destroy time: 2026-10-04\"", "{\"target\":\"cpu\",\"action\":\"fullload\",\"flags\":{\"cpu-count\":\"1\"},\"ActionProcessHang\":false}"})
     void destroyAcknowledgementAlwaysRequiresStatusCheck(String result) {
         assertThat(decoder.decodeDestroy(ok("{\"code\":200,\"success\":true,\"result\":" + result + "}")))
                 .isEqualTo(BladeResponseDecoder.DestroyAcknowledgement.REQUIRES_STATUS_CHECK);
@@ -57,7 +57,7 @@ class BladeResponseDecoderTests {
             "{\"code\":200,\"success\":true,\"result\":\"--all\"}",
             "{\"code\":200,\"success\":true,\"result\":\"ABCDEF0123456789\"}"})
     void rejectsMalformedOrCoercedCreateResponses(String value) {
-        reject(ok(value), INVALID_RESPONSE);
+        reject(handoff(value), INVALID_RESPONSE);
     }
 
     @Test
@@ -68,7 +68,7 @@ class BladeResponseDecoderTests {
                 CREATE.replace("200", "200,\"error\":\"failure\""),
                 CREATE.replace("200", "200,\"error\":null"),
                 CREATE.replace(UID, "\uFFFD" + UID) }) {
-            reject(ok(value), INVALID_RESPONSE);
+            reject(handoff(value), INVALID_RESPONSE);
         }
     }
 
@@ -85,8 +85,8 @@ class BladeResponseDecoderTests {
                 status("Destroyed").replace("\"Uid\"", "\"uid\""),
                 status("Destroyed").replace("\"Status\":\"Destroyed\"", "\"Status\":true"),
                 status("Destroyed").replace("\"Status\":", "\"Status\":\"Success\",\"Status\":"),
-                status("Destroyed").replace("docker", "jvm"),
-                status("Destroyed").replace("cpu load", "network delay"),
+                status("Destroyed").replace("cri", "jvm"),
+                status("Destroyed").replace("cpu fullload", "network delay"),
                 status("Destroyed").replace("\"Flag\":\"\",", ""),
                 "{\"code\":200,\"success\":true,\"result\":[]}" }) {
             assertThatThrownBy(() -> decoder.decodeStatus(ok(value)))
@@ -113,16 +113,16 @@ class BladeResponseDecoderTests {
 
     @Test
     void refusesAmbiguousStderrOversizeAndExcessiveNesting() {
-        reject(new ProcessRunResult(ProcessRunResult.Outcome.EXITED, 0, CREATE, "warning", true), INVALID_RESPONSE);
-        reject(ok(CREATE + " ".repeat(65536)), INVALID_RESPONSE);
-        reject(ok(CREATE.replace(UID, "汉".repeat(23000))), INVALID_RESPONSE);
-        reject(ok("[".repeat(20) + "0" + "]".repeat(20)), INVALID_RESPONSE);
+        reject(new ProcessRunResult(ProcessRunResult.Outcome.HANDOFF, 0, CREATE, "warning", false), INVALID_RESPONSE);
+        reject(handoff(CREATE + " ".repeat(65536)), INVALID_RESPONSE);
+        reject(handoff(CREATE.replace(UID, "汉".repeat(23000))), INVALID_RESPONSE);
+        reject(handoff("[".repeat(20) + "0" + "]".repeat(20)), INVALID_RESPONSE);
     }
 
     @Test
     void recognizesNotFoundOnlyAsFailureAndNeverLeaksRawError() {
-        reject(ok("{\"code\":67002,\"success\":false,\"error\":\"secret-token\"}"), DATA_NOT_FOUND);
-        reject(ok("{\"code\":67001,\"success\":false,\"error\":\"secret-token\"}"), TOOL_REPORTED_FAILURE);
+        reject(handoff("{\"code\":67002,\"success\":false,\"error\":\"secret-token\"}"), DATA_NOT_FOUND);
+        reject(handoff("{\"code\":67001,\"success\":false,\"error\":\"secret-token\"}"), TOOL_REPORTED_FAILURE);
     }
 
     @ParameterizedTest
@@ -139,6 +139,10 @@ class BladeResponseDecoderTests {
                 .hasMessage("Blade response rejected: " + failure);
     }
 
+    private static ProcessRunResult handoff(String stdout) {
+        return new ProcessRunResult(ProcessRunResult.Outcome.HANDOFF, 0, stdout, "", false);
+    }
+
     private static ProcessRunResult ok(String stdout) {
         return new ProcessRunResult(ProcessRunResult.Outcome.EXITED, 0, stdout, "", true);
     }
@@ -146,7 +150,7 @@ class BladeResponseDecoderTests {
     // Synthetic fixture shaped from v1.7.4 data/experiment.go, not captured live output.
     private static String status(String status) {
         return "{\"code\":200,\"success\":true,\"result\":{\"Uid\":\"" + UID
-                + "\",\"Command\":\"docker\",\"SubCommand\":\"cpu load\",\"Flag\":\"\",\"Status\":\""
+                + "\",\"Command\":\"cri\",\"SubCommand\":\"cpu fullload\",\"Flag\":\"\",\"Status\":\""
                 + status + "\",\"Error\":\"\",\"CreateTime\":\"\",\"UpdateTime\":\"\"}}";
     }
 }

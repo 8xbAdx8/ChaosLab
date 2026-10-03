@@ -7,6 +7,25 @@ import java.util.Arrays;
 public final class ProcessFixture {
     public static void main(String[] args) throws Exception {
         switch (args[0]) {
+            case "handoff-ok", "handoff-bad-json", "handoff-wait", "handoff-nonzero", "handoff-flood" -> {
+                String executable = Path.of(System.getProperty("java.home"), "bin",
+                        System.getProperty("os.name").startsWith("Windows") ? "java.exe" : "java").toString();
+                Process child = new ProcessBuilder(executable, "-cp", System.getProperty("java.class.path"),
+                        ProcessFixture.class.getName(), "sleep")
+                        .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                        .redirectError(ProcessBuilder.Redirect.DISCARD).start();
+                java.nio.file.Files.writeString(Path.of(args[1]), Long.toString(child.pid()));
+                System.out.println("child=" + child.pid());
+                System.out.flush();
+                Thread.sleep(700); // Give the runner time to observe the harmless child.
+                switch (args[0]) {
+                    case "handoff-wait" -> Thread.sleep(60000);
+                    case "handoff-nonzero" -> System.exit(7);
+                    case "handoff-flood" -> { for (int i=0; i<20000; i++) System.out.println("x".repeat(64)); }
+                    case "handoff-bad-json" -> System.out.println("not-json");
+                    default -> { }
+                }
+            }
             case "echo" -> {
                 System.out.println(String.join("|", Arrays.copyOfRange(args, 1, args.length)));
                 System.err.println("separate-stderr");
@@ -31,11 +50,16 @@ public final class ProcessFixture {
                 System.out.flush();
                 Thread.sleep(60000);
             }
-            case "child", "orphan" -> {
+            case "child", "orphan", "legal-helper" -> {
                 String executable = Path.of(System.getProperty("java.home"), "bin",
                         System.getProperty("os.name").startsWith("Windows") ? "java.exe" : "java").toString();
-                Process child = new ProcessBuilder(executable, "-cp", System.getProperty("java.class.path"),
-                        ProcessFixture.class.getName(), "sleep").inheritIO().start();
+                ProcessBuilder childBuilder = new ProcessBuilder(executable, "-cp", System.getProperty("java.class.path"),
+                        ProcessFixture.class.getName(), "sleep");
+                if ("legal-helper".equals(args[0])) {
+                    childBuilder.redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                            .redirectError(ProcessBuilder.Redirect.DISCARD);
+                } else childBuilder.inheritIO();
+                Process child = childBuilder.start();
                 System.out.println("child=" + child.pid());
                 System.out.flush();
                 if ("child".equals(args[0])) child.waitFor();

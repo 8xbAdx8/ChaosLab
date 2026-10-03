@@ -14,6 +14,17 @@ import java.util.UUID;
 /** Pure command contract. Does not launch a process or register a real engine. */
 public final class DockerCpuCommandPlan {
     public static final String EXECUTABLE = "/opt/chaosblade/blade";
+    /** Trusted deployment value, never an HTTP parameter. No discovery or execution. */
+    public record Deployment(java.nio.file.Path executable, java.nio.file.Path stateDirectory) {
+        public Deployment(java.nio.file.Path executable) { this(executable, executable == null ? null : executable.getParent()); }
+        public Deployment {
+            if (executable == null || !executable.isAbsolute() || !executable.equals(executable.normalize()))
+                throw new IllegalArgumentException("absolute normalized deployment path required");
+            if (stateDirectory == null || !stateDirectory.isAbsolute() || !stateDirectory.equals(stateDirectory.normalize()))
+                throw new IllegalArgumentException("absolute normalized state directory required");
+        }
+    }
+    public static final Deployment DEFAULT_DEPLOYMENT = new Deployment(java.nio.file.Path.of(EXECUTABLE).toAbsolutePath().normalize());
     private static final JsonMapper JSON = JsonMapper.builder()
             .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
             .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
@@ -23,8 +34,10 @@ public final class DockerCpuCommandPlan {
     private final VerifiedDockerTarget target;
     private final int percent;
     private final int durationSeconds;
+    private final Deployment deployment;
 
-    private DockerCpuCommandPlan(ReadyExperimentRequest request, int percent) {
+    private DockerCpuCommandPlan(ReadyExperimentRequest request, int percent, Deployment deployment) {
+        this.deployment = Objects.requireNonNull(deployment);
         this.executionId = request.executionId();
         this.target = request.verifiedTarget();
         this.percent = percent;
@@ -34,6 +47,11 @@ public final class DockerCpuCommandPlan {
     public static DockerCpuCommandPlan from(
             ReadyExperimentRequest request, VerifiedDockerTarget freshlyVerifiedTarget
     ) {
+        return from(request, freshlyVerifiedTarget, DEFAULT_DEPLOYMENT);
+    }
+
+    public static DockerCpuCommandPlan from(ReadyExperimentRequest request,
+                                            VerifiedDockerTarget freshlyVerifiedTarget, Deployment deployment) {
         Objects.requireNonNull(request);
         if (request.verifiedTarget() == null
                 || !request.verifiedTarget().equals(freshlyVerifiedTarget)) {
@@ -60,7 +78,7 @@ public final class DockerCpuCommandPlan {
                 || value.intValue() < 10 || value.intValue() > 40) {
             throw new IllegalArgumentException("only integer percent from 10 to 40 is allowed");
         }
-        return new DockerCpuCommandPlan(request, value.intValue());
+        return new DockerCpuCommandPlan(request, value.intValue(), deployment);
     }
 
     public UUID executionId() {
@@ -72,7 +90,15 @@ public final class DockerCpuCommandPlan {
     }
 
     public List<String> createArguments() {
-        return cpuArguments(target, percent, durationSeconds);
+        return criArguments(deployment, target, percent, durationSeconds);
+    }
+
+    public Deployment deployment() { return deployment; }
+
+    static List<String> criArguments(Deployment deployment, VerifiedDockerTarget target, int percent, int seconds) {
+        return List.of(deployment.executable().toString(), "create", "cri", "cpu", "fullload",
+                "--container-runtime", "docker", "--container-id", target.containerId(),
+                "--cpu-percent", Integer.toString(percent), "--cpu-count", "1", "--timeout", Integer.toString(seconds));
     }
 
     public int percent() { return percent; }

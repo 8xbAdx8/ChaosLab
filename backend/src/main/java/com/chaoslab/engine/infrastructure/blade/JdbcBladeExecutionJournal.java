@@ -30,12 +30,12 @@ public class JdbcBladeExecutionJournal {
                 (execution_id, snapshot_format, target_id, container_id, image_id, metrics_job,
                  executor_instance_id, state_directory_id, tool_version, tool_sha256,
                  cpu_percent, duration_seconds, recorded_at, recovery_deadline)
-                SELECT x.id, 'DOCKER_CPU_V1', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                SELECT x.id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 FROM experiment_executions x JOIN experiments e ON e.id = x.experiment_id
                 JOIN targets t ON t.id = e.target_id JOIN fault_scenarios s ON s.id = e.scenario_id
                 WHERE x.id = ? AND x.status = 'PREPARING' AND e.target_id = ?
                 AND t.target_type = 'DOCKER_CONTAINER' AND s.code = 'CPU_LOAD' AND e.duration_seconds = ?
-                """, snapshot.target().targetId().toString(), snapshot.target().containerId(), snapshot.target().imageId(),
+                """, snapshot.format(), snapshot.target().targetId().toString(), snapshot.target().containerId(), snapshot.target().imageId(),
                 snapshot.target().metricsJob(), snapshot.executorInstanceId(), snapshot.stateDirectoryId(),
                 snapshot.toolVersion(), snapshot.toolSha256(), snapshot.cpuPercent(), snapshot.durationSeconds(),
                 Timestamp.from(snapshot.recordedAt()), Timestamp.from(snapshot.recoveryDeadline()),
@@ -51,7 +51,8 @@ public class JdbcBladeExecutionJournal {
                 this::map, handle.executionId().toString()).stream().findFirst()
                 .orElseThrow(() -> new IllegalStateException("execution intent is missing"));
         if (!saved.executorInstanceId().equals(handle.executorInstanceId())
-                || !saved.stateDirectoryId().equals(stateDirectoryId) || !saved.target().equals(handle.target())) {
+                || !saved.stateDirectoryId().equals(stateDirectoryId) || !saved.target().equals(handle.target())
+                || !saved.format().equals(handle.format())) {
             throw new IllegalStateException("recovery identity does not match the persisted intent");
         }
         if (saved.uid() != null) {
@@ -99,7 +100,7 @@ public class JdbcBladeExecutionJournal {
     }
 
     private BladeExecutionSnapshot map(ResultSet row, int index) throws SQLException {
-        if (!"DOCKER_CPU_V1".equals(row.getString("snapshot_format"))) {
+        if (!"DOCKER_CPU_V1".equals(row.getString("snapshot_format")) && !"CRI_CPU_V1".equals(row.getString("snapshot_format"))) {
             throw new IllegalStateException("unsupported Blade snapshot format");
         }
         return new BladeExecutionSnapshot(UUID.fromString(row.getString("execution_id")),
@@ -108,6 +109,6 @@ public class JdbcBladeExecutionJournal {
                 row.getString("executor_instance_id"), row.getString("state_directory_id"), row.getString("tool_version"),
                 row.getString("tool_sha256"), row.getInt("cpu_percent"), row.getInt("duration_seconds"),
                 row.getTimestamp("recorded_at").toInstant(), row.getTimestamp("recovery_deadline").toInstant(),
-                row.getString("blade_uid"));
+                row.getString("blade_uid"), row.getString("snapshot_format"));
     }
 }

@@ -141,6 +141,19 @@ class BoundedProcessRunnerTests {
         assertThat(result.exitCode()).isNull();
     }
 
+    @Test
+    void legalLongLivedHelperConflictsWithCurrentRunnerContract() throws Exception {
+        // Harmless JVM sleeper, stdout/stderr detached: not a pipe-closure test.
+        // The parent stays alive 500ms so the runner can observe its child.
+        var result = runner(5, 4096).run(args("legal-helper"), () -> false);
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.outcome()).isEqualTo(DESCENDANTS_REMAINED);
+        assertThat(result.cleanupComplete()).isTrue();
+        assertStopped(result.stdout(), "child=");
+        System.out.println("M1_LIFECYCLE: parentExit=0 outcome=" + result.outcome()
+                + " helperAlive=false cleanupComplete=" + result.cleanupComplete());
+    }
+
     private BoundedProcessRunner runner(int seconds, int bytes) throws Exception {
         return new BoundedProcessRunner(java, directory, Map.of("LANG", "C"), Duration.ofSeconds(seconds), bytes);
     }

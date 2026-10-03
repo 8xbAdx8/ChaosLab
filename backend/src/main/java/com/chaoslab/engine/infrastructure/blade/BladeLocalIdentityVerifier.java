@@ -17,7 +17,9 @@ import java.util.Set;
 /** Read-only local probe, not a Spring bean or execution permission. Paths come from trusted deployment. */
 public final class BladeLocalIdentityVerifier {
     public static final String STATE_MARKER = ".chaoslab-state-id";
-    private static final long MAX_BINARY_BYTES = 64L * 1024 * 1024;
+    private static final long MAX_BINARY_BYTES = 128L * 1024 * 1024;
+    private java.util.Map<String, String> companionPins = java.util.Map.of();
+    private DockerCpuCommandPlan.Deployment deployment;
     private final Path nodeMarker;
     private final Path stateDirectory;
     private final Path binary;
@@ -44,8 +46,38 @@ public final class BladeLocalIdentityVerifier {
         this.pinnedSha256 = pinnedSha256;
     }
 
+    /** CRI deployment: fixed relative companions, reviewed SHA-256 pins; never supplied by HTTP. */
+    public BladeLocalIdentityVerifier(Path nodeMarker, Path stateDirectory, DockerCpuCommandPlan.Deployment deployment,
+                                      String pinnedVersion, String pinnedSha256, java.util.Map<String, String> companionPins) {
+        this(nodeMarker, stateDirectory, deployment.executable(), pinnedVersion, pinnedSha256);
+        if (!this.stateDirectory.equals(deployment.stateDirectory()))
+            throw new IllegalArgumentException("state directory deployment mismatch");
+        Set<String> required = Set.of("bin/nsexec", "bin/chaos_os", "yaml/chaosblade-cri-spec-1.8.1.yaml");
+        if (companionPins == null || !companionPins.keySet().equals(required)
+                || companionPins.values().stream().anyMatch(pin -> pin == null || !pin.matches("[0-9a-f]{64}")))
+            throw new IllegalArgumentException("complete CRI companion pins required");
+        this.companionPins = java.util.Map.copyOf(companionPins);
+        this.deployment = deployment;
+    }
+
+    /** No invented UID. Identity approval is not permission to inject or proof of target identity. */
+    public Result verifyBeforeCreate(BladeExecutionSnapshot intent, DockerCpuCommandPlan plan) {
+        if (intent == null || plan == null || intent.uid() != null || deployment == null
+                || !BladeExecutionSnapshot.CRI_CPU_V1.equals(intent.format())
+                || !deployment.equals(plan.deployment()) || !intent.executionId().equals(plan.executionId())
+                || !intent.target().equals(plan.target()) || intent.cpuPercent() != plan.percent()
+                || intent.durationSeconds() != plan.durationSeconds()) return Result.MISSING_RECOVERY_EVIDENCE;
+        return verifyLocal(intent);
+    }
+
     public Result verify(BladeExecutionSnapshot saved) {
         if (saved == null || saved.uid() == null) return Result.MISSING_RECOVERY_EVIDENCE;
+        return verifyLocal(saved);
+    }
+
+    private Result verifyLocal(BladeExecutionSnapshot saved) {
+        if (BladeExecutionSnapshot.CRI_CPU_V1.equals(saved.format()) && deployment == null)
+            return Result.TOOL_PIN_MISMATCH;
         if (!pinnedVersion.equals(saved.toolVersion()) || !pinnedSha256.equals(saved.toolSha256())) {
             return Result.TOOL_PIN_MISMATCH;
         }
@@ -58,6 +90,15 @@ public final class BladeLocalIdentityVerifier {
             }
             String observed = digest(binary);
             if (!pinnedSha256.equals(observed)) return Result.TOOL_CONTENT_MISMATCH;
+            if (BladeExecutionSnapshot.CRI_CPU_V1.equals(saved.format())) {
+                if (!Files.isExecutable(binary)) return Result.LOCAL_EVIDENCE_UNAVAILABLE;
+                for (var entry : companionPins.entrySet()) {
+                    Path companion = binary.getParent().resolve(entry.getKey());
+                    if (!entry.getValue().equals(digest(companion))) return Result.TOOL_CONTENT_MISMATCH;
+                    if (entry.getKey().startsWith("bin/") && !Files.isExecutable(companion))
+                        return Result.LOCAL_EVIDENCE_UNAVAILABLE;
+                }
+            }
             return Result.LOCAL_IDENTITY_MATCHED_NEEDS_TARGET_CHECK;
         } catch (IOException | SecurityException invalid) {
             // Never leak paths, file content, or underlying exception messages to an API/log.

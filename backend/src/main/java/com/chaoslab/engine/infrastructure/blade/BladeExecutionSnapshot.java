@@ -9,13 +9,24 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
-/** Immutable Docker CPU v1 intent; stored provenance is not proof of live target/tool identity. */
+/** Versioned immutable CPU intent; stored provenance is not proof of live target/tool identity. */
 public record BladeExecutionSnapshot(
         UUID executionId, VerifiedDockerTarget target, String executorInstanceId,
         String stateDirectoryId, String toolVersion, String toolSha256,
-        int cpuPercent, int durationSeconds, Instant recordedAt, Instant recoveryDeadline, String uid
+        int cpuPercent, int durationSeconds, Instant recordedAt, Instant recoveryDeadline, String uid, String format
 ) {
+    public static final String DOCKER_CPU_V1 = "DOCKER_CPU_V1";
+    public static final String CRI_CPU_V1 = "CRI_CPU_V1";
+    /** Historical constructor retains historical interpretation. */
+    public BladeExecutionSnapshot(UUID executionId, VerifiedDockerTarget target, String executorInstanceId,
+            String stateDirectoryId, String toolVersion, String toolSha256, int cpuPercent, int durationSeconds,
+            Instant recordedAt, Instant recoveryDeadline, String uid) {
+        this(executionId, target, executorInstanceId, stateDirectoryId, toolVersion, toolSha256,
+                cpuPercent, durationSeconds, recordedAt, recoveryDeadline, uid, DOCKER_CPU_V1);
+    }
     public BladeExecutionSnapshot {
+        if (!DOCKER_CPU_V1.equals(format) && !CRI_CPU_V1.equals(format))
+            throw new IllegalArgumentException("unknown snapshot format");
         Objects.requireNonNull(executionId);
         Objects.requireNonNull(target);
         require(executorInstanceId, "[a-z0-9][a-z0-9-]{0,63}");
@@ -30,7 +41,7 @@ public record BladeExecutionSnapshot(
         if (!recordedAt.plusSeconds(durationSeconds).equals(recoveryDeadline)) {
             throw new IllegalArgumentException("recovery deadline must match the intent duration");
         }
-        if (uid != null) new BladeRecoveryHandle(executionId, executorInstanceId, target, uid);
+        if (uid != null) new BladeRecoveryHandle(executionId, executorInstanceId, target, uid, format);
     }
 
     public static BladeExecutionSnapshot intent(DockerCpuCommandPlan plan, String node, String stateDirectoryId,
@@ -38,16 +49,22 @@ public record BladeExecutionSnapshot(
         Instant recorded = now.truncatedTo(ChronoUnit.MICROS);
         return new BladeExecutionSnapshot(plan.executionId(), plan.target(), node, stateDirectoryId,
                 toolVersion, sha256, plan.percent(), plan.durationSeconds(), recorded,
-                recorded.plusSeconds(plan.durationSeconds()), null);
+                recorded.plusSeconds(plan.durationSeconds()), null, CRI_CPU_V1);
     }
 
     public List<String> createArguments() {
-        return DockerCpuCommandPlan.cpuArguments(target, cpuPercent, durationSeconds);
+        return createArguments(DockerCpuCommandPlan.DEFAULT_DEPLOYMENT);
+    }
+
+    public List<String> createArguments(DockerCpuCommandPlan.Deployment deployment) {
+        return CRI_CPU_V1.equals(format)
+                ? DockerCpuCommandPlan.criArguments(deployment, target, cpuPercent, durationSeconds)
+                : DockerCpuCommandPlan.cpuArguments(target, cpuPercent, durationSeconds);
     }
 
     public Optional<BladeRecoveryHandle> recoveryHandle() {
         return uid == null ? Optional.empty()
-                : Optional.of(new BladeRecoveryHandle(executionId, executorInstanceId, target, uid));
+                : Optional.of(new BladeRecoveryHandle(executionId, executorInstanceId, target, uid, format));
     }
 
     private static void require(String value, String pattern) {

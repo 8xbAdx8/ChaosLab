@@ -21,16 +21,26 @@ import static com.chaoslab.engine.infrastructure.blade.ProcessRunResult.Outcome.
 
 /** Internal transport; callers outside this package use typed BladeProcessChannel methods. */
 final class BoundedProcessRunner {
+    enum Lifecycle { STRICT_FOREGROUND, CONTROLLED_HANDOFF }
     private static final Set<String> ENVIRONMENT_KEYS = Set.of(
-            "PATH", "LANG", "LC_ALL", "TMPDIR", "TMP", "TEMP", "SystemRoot");
+            "PATH", "LANG", "LC_ALL", "TMPDIR", "TMP", "TEMP", "SystemRoot", "CHAOSBLADE_DATAFILE_PATH");
     private final Path executable;
     private final Path directory;
     private final Map<String, String> environment;
     private final Duration timeout;
     private final int outputLimit;
+    private final java.util.function.UnaryOperator<InputStream> stdoutForTest;
 
     BoundedProcessRunner(Path executable, Path directory, Map<String, String> environment,
                          Duration timeout, int outputLimit) throws IOException {
+        this(executable, directory, environment, timeout, outputLimit, java.util.function.UnaryOperator.identity());
+    }
+
+    // Package-only deterministic read-failure injection for tests; production uses identity.
+    BoundedProcessRunner(Path executable, Path directory, Map<String, String> environment,
+                         Duration timeout, int outputLimit,
+                         java.util.function.UnaryOperator<InputStream> stdoutForTest) throws IOException {
+        this.stdoutForTest = Objects.requireNonNull(stdoutForTest);
         if (!executable.isAbsolute() || !directory.isAbsolute()) {
             throw new IllegalArgumentException("executable and working directory must be absolute");
         }
@@ -53,6 +63,11 @@ final class BoundedProcessRunner {
     }
 
     ProcessRunResult run(List<String> arguments, BooleanSupplier cancelled) {
+        return run(arguments, cancelled, Lifecycle.STRICT_FOREGROUND);
+    }
+
+    ProcessRunResult run(List<String> arguments, BooleanSupplier cancelled, Lifecycle lifecycle) {
+        Objects.requireNonNull(lifecycle);
         List<String> command = new ArrayList<>();
         command.add(executable.toString());
         command.addAll(List.copyOf(arguments));
@@ -72,7 +87,7 @@ final class BoundedProcessRunner {
         }
         Capture capture = new Capture(outputLimit);
         Map<Long, ProcessHandle> descendants = new LinkedHashMap<>();
-        Thread stdout = Thread.ofVirtual().name("blade-stdout").start(() -> capture.read(process.getInputStream(), false));
+        Thread stdout = Thread.ofVirtual().name("blade-stdout").start(() -> capture.read(stdoutForTest.apply(process.getInputStream()), false));
         Thread stderr = Thread.ofVirtual().name("blade-stderr").start(() -> capture.read(process.getErrorStream(), true));
         ProcessRunResult.Outcome outcome = IO_FAILED;
         boolean interrupted = false;
@@ -81,7 +96,7 @@ final class BoundedProcessRunner {
             process.getOutputStream().close();
             while (true) {
                 process.descendants().forEach(child -> descendants.putIfAbsent(child.pid(), child));
-                if (cancelled.getAsBoolean()) {
+                if (Thread.currentThread().isInterrupted() || cancelled.getAsBoolean()) {
                     outcome = CANCELLED;
                     break;
                 }
@@ -93,17 +108,21 @@ final class BoundedProcessRunner {
                     outcome = IO_FAILED;
                     break;
                 }
-                if (!process.isAlive() && descendants.values().stream().anyMatch(ProcessHandle::isAlive)) {
+                if (!process.isAlive() && (lifecycle == Lifecycle.STRICT_FOREGROUND || process.exitValue() != 0)
+                        && descendants.values().stream().anyMatch(ProcessHandle::isAlive)) {
                     outcome = DESCENDANTS_REMAINED;
+                    break;
+                }
+                if (System.nanoTime() >= deadline) {
+                    outcome = TIMED_OUT;
                     break;
                 }
                 if (!process.isAlive() && capture.finished.getCount() == 0) {
                     // Recheck after reader completion to avoid losing a last-chunk failure.
                     outcome = capture.exceeded.get() ? OUTPUT_LIMIT : capture.ioFailed.get() ? IO_FAILED : EXITED;
-                    break;
-                }
-                if (System.nanoTime() >= deadline) {
-                    outcome = TIMED_OUT;
+                    if (outcome == EXITED && lifecycle == Lifecycle.CONTROLLED_HANDOFF && process.exitValue() == 0) {
+                        outcome = HANDOFF;
+                    }
                     break;
                 }
                 Thread.sleep(20);
@@ -116,7 +135,9 @@ final class BoundedProcessRunner {
         } finally {
             // Clear interruption only during bounded cleanup, then restore it.
             interrupted |= Thread.interrupted();
-            cleaned = terminate(process, descendants);
+            if (outcome == HANDOFF && interrupted) outcome = CANCELLED;
+            // HANDOFF is a deliberate transfer, never a claim of cleanup.
+            cleaned = outcome != HANDOFF && terminate(process, descendants);
             stdout.interrupt();
             stderr.interrupt();
             if (interrupted) {

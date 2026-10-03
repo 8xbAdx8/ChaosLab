@@ -10,8 +10,16 @@ import tools.jackson.databind.json.JsonMapper;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
 
-/** Pure, conservative v1.7.4 candidate dialect. Not registered or connected to the engine. */
+/** Pure versioned dialect: locked api3 CRI by default; explicit legacy snapshot decoding. */
 public final class BladeResponseDecoder {
+    private final boolean cri;
+    public BladeResponseDecoder() { this(BladeExecutionSnapshot.CRI_CPU_V1); }
+    public BladeResponseDecoder(String snapshotFormat) {
+        if (!BladeExecutionSnapshot.CRI_CPU_V1.equals(snapshotFormat)
+                && !BladeExecutionSnapshot.DOCKER_CPU_V1.equals(snapshotFormat))
+            throw new IllegalArgumentException("unknown snapshot format");
+        cri = BladeExecutionSnapshot.CRI_CPU_V1.equals(snapshotFormat);
+    }
     private static final int MAX_BYTES = 64 * 1024;
     private static final Set<String> ENVELOPE = Set.of("code", "success", "error", "result");
     private static final Set<String> STATUS_FIELDS = Set.of(
@@ -45,7 +53,7 @@ public final class BladeResponseDecoder {
     public enum DestroyAcknowledgement { REQUIRES_STATUS_CHECK }
 
     public CreateReceipt decodeCreate(ProcessRunResult process) {
-        return new CreateReceipt(uid(envelope(process).get("result")));
+        return new CreateReceipt(uid(envelope(process, true).get("result")));
     }
 
     public StatusObservation decodeStatus(ProcessRunResult process) {
@@ -56,8 +64,8 @@ public final class BladeResponseDecoder {
         for (String field : STATUS_FIELDS) {
             if (!result.get(field).isString()) throw rejected(Failure.INVALID_RESPONSE);
         }
-        if (!"docker".equals(result.get("Command").stringValue())
-                || !"cpu load".equals(result.get("SubCommand").stringValue())) {
+        if (!(cri ? "cri" : "docker").equals(result.get("Command").stringValue())
+                || !(cri ? "cpu fullload" : "cpu load").equals(result.get("SubCommand").stringValue())) {
             throw rejected(Failure.INVALID_RESPONSE);
         }
         String uid = uid(result.get("Uid"));
@@ -79,12 +87,34 @@ public final class BladeResponseDecoder {
                 || result.isString() && !result.stringValue().isBlank())) {
             throw rejected(Failure.INVALID_RESPONSE);
         }
+        if (cri) {
+            if (result.isString()) {
+                if (!result.stringValue().matches("command: cri cpu fullload .+, destroy time: .+"))
+                    throw rejected(Failure.INVALID_RESPONSE);
+            } else {
+                Set<String> required = Set.of("target", "action", "flags", "ActionProcessHang");
+                // destroy.go rebuilds via ConvertCommandsToExpModel: scope/programs/categories omitted,
+                // ActionProcessHang defaults false. This is not the create-time model.
+                if (!result.propertyNames().equals(required)
+                        || !"cpu".equals(result.path("target").asString())
+                        || !"fullload".equals(result.path("action").asString())
+                        || !result.path("flags").isObject() || result.path("flags").isEmpty()
+                        || !result.path("ActionProcessHang").isBoolean() || result.path("ActionProcessHang").booleanValue())
+                    throw rejected(Failure.INVALID_RESPONSE);
+                for (JsonNode flag : result.get("flags"))
+                    if (!flag.isString()) throw rejected(Failure.INVALID_RESPONSE);
+            }
+        }
         return DestroyAcknowledgement.REQUIRES_STATUS_CHECK;
     }
 
     private JsonNode envelope(ProcessRunResult process) {
-        if (process == null || process.outcome() != ProcessRunResult.Outcome.EXITED
-                || !Integer.valueOf(0).equals(process.exitCode()) || !process.cleanupComplete()) {
+        return envelope(process, false);
+    }
+
+    private JsonNode envelope(ProcessRunResult process, boolean create) {
+        if (process == null || process.outcome() != (create ? ProcessRunResult.Outcome.HANDOFF : ProcessRunResult.Outcome.EXITED)
+                || !Integer.valueOf(0).equals(process.exitCode()) || process.cleanupComplete() == create) {
             throw rejected(Failure.TRANSPORT_UNCERTAIN);
         }
         String stdout = process.stdout();
@@ -122,7 +152,7 @@ public final class BladeResponseDecoder {
     }
 
     private String uid(JsonNode node) {
-        if (node == null || !node.isString() || !node.stringValue().matches("[0-9a-f]{16,64}")) {
+        if (node == null || !node.isString() || !node.stringValue().matches(cri ? "[0-9a-f]{16}" : "[0-9a-f]{16,64}")) {
             throw rejected(Failure.INVALID_RESPONSE);
         }
         return node.stringValue();

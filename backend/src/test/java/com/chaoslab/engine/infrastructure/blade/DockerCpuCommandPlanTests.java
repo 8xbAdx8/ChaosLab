@@ -22,7 +22,8 @@ class DockerCpuCommandPlanTests {
         assertThat(plan.executionId()).isEqualTo(executionId);
         assertThat(plan.target()).isEqualTo(target);
         assertThat(plan.createArguments()).containsExactly(
-                "/opt/chaosblade/blade", "create", "docker", "cpu", "load",
+                DockerCpuCommandPlan.DEFAULT_DEPLOYMENT.executable().toString(), "create", "cri", "cpu", "fullload",
+                "--container-runtime", "docker",
                 "--container-id", target.containerId(), "--cpu-percent", "40",
                 "--cpu-count", "1", "--timeout", "30");
         assertThatThrownBy(() -> plan.createArguments().add("--force"))

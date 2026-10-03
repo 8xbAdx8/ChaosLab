@@ -221,7 +221,30 @@ class BladeExecutionJournalTests {
     }
 
     private BladeRecoveryHandle handle(BladeExecutionSnapshot intent, String uid) {
-        return new BladeRecoveryHandle(intent.executionId(), intent.executorInstanceId(), intent.target(), uid);
+        return new BladeRecoveryHandle(intent.executionId(), intent.executorInstanceId(), intent.target(), uid, intent.format());
+    }
+
+    @Test
+    void storedFormatsStayDistinctAndCannotBindCrossDialectUid() {
+        var cri = intent();
+        journal.recordIntent(cri);
+        assertThat(journal.findByExecutionId(cri.executionId()).orElseThrow().format()).isEqualTo("CRI_CPU_V1");
+        assertThatThrownBy(() -> journal.recordUid(new BladeRecoveryHandle(cri.executionId(),
+                cri.executorInstanceId(), cri.target(), "0123456789abcdef"), cri.stateDirectoryId()))
+                .isInstanceOf(Exception.class);
+        var template = intent();
+        var legacy = new BladeExecutionSnapshot(template.executionId(), template.target(), template.executorInstanceId(),
+                template.stateDirectoryId(), template.toolVersion(), template.toolSha256(), template.cpuPercent(),
+                template.durationSeconds(), template.recordedAt(), template.recoveryDeadline(), null);
+        journal.recordIntent(legacy);
+        journal.recordUid(handle(legacy, "a".repeat(32)), legacy.stateDirectoryId());
+        var read = journal.findByExecutionId(legacy.executionId()).orElseThrow();
+        assertThat(read.format()).isEqualTo("DOCKER_CPU_V1");
+        assertThat(read.createArguments()).containsSubsequence("create", "docker", "cpu", "load");
+        assertThat(read.recoveryHandle().orElseThrow().statusArguments()).doesNotContain("--type");
+        jdbc.update("UPDATE blade_execution_snapshots SET snapshot_format = 'FUTURE_V9' WHERE execution_id = ?",
+                legacy.executionId().toString());
+        assertThatThrownBy(() -> journal.findByExecutionId(legacy.executionId())).isInstanceOf(Exception.class);
     }
 
     private BladeExecutionSnapshot intent() {
