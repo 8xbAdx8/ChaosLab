@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 import java.time.Clock;
 
 @Component
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "chaoslab.engine", havingValue = "fake", matchIfMissing = true)
 public class AutomaticExperimentRecoveryJob {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(

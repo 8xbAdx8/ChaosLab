@@ -1,5 +1,7 @@
 # ChaosBlade 执行器：命令白名单与恢复契约
 
+> 2026-10-04 Phase 2C 更新：下文旧 Docker/未接线描述作为历史保留；当前 CRI、HANDOFF 和最小 Adapter 接线以本文末节及 `docs/08-m1-tool-compatibility.md` 的 Phase 2B-2/2C 为准。默认仍为 Fake，真实执行尚未授权。
+
 状态：2026-10-02，阶段 7 的契约、受限通道、响应解析、创建事务拆分及独立快照存储增量。当前生产代码仍只注册 `FakeChaosEngine`。命令模型、恢复判定和解析器保持纯 Java；进程通道未注册为 Spring Bean、未接入引擎或 HTTP 路由，也不改变现有 Dry Run 的范围。测试仅使用合成响应、数据库和无故障注入的 Java 桩进程。
 
 ## 首个场景的范围
@@ -196,3 +198,19 @@ V11 创建 `blade_execution_snapshots`。`BladeExecutionSnapshot` 从白名单�
 ```powershell
 .\backend\mvnw.cmd -f backend/pom.xml --batch-mode verify
 ```
+
+## Phase 2C：最小 Adapter 接线（2026-10-04）
+
+新增 `ChaosBladeEngine implements ChaosEngine`，仅显式可信本地配置 `chaoslab.engine=blade` 才注册；缺省或fake仍用FakeChaosEngine。没有HTTP切换/路径输入，没有新增引擎框架。实际外部通道在本阶段测试中全部替换成Mockito Stub。
+
+配置必须完整提供 `chaoslab.blade` 下的 executable、state-directory、node-marker、node-id、state-id、tool-version、cli-sha256、nsexec-sha256、chaos-os-sha256、cri-yaml-sha256；缺少任一项导致启动失败，不回退未核验路径。摘要格式在配置时检查，实际文件/marker/摘要检查仍在每次操作前完成。配置完整不等于准许注入，本轮没有启动真实模式服务。
+
+Create：PREPARING事务提交 → 新鲜目标复核 → CRI Plan → Journal.REQUIRES_NEW提交intent → verifyBeforeCreate → 通道HANDOFF → decode UID → Journal.REQUIRES_NEW提交UID → 结果事务RUNNING。任何派发前错误可FAILED；从调用Channel开始保守视为可能有副作用，后续异常统一EngineCreateUncertainException，不重试。结果事务失败另开短事务保存CREATE_UNCERTAIN；数据库仍不可写时保留已提交PREPARING及占用，不宣称状态更新成功。
+
+平台engineExperimentId使用 `blade-<execution UUID>` 作为Journal查找引用，**不是把UUID当作原生UID**。status/destroy只从持久化CRI_CPU_V1快照取原生UID；没有Map、名称匹配或旧格式自动适配。恢复前复核节点、状态目录、工具及新鲜目标；destroy回执后同UID status必须Destroyed。
+
+Destroy改为：短事务提交DESTROYING → 无事务执行engine.destroy/status → 短事务保存结果。沿用实体版本号乐观锁，过期结果不能覆盖并发决策。真实Adapter仅返回EngineStatus.ENGINE_RECOVERED；平台使用现有ROLLBACK_FAILED及 `ENGINE_DESTROYED_RECOVERY_UNVERIFIED` 原因保留占用，不写SUCCESS或finishedAt。Fake原成功行为不变。没有新增数据库状态或迁移。
+
+现有AutomaticExperimentRecoveryJob仅对fake/缺省注册，blade模式不自动启用它。本轮不接EvidenceValidator、Go原型或自动恢复。
+
+**Phase 2D prerequisite/blocker**：UID返回后recordUid事务失败，目前没有第二份可靠持久回执可自动恢复。测试明确保留CREATE_UNCERTAIN及空UID快照；工具侧状态文件可能有记录，但未经可靠关联验证，不当作备用证据。后续需最小durable receipt与崩溃窗口方案，以及权限/隔离预检、残留/健康证据、持久化和最终Gate。本轮不实现。

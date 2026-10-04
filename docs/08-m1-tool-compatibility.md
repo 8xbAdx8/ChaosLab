@@ -249,3 +249,88 @@ Linux验证使用Corretto21、--init、--network none、没有Docker socket、�
 最终Linux选择集 `*Blade*,*DockerCpu*,*Handoff*,*BoundedProcess*,CriExecutionContractTests` Maven退出0：blade包139项全通过（含符号链接检查），另含3项inventory controller测试。具体包内计数：Journal12、Identity19、RecoveryContract12、EvidenceGate2、既有EvidenceValidator4、Decoder46、Runner13、Handoff7、CRI契约7、CommandPlan17。Windows最终同选择集0失败/错误，Identity的符号链接1项跳过。测试最后未发现遗留Java fixture进程。`git diff --check`通过；无migration/ApplicationService改动。未提交或推送。
 
 契约层没有已确认的新BLOCKER，可以提交审核以进入Phase 2C的最小RealChaosEngine接线工作；本轮不实施。仍非REAL EXECUTION READY：真实响应与资源效果UNKNOWN、部署权限/状态路径现场绑定、专用sandbox目标复核、UID持久化不确定性和主动恢复闭环仍需后续验证。无需api3修改，不能把无害测试通过当成真实注入授权。
+
+## Phase 2C：最小 Real Adapter 与平台接线（2026-10-04）
+
+本节为当前状态，取代前文“没有真实Adapter实现”的历史描述；仍然NOT REAL EXECUTION READY。真实候选未执行，没有真实create/CPU故障，没有root/sudo或socket权限修改。
+
+### Git 隔离
+
+先检查status和diff --check，将已审核2B-1/2B-2的相互依赖契约作为一个可编译独立提交 `81d3874`（Converge approved Phase 2B lifecycle and versioned CRI contracts）。提交明确排除原有BladeRecoveryEvidenceValidator及其测试、docs/05增量、tools/recovery-evidence，以及docs/07、09。没有reset/clean/push。2C改动保留工作区供审核；docs/05原有增量未删除、未混入2B提交。
+
+### 结构与默认配置
+
+```text
+ExperimentExecutionApplicationService
+  → ChaosEngine
+      → FakeChaosEngine（缺省/fake）
+      → ChaosBladeEngine（仅显式blade）
+          → 已有TargetIdentityVerifier / Plan / IdentityVerifier / Journal / Channel / Decoder
+```
+
+仅新增一个Adapter与一个Spring Configuration，无Manager/Registry/Factory/Workflow层。配置名为 `chaoslab.engine`，仅blade注册Real；未知值不会回退为Real，应用因缺少ChaosEngine而启动失败。
+
+blade模式要求10个 `chaoslab.blade.*` 设置：executable、state-directory、node-marker、node-id、state-id、tool-version、cli-sha256、nsexec-sha256、chaos-os-sha256、cri-yaml-sha256。构造时校验路径/标签/摘要格式；操作前复用文件摘要与marker检查。路径不来自请求。所有协作者共享同一Deployment实例。未在application配置中填任何可直接启用真实执行的配置值。
+
+已有AutomaticExperimentRecoveryJob限定为fake/缺省注册，防止本阶段接线后自动调用真实destroy；没有新增调度器。现有LocalDemoTargetIdentityVerifier保持原有可信端口与限制，没有放宽专用环境准入。
+
+### Create 事务时间线
+
+1. 应用短事务：幂等检查、目标/全局占用检查、安全检查，插入PREPARING；提交后离开事务。
+2. Adapter确认无ambient transaction，从TargetRepository读取Target并经现有TargetIdentityVerifier取得fresh identity；Plan比较请求identity与fresh identity。
+3. 生成CRI_CPU_V1 snapshot，Journal.recordIntent使用REQUIRES_NEW；现有SQL验证已提交且匹配的PREPARING。重复intent拒绝，不重新create。
+4. intent提交返回后verifyBeforeCreate核验本地身份；失败仍是派发前确定失败。
+5. Channel.create（测试中只有Stub）→ HANDOFF → 严格decode native UID。
+6. Journal.recordUid用REQUIRES_NEW提交原生UID；成功才返回EngineCreateResult(RUNNING)。平台engineExperimentId为 `blade-<executionId>` Journal引用；绝不从executionId猜测原生UID。
+7. 应用短结果事务写execution RUNNING及experiment RUNNING。结果事务失败则重新读取状态，仅当仍PREPARING时写CREATE_UNCERTAIN，不覆盖更新的状态。
+
+Intent前/本地身份失败可FAILED，Channel调用次数为0。从调用Channel开始采用保守边界：即使通道报告START_FAILED，也不在Adapter猜测，统一可能有副作用。timeout、HANDOFF非法JSON、非法UID、其他decoder失败、recordUid失败均抛EngineCreateUncertainException。结果事务失败同样保留不确定性。不自动重试create。若连不确定性事务也无法写入，已提交PREPARING仍保留占用，异常向上报告，不宣称CREATE_UNCERTAIN已经落盘。
+
+同Idempotency-Key返回已保存记录，无第二次dispatch；另一实验使用相同占用目标被拒绝。测试使用数据库与独立线程连接在Stub入口检查：PREPARING和CRI snapshot已经可见且无活动事务。
+
+### UID 持久化失败：明确的 Phase 2D 阻塞
+
+**目前没有第二份可靠durable receipt。** native UID在内存里解码后，UID事务若回滚，快照仍无UID，平台CREATE_UNCERTAIN且保留目标。不能按容器名、时间邻近或UUID猜测UID，也不能重放create。工具自己的状态目录可能有信息，但尚未建立可靠的执行归属证据，不可当作已经具备人工恢复保证。
+
+下一阶段最小设计候选（未实施）：在已解码UID与DB绑定之间保存有界、本地可信、可fsync的单执行receipt，包含execution ID、native UID、节点/状态目录身份、工具摘要、格式与时间，并定义写失败/回放/归属核验；这仍不能自动覆盖“工具已产生副作用但尚无可解码回执”的窗口，必须另外预检/设计人工止损。不要把本节当作已交付证据存储。
+
+若UID已成功提交、只是RUNNING结果事务回滚，Journal仍保有UID；测试验证此时CREATE_UNCERTAIN与UID并存，可提供后续人工恢复依据，但本阶段不增加不确定状态自动destroy的入口。
+
+### status / destroy 与事务边界
+
+- status由Journal引用加载持久化snapshot，只接受CRI_CPU_V1；缺UID、其他格式、节点/状态目录/工具不符、fresh target变化即失败，不猜测或回退。
+- status通道保持STRICT，观察UID交给BladeRecoveryContract核对。不匹配抛unsafe结果；Destroyed只说明engine状态。
+- destroy先核验并使用同一保存UID；decodeDestroy后重新核验并status同UID，只有RecoveryContract.CONFIRMED_RECOVERED才返回EngineStatus.ENGINE_RECOVERED。
+- 应用事务1提交execution与experiment DESTROYING；事务外等待Adapter；事务2写结果。沿用JPA实体@Version，测试在Stub等待期间提交另一个恢复决策，原结果被乐观锁拒绝，不能覆盖新状态。
+- 原平台SUCCESS意味着完成，而本阶段没有残留/健康证据。最小调整是在**引擎结果枚举**增加ENGINE_RECOVERED，不新增平台状态/migration。应用把它记为现有ROLLBACK_FAILED，原因 `ENGINE_DESTROYED_RECOVERY_UNVERIFIED: residual and health evidence required`，finishedAt为空且保留占用；这不表示Blade destroy一定失败，而表示平台恢复验证未完成。
+- Fake仍返回原DESTROYED并沿用原SUCCESS路径。真实Adapter不返回该最终成功结果。没有将Engine Destroyed冒充RecoveryVerified，也未连接EvidenceValidator/Gate。
+
+### 文件与测试范围
+
+新增生产文件：ChaosBladeEngine.java、BladeEngineConfiguration.java。
+修改生产文件：EngineStatus.java、FakeChaosEngine.java、ExperimentExecutionApplicationService.java、AutomaticExperimentRecoveryJob.java（仅注册条件）。
+新增测试：ChaosBladeEngineTests、ChaosBladeWiringTests、BladeEngineConfigurationTests。
+文档：docs/08本节、docs/05顶部时效说明及末尾接线增量。没有修改api3、migration、目标验证策略、前端/RBAC/K8s、Go恢复原型或旧证据工具。
+
+测试覆盖：fresh目标变化、本地身份失败、intent提交失败均0次dispatch；HANDOFF/UID持久化/RUNNING；非法JSON、timeout、UID提交失败、不确定性占用与幂等重放；RUNNING结果提交失败保留已存UID；保存UID查询、UID不匹配、缺UID/归属变化拒绝destroy；destroy回执但未Destroyed不恢复；Destroyed仅engine recovered；旧destroy结果乐观锁冲突；Fake默认、显式Real、每项缺配置启动失败。提交失败由真实事务beforeCommit回调抛错注入，断言事务回滚，而非仅模拟不存在的数据库结果。
+
+所有Adapter/Application/配置测试均使用mock BladeProcessChannel；没有启动真实候选，现有Runner测试仅无害JVM fixture。H2数据库事务验证不是MySQL生产耐久性/崩溃恢复验收。双平台最终结果在下方补录。
+
+### Phase 2D 剩余条件（本轮不实施）
+
+最小可靠receipt及未知UID止损方案；专用sandbox身份验证适配；Linux最小权限、不可变部署与状态路径/文件权限预检；恢复责任和崩溃窗口；CPU baseline/during/recovery、可信residual/health观察、证据持久化、最终Gate与占用释放规则。--timeout仍仅secondary safety net。实际回执、CPU效果、真实destroy与恢复尚未验收。
+
+本轮不为通过测试放宽root/sudo/socket，也不进入Phase 2D。代码接线完成不构成真实执行授权。
+
+### 最终验收记录
+
+- Windows JDK24：`./mvnw.cmd -q verify`退出0；341项，0失败、0错误、1跳过（已有符号链接测试，主机不可创建链接）。
+- Linux Corretto21：离线完整`mvn -o -q verify`退出0。最终复验明确`uid=1000 gid=1000`，`--network none`、`--init`、源码/缓存只读挂载、没有Docker socket，测试副本位于容器/tmp。没有以root部署真实服务；没有启动候选程序。
+- 新增测试两端均24项全通过：ChaosBladeEngineTests 10、ChaosBladeWiringTests 10、BladeEngineConfigurationTests 4，无跳过。缺配置测试的预期启动失败日志不代表验收失败。
+- 集成测试实际验证PREPARING/intent/DESTROYING跨连接提交可见性，intent/UID/RUNNING事务beforeCommit失败，及destroy结果的乐观锁冲突。默认Fake相关既有测试通过。
+- 首轮新测试曾因测试用UID重复、重新stub时触发旧Answer而失败；修正测试fixture后全量验收通过，未放宽生产约束。
+- `git diff --check`通过；Flyway V1–V11无变化。仅2B已提交为81d3874；2C工作区改动待审核，没有push，原无关改动保留。
+
+PHASE 2C COMPLETE
+
+REAL EXECUTION NOT YET AUTHORIZED

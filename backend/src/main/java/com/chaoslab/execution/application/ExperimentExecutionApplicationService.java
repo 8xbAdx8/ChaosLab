@@ -146,8 +146,17 @@ public class ExperimentExecutionApplicationService {
             return startTransaction.execute(status -> created(executionRepository.update(
                     intent.execution().markFailed(engineFailureMessage(exception)))));
         }
-        // Persistence failures propagate; the already committed PREPARING reservation remains.
-        return startTransaction.execute(status -> finishStart(intent, result));
+        try {
+            return startTransaction.execute(status -> finishStart(intent, result));
+        } catch (RuntimeException resultPersistenceFailure) {
+            // If this write also fails, committed PREPARING remains occupied. Never redispatch.
+            return startTransaction.execute(status -> {
+                var current = findOwnedExecution(experimentId, intent.execution().getId());
+                if (current.getStatus() == ExperimentExecutionStatus.PREPARING)
+                    return created(executionRepository.update(current.markCreateUncertain()));
+                return created(current);
+            });
+        }
     }
 
     private StartIntent prepareStart(UUID experimentId, String idempotencyKey) {
@@ -174,59 +183,48 @@ public class ExperimentExecutionApplicationService {
         return ExperimentExecutionDetails.from(execution);
     }
 
-    @Transactional
-    public ExperimentExecutionDetails destroy(
-            UUID experimentId,
-            UUID executionId
-    ) {
-        Objects.requireNonNull(experimentId, "experimentId must not be null");
-        Objects.requireNonNull(executionId, "executionId must not be null");
-        ExperimentExecution execution = findOwnedExecution(experimentId, executionId);
-        if (execution.getStatus() == ExperimentExecutionStatus.SUCCESS) {
-            return ExperimentExecutionDetails.from(execution);
-        }
-
-        Experiment experiment = experimentRepository.findById(experimentId)
-                .orElseThrow(() -> new ExperimentNotFoundException(experimentId));
-        requireDestroyable(execution, experiment);
-
-        ExperimentExecution destroying = executionRepository.update(
-                execution.beginDestroy()
-        );
-        Experiment destroyingExperiment = experimentRepository.update(
-                experiment.beginDestroy()
-        );
-
-        EngineDestroyResult engineResult;
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public ExperimentExecutionDetails destroy(UUID experimentId, UUID executionId) {
+        Objects.requireNonNull(experimentId);
+        Objects.requireNonNull(executionId);
+        DestroyIntent intent = startTransaction.execute(tx -> {
+            var execution = findOwnedExecution(experimentId, executionId);
+            if (execution.getStatus() == ExperimentExecutionStatus.SUCCESS) return new DestroyIntent(execution, null);
+            var experiment = experimentRepository.findById(experimentId)
+                    .orElseThrow(() -> new ExperimentNotFoundException(experimentId));
+            requireDestroyable(execution, experiment);
+            return new DestroyIntent(executionRepository.update(execution.beginDestroy()),
+                    experimentRepository.update(experiment.beginDestroy()));
+        });
+        if (intent.experiment() == null) return ExperimentExecutionDetails.from(intent.execution());
+        // Both DESTROYING records committed; no transaction/lock waits on an external process.
+        EngineDestroyResult result;
         try {
-            engineResult = chaosEngine.destroy(new EngineExperimentId(
-                    destroying.getEngineExperimentId()
-            ));
+            result = chaosEngine.destroy(new EngineExperimentId(intent.execution().getEngineExperimentId()));
         } catch (RuntimeException exception) {
-            return recordRollbackFailure(
-                    destroying,
-                    destroyingExperiment,
-                    rollbackFailureMessage(exception)
-            );
+            return startTransaction.execute(tx -> recordRollbackFailure(intent.execution(), intent.experiment(),
+                    rollbackFailureMessage(exception)));
         }
+        return startTransaction.execute(tx -> finishDestroy(intent, result));
+    }
 
-        if (engineResult.status() != EngineStatus.DESTROYED) {
-            return recordRollbackFailure(
-                    destroying,
-                    destroyingExperiment,
-                    "engine destroy returned unexpected status "
-                            + engineResult.status()
-            );
-        }
+    private record DestroyIntent(ExperimentExecution execution, Experiment experiment) { }
 
+    private ExperimentExecutionDetails finishDestroy(DestroyIntent intent, EngineDestroyResult result) {
+        // Versions from transaction 1 use the existing optimistic repository; stale results conflict.
+        var destroying = intent.execution();
+        var experiment = intent.experiment();
+        if (!destroying.getEngineExperimentId().equals(result.engineExperimentId().value()))
+            return recordRollbackFailure(destroying, experiment, "engine recovery reference mismatch");
+        if (result.status() == EngineStatus.ENGINE_RECOVERED)
+            return recordRollbackFailure(destroying, experiment,
+                    "ENGINE_DESTROYED_RECOVERY_UNVERIFIED: residual and health evidence required");
+        if (result.status() != EngineStatus.DESTROYED)
+            return recordRollbackFailure(destroying, experiment, "engine destroy returned unexpected status " + result.status());
         Instant finishedAt = clock.instant();
-        if (finishedAt.isBefore(destroying.getStartedAt())) {
-            finishedAt = destroying.getStartedAt();
-        }
-        ExperimentExecution successful = executionRepository.update(
-                destroying.markSuccess(finishedAt)
-        );
-        experimentRepository.update(destroyingExperiment.complete());
+        if (finishedAt.isBefore(destroying.getStartedAt())) finishedAt = destroying.getStartedAt();
+        var successful = executionRepository.update(destroying.markSuccess(finishedAt));
+        experimentRepository.update(experiment.complete());
         return ExperimentExecutionDetails.from(successful);
     }
 

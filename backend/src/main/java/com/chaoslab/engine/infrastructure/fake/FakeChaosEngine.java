@@ -15,6 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 @Component
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "chaoslab.engine", havingValue = "fake", matchIfMissing = true)
 public class FakeChaosEngine implements ChaosEngine {
 
     private static final String ID_PREFIX = "fake-";
