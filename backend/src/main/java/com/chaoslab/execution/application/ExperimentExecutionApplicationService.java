@@ -141,7 +141,8 @@ public class ExperimentExecutionApplicationService {
             result = chaosEngine.create(intent.request());
         } catch (EngineCreateUncertainException exception) {
             return startTransaction.execute(status -> created(
-                    executionRepository.update(intent.execution().markCreateUncertain())));
+                    executionRepository.update(intent.execution().markCreateUncertain(
+                            exception.recoveryReference().map(EngineExperimentId::value).orElse(null)))));
         } catch (RuntimeException exception) {
             return startTransaction.execute(status -> created(executionRepository.update(
                     intent.execution().markFailed(engineFailureMessage(exception)))));
@@ -153,7 +154,9 @@ public class ExperimentExecutionApplicationService {
             return startTransaction.execute(status -> {
                 var current = findOwnedExecution(experimentId, intent.execution().getId());
                 if (current.getStatus() == ExperimentExecutionStatus.PREPARING)
-                    return created(executionRepository.update(current.markCreateUncertain()));
+                    return created(executionRepository.update(current.markCreateUncertain(
+                            ("blade-"+current.getId()).equals(result.engineExperimentId().value())
+                                    ? result.engineExperimentId().value() : null)));
                 return created(current);
             });
         }
@@ -193,6 +196,12 @@ public class ExperimentExecutionApplicationService {
             var experiment = experimentRepository.findById(experimentId)
                     .orElseThrow(() -> new ExperimentNotFoundException(experimentId));
             requireDestroyable(execution, experiment);
+            if (execution.getStatus() == ExperimentExecutionStatus.CREATE_UNCERTAIN) {
+                Instant attemptAt = clock.instant();
+                if (attemptAt.isBefore(execution.getCreatedAt())) attemptAt = execution.getCreatedAt();
+                return new DestroyIntent(executionRepository.update(execution.beginUncertainDestroy(attemptAt)),
+                        experimentRepository.update(experiment.beginUncertainDestroy()));
+            }
             return new DestroyIntent(executionRepository.update(execution.beginDestroy()),
                     experimentRepository.update(experiment.beginDestroy()));
         });
@@ -351,7 +360,10 @@ public class ExperimentExecutionApplicationService {
         boolean retrying = execution.getStatus()
                 == ExperimentExecutionStatus.ROLLBACK_FAILED
                 && experiment.getStatus() == ExperimentStatus.ROLLBACK_FAILED;
-        if (!running && !retrying) {
+        boolean uncertainWithJournal = execution.getStatus() == ExperimentExecutionStatus.CREATE_UNCERTAIN
+                && ("blade-"+execution.getId()).equals(execution.getEngineExperimentId())
+                && experiment.getStatus() == ExperimentStatus.READY;
+        if (!running && !retrying && !uncertainWithJournal) {
             throw new ExperimentExecutionDestroyRejectedException(
                     "EXPERIMENT_EXECUTION_NOT_DESTROYABLE",
                     "execution cannot be destroyed from status "

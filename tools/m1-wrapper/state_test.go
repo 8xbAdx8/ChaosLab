@@ -49,7 +49,7 @@ func TestAuthorizationAndBindings(t *testing.T) {
 	if r := serve(context.Background(), c, wrong); r.Code != "BINDING_REJECTED" {
 		t.Fatal(r)
 	}
-	if r := serve(context.Background(), c, request("observe")); r.Code != "OBSERVATION_UNKNOWN" {
+	if r := serve(context.Background(), c, request("observe")); r.Code != "OK" || r.Observation == nil || r.Observation.Residual != "UNKNOWN" || r.Observation.Health != "UNKNOWN" {
 		t.Fatal(r)
 	}
 	for _, op := range []string{"status", "destroy"} {

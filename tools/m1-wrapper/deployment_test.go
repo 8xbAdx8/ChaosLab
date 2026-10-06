@@ -1,10 +1,24 @@
 package main
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 	"time"
 )
+
+func TestPreflightAttestsOnlyVerifiedDeployment(t *testing.T) {
+	c, p := fixtureConfig(t)
+	r := serve(context.Background(), c, Request{Operation: "preflight"})
+	if r.Code != "OK" || r.Policy == nil || *r.Policy != p || r.PolicyDigest != policyDigest(p) || r.CleanupComplete || r.Handoff {
+		t.Fatal("missing/misleading deployment attestation")
+	}
+	c.targetCheck = func(Policy) error { return invalid }
+	r = serve(context.Background(), c, Request{Operation: "preflight"})
+	if r.Code != "TARGET_UNKNOWN" || r.Policy != nil || r.PolicyDigest != "" {
+		t.Fatal("attested an unverified target")
+	}
+}
 
 func TestFixedDeploymentSlots(t *testing.T) {
 	for _, d := range []string{"REAL", "FAKE"} {

@@ -75,7 +75,7 @@ func TestCSPRNGAndEnvironment(t *testing.T) {
 
 func TestInspectAllowlist(t *testing.T) {
 	p := testPolicy()
-	v := map[string]any{"Id": p.ContainerID, "Image": p.ImageID, "Name": "/chaoslab-cpu-sandbox", "State": map[string]any{"Running": true}, "Config": map[string]any{"User": p.User}, "Mounts": []any{}, "HostConfig": map[string]any{"NetworkMode": "none", "ReadonlyRootfs": true, "CapDrop": []string{"ALL"}, "CgroupnsMode": "private", "NanoCPUs": p.NanoCPUs, "Memory": p.Memory, "PidsLimit": p.Pids, "RestartPolicy": map[string]any{"Name": "no"}}}
+	v := map[string]any{"Id": p.ContainerID, "Image": p.ImageID, "Name": "/chaoslab-cpu-sandbox", "Path": "sleep", "Args": []string{"3600"}, "State": map[string]any{"Running": true}, "Config": map[string]any{"User": p.User, "Entrypoint": nil, "Cmd": []string{"sleep", "3600"}}, "Mounts": []any{}, "HostConfig": map[string]any{"NetworkMode": "none", "ReadonlyRootfs": true, "CapDrop": []string{"ALL"}, "SecurityOpt": []string{"no-new-privileges=true"}, "CgroupnsMode": "private", "NanoCpus": p.NanoCPUs, "Memory": p.Memory, "PidsLimit": p.Pids, "RestartPolicy": map[string]any{"Name": "no"}}}
 	b, _ := json.Marshal(v)
 	v["State"].(map[string]any)["Paused"] = false
 	v["State"].(map[string]any)["Restarting"] = false
@@ -102,7 +102,7 @@ func TestInspectAllowlist(t *testing.T) {
 			}
 		})
 	}
-	for _, key := range []string{"Privileged", "NetworkMode", "NanoCPUs", "Memory", "PidsLimit", "CapDrop", "Binds", "Devices", "CgroupnsMode", "ReadonlyRootfs"} {
+	for _, key := range []string{"Privileged", "NetworkMode", "NanoCpus", "Memory", "PidsLimit", "CapDrop", "SecurityOpt", "Binds", "Devices", "CgroupnsMode", "ReadonlyRootfs"} {
 		t.Run(key, func(t *testing.T) {
 			var copy map[string]any
 			json.Unmarshal(b, &copy)
@@ -115,6 +115,26 @@ func TestInspectAllowlist(t *testing.T) {
 				t.Fatal("accepted unsafe config")
 			}
 		})
+	}
+	for _, mutate := range []func(map[string]any){
+		func(v map[string]any) {
+			h := v["HostConfig"].(map[string]any)
+			h["NanoCPUs"] = h["NanoCpus"]
+			delete(h, "NanoCpus")
+		},
+		func(v map[string]any) { v["Path"] = "sh" },
+		func(v map[string]any) { v["Args"] = []string{"-c", "stress"} },
+		func(v map[string]any) { v["Config"].(map[string]any)["Cmd"] = []string{"stress"} },
+		func(v map[string]any) { v["Config"].(map[string]any)["Entrypoint"] = []string{"sh"} },
+		func(v map[string]any) { delete(v["HostConfig"].(map[string]any), "SecurityOpt") },
+	} {
+		var copy map[string]any
+		json.Unmarshal(b, &copy)
+		mutate(copy)
+		bad, _ := json.Marshal(copy)
+		if validateInspect(bad, p) == nil {
+			t.Fatal("accepted wrong spelling/workload/privilege boundary")
+		}
 	}
 }
 

@@ -20,6 +20,7 @@ public final class BladeLocalIdentityVerifier {
     private static final long MAX_BINARY_BYTES = 128L * 1024 * 1024;
     private java.util.Map<String, String> companionPins = java.util.Map.of();
     private DockerCpuCommandPlan.Deployment deployment;
+    private java.util.function.Supplier<tools.jackson.databind.JsonNode> rootPreflight;
     private final Path nodeMarker;
     private final Path stateDirectory;
     private final Path binary;
@@ -60,6 +61,13 @@ public final class BladeLocalIdentityVerifier {
         this.deployment = deployment;
     }
 
+    public static BladeLocalIdentityVerifier viaWrapper(Path nodeMarker, DockerCpuCommandPlan.Deployment deployment,
+            String version, String sha, java.util.Map<String, String> companions, BladeProcessChannel channel) {
+        var verifier = new BladeLocalIdentityVerifier(nodeMarker, deployment.stateDirectory(), deployment, version, sha, companions);
+        verifier.rootPreflight = channel::preflight;
+        return verifier;
+    }
+
     /** No invented UID. Identity approval is not permission to inject or proof of target identity. */
     public Result verifyBeforeCreate(BladeExecutionSnapshot intent, DockerCpuCommandPlan plan) {
         if (intent == null || plan == null || deployment == null
@@ -81,6 +89,7 @@ public final class BladeLocalIdentityVerifier {
         if (!pinnedVersion.equals(saved.toolVersion()) || !pinnedSha256.equals(saved.toolSha256())) {
             return Result.TOOL_PIN_MISMATCH;
         }
+        if (rootPreflight != null) return verifyAttestation(saved);
         try {
             if (!saved.executorInstanceId().equals(marker(nodeMarker))) return Result.NODE_MISMATCH;
             rejectLinks(stateDirectory);
@@ -104,6 +113,28 @@ public final class BladeLocalIdentityVerifier {
             // Never leak paths, file content, or underlying exception messages to an API/log.
             return Result.LOCAL_EVIDENCE_UNAVAILABLE;
         }
+    }
+
+    private Result verifyAttestation(BladeExecutionSnapshot saved) {
+        try {
+            var p = rootPreflight.get();
+            if (!BladeExecutionSnapshot.CRI_CPU_V1.equals(saved.format()) || p == null
+                    || !"REAL".equals(p.path("deployment").asText())
+                    || !deployment.executable().toString().equals(p.path("executable").asText())
+                    || !deployment.stateDirectory().toString().equals(p.path("stateDirectory").asText())
+                    || !saved.executorInstanceId().equals(p.path("nodeId").asText())
+                    || !saved.stateDirectoryId().equals(p.path("stateId").asText())
+                    || !saved.target().containerId().equals(p.path("containerId").asText())
+                    || !saved.target().imageId().equals(p.path("imageId").asText())
+                    || !pinnedSha256.equals(p.path("toolSha256").asText())
+                    || !companionPins.get("bin/nsexec").equals(p.path("nsexecSha256").asText())
+                    || !companionPins.get("bin/chaos_os").equals(p.path("chaosOsSha256").asText())
+                    || !companionPins.get("yaml/chaosblade-cri-spec-1.8.1.yaml").equals(p.path("yamlSha256").asText())
+                    || !p.path("cpuPercent").isIntegralNumber() || p.path("cpuPercent").asInt(-1) != saved.cpuPercent()
+                    || !p.path("durationSeconds").isIntegralNumber() || p.path("durationSeconds").asInt(-1) != saved.durationSeconds())
+                return Result.LOCAL_EVIDENCE_UNAVAILABLE;
+            return Result.LOCAL_IDENTITY_MATCHED_NEEDS_TARGET_CHECK;
+        } catch (RuntimeException unavailable) { return Result.LOCAL_EVIDENCE_UNAVAILABLE; }
     }
 
     private static Path absolute(Path path) {

@@ -64,7 +64,7 @@ public final class ChaosBladeEngine implements ChaosEngine {
         } catch (RuntimeException uncertain) {
             // Do not expose raw stdout, paths or native UID in API/log exception messages.
             // UID was already committed before dispatch. Never overwrite it or retry create.
-            throw new EngineCreateUncertainException();
+            throw new EngineCreateUncertainException(reference(request.executionId()));
         }
     }
 
@@ -83,6 +83,7 @@ public final class ChaosBladeEngine implements ChaosEngine {
 
     @Override public EngineDestroyResult destroy(EngineExperimentId reference) {
         outsideTransaction();
+        var recoveryStarted = clock.instant();
         var saved = load(reference);
         verifyRecovery(saved);
         var handle = saved.recoveryHandle().orElseThrow();
@@ -92,7 +93,18 @@ public final class ChaosBladeEngine implements ChaosEngine {
         var observation = decoder.decodeStatus(channel.status(handle, () -> false));
         if (decision(saved, fresh, observation) != BladeRecoveryContract.Decision.CONFIRMED_RECOVERED)
             throw new IllegalStateException("engine recovery not confirmed");
-        return new EngineDestroyResult(reference, EngineStatus.ENGINE_RECOVERED);
+        var confirmedAt = clock.instant();
+        BladeProcessChannel.RecoveryObservation evidence;
+        try { evidence = channel.observe(handle); }
+        catch (RuntimeException unknown) { evidence = null; }
+        var assessment = BladeRecoveryEvidenceValidator.assess(handle, recoveryStarted, clock.instant(), java.time.Duration.ofSeconds(10),
+                new BladeRecoveryEvidenceValidator.Observation<>(handle, confirmedAt, BladeRecoveryContract.Decision.CONFIRMED_RECOVERED),
+                evidence == null ? null : new BladeRecoveryEvidenceValidator.Observation<>(evidence.subject(), evidence.observedAt(), evidence.residual()),
+                evidence == null ? null : new BladeRecoveryEvidenceValidator.Observation<>(evidence.subject(), evidence.observedAt(), evidence.health()));
+        if (assessment == BladeRecoveryEvidenceGate.Outcome.MANUAL_INTERVENTION)
+            throw new IllegalStateException("recovery evidence requires manual intervention");
+        return new EngineDestroyResult(reference, assessment == BladeRecoveryEvidenceGate.Outcome.VERIFIED
+                ? EngineStatus.DESTROYED : EngineStatus.ENGINE_RECOVERED);
     }
 
     private BladeRecoveryContract.Decision decision(BladeExecutionSnapshot saved, VerifiedDockerTarget fresh,

@@ -151,6 +151,12 @@ type Result struct {
 	CleanupComplete bool   `json:"cleanupComplete"`
 	Handoff         bool   `json:"handoff"`
 	NativeUID       string `json:"nativeUid,omitempty"`
+	// Whitelisted deployment metadata, only after trusted files and live target
+	// checks. Allows an unprivileged backend to compare its intent without reading
+	// root-only policy/state directories or gaining Docker socket access.
+	Policy       *Policy      `json:"policy,omitempty"`
+	PolicyDigest string       `json:"policyDigest,omitempty"`
+	Observation  *Observation `json:"observation,omitempty"`
 	// Raw output is carried only after strict JSON validation. Stderr, paths and
 	// OS errors are never reflected. This is transport, NOT recovery verification.
 	Response json.RawMessage `json:"response,omitempty"`

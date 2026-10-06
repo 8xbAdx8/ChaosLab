@@ -202,6 +202,12 @@ public final class Experiment {
         return withStatus(ExperimentStatus.DESTROYING);
     }
 
+    /** The execution service permits this only with an occupied uncertain execution and durable handle. */
+    public Experiment beginUncertainDestroy() {
+        if (status != ExperimentStatus.READY) throw new IllegalStateException("uncertain recovery requires READY experiment");
+        return withStatus(ExperimentStatus.DESTROYING);
+    }
+
     public Experiment complete() {
         if (status == ExperimentStatus.SUCCESS) {
             return this;

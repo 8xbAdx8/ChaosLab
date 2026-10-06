@@ -24,6 +24,7 @@ import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 @Component
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "chaoslab.engine", havingValue = "fake", matchIfMissing = true)
 public class LocalDemoTargetIdentityVerifier implements TargetIdentityVerifier {
 
     private static final int MAX_OUTPUT_BYTES = 16 * 1024;

@@ -173,3 +173,111 @@ Java 本地改动：CSPRNG 8 字节/16 位 lowercase hex UID，在 CRI intent IN
 验证：Windows JDK24 + Maven wrapper3.9.16 完整 verify 退出0，345项、0失败、0错误、1跳过。Linux Corretto21/Maven3.9.16 在非 root、--network none、无 Docker socket、源和依赖只读挂载的临时副本完成 verify，退出0。首次旧 Maven3.8.8 离线运行因镜像/旧插件依赖未缓存失败，改用项目锁定 Maven 版本后通过，未为测试打开网络。
 
 仍阻塞 M1：fake root preflight 拒绝未定位；A 未通过故 B/C 未执行；Java/root policy 身份对照及服务账号只读 identity 路径未接通；CPU/residual/health probes 与最终 Validator/Gate 主流程未实现；CREATE_UNCERTAIN 在平台 destroy 入口仍被拒绝，虽然 native UID 已可从 journal 找回，尚不能称为完整恢复闭环。未修改最终恢复状态流来制造 SUCCESS。当前 NOT REAL EXECUTION READY，无 REAL authorization，无真实故障。
+
+## 2026-10-06 收尾更新：已完成项与真实阻塞
+
+本节取代上节“尚未实现”的当前状态，不改写历史失败记录。
+
+FAKE preflight 初始拒绝已定位：Docker 字段实际名为 NanoCpus，旧 wrapper
+及合成 fixture 使用了 NanoCPUs。修正拼写，没有放宽限额。已安装 v3 SHA
+`7b4ccbbc85c21bff728c9e7c065353b1e0826da3a0991c2f993b5cb9bbb91f13`。
+fake-root-suite-resumed.json 的 coreLifecyclePassed=true：实际 chaoslab →
+sudo → root wrapper → root FAKE 子进程；HANDOFF 保留 helper 且 cleanupComplete=false；
+超时、非零、非法 JSON、输出超限清理已知 helper；status/destroy 严格前台；
+wrapper/sudo SIGTERM 中断清理通过。SIGKILL 无结构化结果，明确 UNKNOWN；
+harness 通过已记录 PID/start time/pidfd 清理无害 helper，不冒充自动清理通过。
+遗留 FAKE 空 operation.lock 在确认 fixture 不存活后可恢复地归档到固定备份路径。
+
+real-readonly-deployment.json passed=true：完成 FAKE/REAL 错槽、工具身份、
+policy 变化负测并清除授权；复制锁定发行到新 root-owned 固定目录，未覆盖原候选。
+w/chaoslab 普通身份均不可写；父目录、ACL、symlink 和 owner/mode 检查通过。
+四项文件摘要与 docs/08 历史锁定值完全一致。REAL policy 的规范化完整摘要为
+`9645e6c589812c933cd24d4ce648992940154677bb2504171a28a594b21c27ca`。
+绑定 `/opt/chaoslab/m1/api3-identified/blade-chaoslab-api3-identified`、
+`/var/lib/chaoslab-m1/state`、m1-executor / m1-real-state、固定 sandbox 完整 ID / image、
+10% CPU、1 CPU、10 秒上限。没有 REAL authorization。
+
+候选 version / 根 --help 退出 0；真实 create 未测试。sandbox 仍是同一
+sleep 3600 / 65534:65534 / network none / 无 mounts / 非 privileged / CapDrop ALL /
+no-new-privileges / readonly rootfs / 0.5 CPU / 128MiB / PIDs32 / restart no。
+部署报告采样 PID2495、startTime111221、唯一 sleep、仅 lo、cgroup 稳定，
+约 4.409 秒 CPU 基线 0%。这是当时的基线，不保证以后 sleep 仍运行。
+历史 ExitCode137 原因仍 UNKNOWN，不自动标记 OOM 或恢复。
+
+Java 正式 UID 接线、root preflight 身份对照、CREATE_UNCERTAIN 的原 UID 恢复、
+CPU/residual/health 与已有 Validator/Gate 主流程已实现；说明见 docs/08 最新节。
+Windows full verify 352 项、0 失败/错误、1 既有 symlink 跳过；Linux 非 root、
+离线、无 Docker socket 的 full verify 退出 0。探针 wrapper Windows/Linux 测试与
+Linux go vet 通过。这些均不是实际 Java 服务在 VM 上的执行验收。
+
+### 空原生库停止点及已完成的最小修正
+
+v4 探针产物 SHA
+`2e27c2f2b15fb011c1562f0a2fc19640e7b5e0f3fef1d9c166bf54969c654b94`。
+首次管理员执行 final-probe-verification.py 在任何替换之前被
+`unexpected REAL native state` 拒绝；已安装 wrapper SHA 独立复核仍为 v3。
+该次脚本没有写最终报告，不能把用户“已执行”作为 PASS。随后只读
+diagnose-real-state.py，仅固定库的文件信息/SHA/完整性/表行数，不运行 CLI、
+不改容器/状态、不生成授权。源码 eager GetSource 可以解释 help/version 建库，
+现场诊断确认 experiment/preparation/sqlite_sequence 均 0 行，integrity=ok，
+文件 49152 字节，root 0600，无 sidecar，SHA
+`6cf2cb3949e05ae8b4c61999e2970c0338f49b82b209872d135f5c02658c7433`。
+最小修正版再次核对以上全部条件和无工具进程，才将这个精确空库归档至
+`/var/backups/chaoslab-m1-2d3-20261004/real-empty-native-before-probes.dat`。
+没有删除记录，归档可恢复，没有放宽 wrapper 的 fresh-state gate。
+
+管理员随后完成修正版；final-probe-verification.json 的 passed=true，
+fakeRootLifecycleAndProbes=PASS、sudoUnchanged=true，安装后 SHA 独立复核等于 v4。
+root FAKE suite coreLifecyclePassed=true：HANDOFF/detached 保留 helper，
+cleanupComplete=false；探针在 helper 存活时判 PRESENT，已知 helper 清理后
+判 CLEAR/HEALTHY，CPU=baseline=0，绑定 execution/UID/target/node 均一致。
+失败清理、STRICT、SIGTERM 回归通过；SIGKILL 仍 UNKNOWN，不声称系统自动清理。
+故意 SIGKILL 遗留空锁归档到固定 `fake-probes-stale-lock-after-sigkill`，可恢复。
+该 core 子报告保留历史 passed=false / remaining cross-slot 字段；不把它单独
+当完整 PASS。跨槽/策略负测已由 real-readonly-deployment.json 验证，最终组合
+报告 passed=true，两份证据一起构成验收。
+
+最终 REAL preflight：policy 与完整 digest 未变，probeReady=true，CPU0%，
+residual CLEAR，health UNKNOWN（未发生 REAL 实验，没有恢复 binding，不是恢复验证）。
+container/image、安全配置、PID2495/start111221/cgroup/members=[2495] 均不变，
+唯一 sleep3600、仅 lo。REAL 无授权 create 连续3次 CREATE_DISABLED；额外
+wrapper argv 和 sh/bash/docker/env/python/systemctl/systemd-run/blade 的 sudo
+授权查询全拒绝。root 所需 capabilities 存在、宿主 cgroup 挂载可写只读核验通过。
+没有 namespace/cgroup 写入试验或真实故障。FAKE/REAL authorization 均不存在。
+
+### 剩余唯一现场部署验收阻塞
+
+只读 SSH 还确认 VM 的 `java -version` 为 command not found。未安装/启动后端，
+未验证以 chaoslab 身份运行 Java 到固定 sudo wrapper 的实际链路及运行配置。
+这是部署验收缺口，不能由 Stub 容器测试代替，也不需要新架构。
+
+M1 工作项进度暂估 90%，不是安全评分；权限边界、FAKE root、固定候选、UID
+与最终证据主链已完成。尚未进行首次真实闭环，亦未确认 VM 上普通服务身份的
+完整 Java/runtime/database 配置与主动恢复入口。停止等待用户决定后端只读部署。
+
+### 拟议首次实验（未授权，不执行）
+
+Target: chaoslab-cpu-sandbox。完整 container ID：
+`18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f`。
+image ID：`sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8`。
+native UID 由 Java CSPRNG 生成并在 dispatch 前独立提交，以下 U 仅占位符。
+
+```text
+/opt/chaoslab/m1/api3-identified/blade-chaoslab-api3-identified create cri cpu fullload --container-runtime docker --container-id 18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f --cpu-percent 10 --cpu-count 1 --timeout 10 --uid U
+```
+
+此 argv 只能由固定 wrapper 从可信 policy 组装，HTTP 不接受路径/UID。
+实际实验前重新采 baseline；10%/1CPU，10秒 secondary timeout。主恢复须由
+ChaosLab 主动 wrapper destroy U，再 status U --type create；Destroyed 加
+fresh correlated residual CLEAR / same identity+CPU HEALTHY 经 Validator/Gate
+才 SUCCESS。应在 timeout 前主动触发恢复；timer 残留则等待后复核证据，保留占用。
+Emergency stop 首选同 UID 的受限 destroy；若路径不可用，由管理员按固定
+绑定和审计人工止损，不能以占用释放、重建容器或全局 kill 代替恢复证明。
+普通后端部署与人工止损操作验收尚待确认，因此该计划不是 READY 声明。
+
+M2 记录而不扩展：并发特权更新/最终路径 TOCTOU、不受观测的快速逃逸、
+更广泛 residual 归因、持续 telemetry。M1 当前只承诺固定单节点单实验范围。
+原生 timeout 是 secondary safety net；主恢复仍是主动 destroy 同 UID、status
+Destroyed、fresh residual/health Gate。timer 仍活跃时保留占用，不猜 CLEAR。
+
+**NOT REAL EXECUTION READY。REAL EXECUTION NOT AUTHORIZED。**

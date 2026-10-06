@@ -180,6 +180,52 @@ class ChaosBladeWiringTests {
         when(channel.status(any(), any())).thenReturn(ChaosBladeEngineTests.status(uid, "Success"));
         assertThat(service.destroy(ready.getId(), result.execution().id()).status()).isEqualTo(ExperimentExecutionStatus.ROLLBACK_FAILED);
     }
+    @Test void completeFreshEvidenceReleasesOccupancyOnlyAfterGate() {
+        var started = service.start(ready.getId(), "evidence-success");
+        when(channel.observe(any())).thenAnswer(call -> new BladeProcessChannel.RecoveryObservation(call.getArgument(0),
+                java.time.Instant.now(), BladeRecoveryEvidenceGate.ResidualObservation.CLEAR, BladeRecoveryEvidenceGate.HealthObservation.HEALTHY));
+        var result = service.destroy(ready.getId(), started.execution().id());
+        assertThat(result.status()).isEqualTo(ExperimentExecutionStatus.SUCCESS);
+        verify(executions, never()).update(argThat(x -> x.getId().equals(started.execution().id())
+                && x.getStatus() == ExperimentExecutionStatus.ROLLBACK_FAILED));
+    }
+
+    @Test void unknownPresentStaleOrWrongSubjectEvidenceNeverReleasesOccupancy() {
+        for (String mode : List.of("residual-unknown", "residual-present", "health-unknown", "stale", "wrong-execution")) {
+            var second = ready(identity.targetId());
+            var started = service.start(second.getId(), "evidence-"+mode);
+            when(channel.observe(any())).thenAnswer(call -> {
+                BladeRecoveryHandle h = call.getArgument(0);
+                if (mode.equals("wrong-execution")) h = new BladeRecoveryHandle(UUID.randomUUID(), h.executorInstanceId(), h.target(), h.uid(), h.format());
+                return new BladeProcessChannel.RecoveryObservation(h,
+                        mode.equals("stale") ? java.time.Instant.now().minusSeconds(60) : java.time.Instant.now(),
+                        mode.equals("residual-present") ? BladeRecoveryEvidenceGate.ResidualObservation.PRESENT
+                                : mode.equals("residual-unknown") ? BladeRecoveryEvidenceGate.ResidualObservation.UNKNOWN : BladeRecoveryEvidenceGate.ResidualObservation.CLEAR,
+                        mode.equals("health-unknown") ? BladeRecoveryEvidenceGate.HealthObservation.UNKNOWN : BladeRecoveryEvidenceGate.HealthObservation.HEALTHY);
+            });
+            var result = service.destroy(second.getId(), started.execution().id());
+            assertThat(result.status()).isEqualTo(ExperimentExecutionStatus.ROLLBACK_FAILED);
+            assertThat(result.finishedAt()).isNull();
+            assertThatThrownBy(() -> service.start(ready(identity.targetId()).getId(), "blocked-"+mode))
+                    .isInstanceOf(ExperimentExecutionStartRejectedException.class);
+            // Test isolation only; never an application occupancy-release path.
+            jdbc.update("DELETE FROM blade_execution_snapshots WHERE execution_id=?", started.execution().id().toString());
+            jdbc.update("DELETE FROM experiment_executions WHERE id=?", started.execution().id().toString());
+        }
+    }
+
+    @Test void uncertainCreateRecoversSameCommittedUidWithoutRecreating() {
+        doReturn(ChaosBladeEngineTests.handoff("bad-json")).when(channel).create(any(), anyString(), any());
+        var started = service.start(ready.getId(), "uncertain-recovery");
+        var saved = journal.findByExecutionId(started.execution().id()).orElseThrow();
+        uid = saved.uid();
+        assertThat(started.execution().engineExperimentId()).isEqualTo("blade-"+started.execution().id());
+        when(channel.observe(any())).thenAnswer(call -> new BladeProcessChannel.RecoveryObservation(call.getArgument(0),
+                java.time.Instant.now(), BladeRecoveryEvidenceGate.ResidualObservation.CLEAR, BladeRecoveryEvidenceGate.HealthObservation.HEALTHY));
+        assertThat(service.destroy(ready.getId(), started.execution().id()).status()).isEqualTo(ExperimentExecutionStatus.SUCCESS);
+        verify(channel).destroy(argThat(h -> saved.uid().equals(h.uid()) && saved.executionId().equals(h.executionId())), any());
+        verify(channel,times(1)).create(any(),anyString(),any());
+    }
     @Test void staleDestroyResultCannotOverwriteNewerDecision() {
         var started = service.start(ready.getId(), "stale-destroy");
         doAnswer(call -> {

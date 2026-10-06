@@ -75,7 +75,12 @@ func serve(ctx context.Context, c config, q Request) Result {
 		if c.targetCheck(p) != nil {
 			return result("TARGET_UNKNOWN")
 		}
-		return result("OK")
+		out := result("OK")
+		out.Policy, out.PolicyDigest = &p, policyDigest(p)
+		if c.trustRoot == "" {
+			out.Observation = observeTarget(ctx, p, nil)
+		}
+		return out
 	}
 	unlock, e := c.lock()
 	if e != nil {
@@ -99,8 +104,14 @@ func serve(ctx context.Context, c config, q Request) Result {
 		}
 	}
 	if q.Operation == "observe" {
-		return result("OBSERVATION_UNKNOWN")
-	} // no invented CLEAR/HEALTHY
+		b, e := c.binding("binding.json")
+		if e != nil {
+			return result("BINDING_REJECTED")
+		}
+		out := result("OK")
+		out.Observation = observeTarget(ctx, p, &b)
+		return out
+	}
 	args := []string{q.Operation, q.NativeUID}
 	if q.Operation == "status" {
 		args = append(args, "--type", "create")

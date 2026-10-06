@@ -402,3 +402,70 @@ WRAPPER IMPLEMENTATION REVIEW READY
 VM PERMISSION CHANGES NOT AUTHORIZED
 
 REAL EXECUTION NOT AUTHORIZED
+
+## 2026-10-06 M1 closeout: implemented contracts, not a real execution result
+
+This section supersedes the earlier *pending* Java/probe statements, not their
+historical test records. No real create, fault, unknown-UID destroy, REAL
+authorization, migration or api3 modification has occurred.
+
+- The adapter generates 8 CSPRNG bytes as 16 lowercase hex digits. Committed
+  PREPARING precedes the independent journal transaction that inserts CRI_CPU_V1
+  intent **with the native UID** into the existing blade_uid column. Only after
+  that commit are target/tool identities reverified and the same UID dispatched.
+  A different response UID or invalid response is CREATE_UNCERTAIN, never a retry.
+  DOCKER_CPU_V1 retains its existing read semantics; no migration is required.
+- The ordinary backend uses the fixed sudo/wrapper channel. Root preflight
+  returns its verified typed policy plus canonical SHA-256; the existing local
+  identity verifier compares deployment, paths, four tool pins, state/node,
+  target and CPU/duration against the committed intent. It does not read
+  root-only files or fabricate a UID. The historical `order-service` application
+  alias maps only to the root policy's exact sandbox, not an arbitrary container.
+- CREATE_UNCERTAIN preserves an exact `blade-<executionId>` journal reference.
+  This permits recovery using the previously committed UID. The uncertain
+  recovery timestamp denotes the recovery attempt, **not** a proven fault start.
+  A process crash leaving PREPARING still requires manual journal inventory;
+  there is no recovery scheduler or automatic create replay.
+- The wrapper persists a cgroup-v2 CPU baseline with its root binding before
+  child dispatch. Fixed-target observe can sample during/recovery: same PID,
+  start time and cgroup, usage_usec delta over a bounded one-second window.
+  Residual scans the target cgroup and reviewed fixed tool/timer scope;
+  inaccessible/ambiguous observations remain UNKNOWN. Health is the same running
+  sandbox with CPU at most baseline + 1 percentage point, not application health.
+- Destroy commits DESTROYING, destroys the same UID, reverifies identities and
+  queries that UID's Destroyed state, then collects root observations. The
+  existing BladeRecoveryEvidenceValidator and BladeRecoveryEvidenceGate require
+  matching execution/UID/target/executor, post-attempt observations no older than
+  10 seconds, engine confirmation, residual CLEAR and health HEALTHY. Only then
+  does the adapter return final DESTROYED and the application record SUCCESS /
+  release occupancy. UNKNOWN, PRESENT, unhealthy, stale or mismatched evidence
+  retain occupancy. No intermediate failure is rewritten to SUCCESS in that call.
+
+Windows JDK24 full Maven verify: 352 tests, zero failures/errors, one existing
+symlink-platform skip. Linux Corretto21 full offline verify: exit 0, nonroot,
+network none, no Docker socket, source/cache readonly. Go Windows portable tests
+and Linux full tests/vet passed for the probe build. Production adapter tests
+use Stub channels, never the real candidate.
+
+VM root FAKE v3 acceptance verified HANDOFF with helper alive/cleanupComplete
+false, bounded failed-create cleanup, strict status/destroy, SIGTERM of wrapper
+and sudo, and cross-slot/policy/expiry/replay rejection. Wrapper SIGKILL yielded
+no result, therefore UNKNOWN; the test harness cleaned exact observed pidfds.
+This is not a guarantee against unobserved fast detach or malicious root.
+
+The v4 probe build is now installed and root FAKE probe regression passed. The
+first final admin attempt stopped before replacement on an existing database.
+Source proof identifies eager initialization in exec/cplus/executor.go:104 and
+exec/jvm/executor.go:263 via data.GetSource() / data/source.go:50-59, so even
+version/help can initialize SQLite. Root read-only diagnosis confirmed integrity
+OK and experiment/preparation/sqlite_sequence all zero; the exact SHA-locked empty
+DB was recoverably archived, not deleted or adopted. The final composite report
+passed=true, root FAKE observations showed live helper PRESENT then CLEAR/HEALTHY
+after exact helper cleanup; final REAL readiness baseline 0%, residual CLEAR,
+health UNKNOWN without a binding, and authorization absent. No-auth REAL create
+was rejected three times. The create fresh-store gate remains fail-closed.
+The dedicated VM currently has no
+Java executable; actual nonroot backend/runtime/configuration verification is
+not established by the disposable Linux Stub tests.
+
+**NOT REAL EXECUTION READY — REAL EXECUTION NOT AUTHORIZED.**

@@ -8,11 +8,12 @@ is now installed on the dedicated VM with an exact, no-argv sudo boundary.
 Only short-lived, single-use, identity-bound FAKE authorizations are permitted.
 REAL authorization and real ChaosBlade create remain prohibited.
 
-The first VM fake suite stopped at read-only preflight before launching a child;
-root lifecycle acceptance is still pending. Java now persists the preallocated
-native UID before dispatch and uses the fixed wrapper transport, but production
-identity attestation and recovery evidence integration remain incomplete.
-Windows and isolated Linux backend verification passed. See
+The VM production v4 wrapper passed the actual root FAKE lifecycle and probe
+regression; REAL read-only preflight passed, CPU baseline is 0%, and REAL create
+without authorization was rejected three times. Java preallocated UID, trusted
+root identity attestation and the existing recovery evidence Gate are now wired.
+Windows and isolated Linux backend verification passed. Actual Java backend
+runtime/configuration on the VM remains unverified (no java executable). See
 `../../docs/10-m1-privilege-deployment.md` for deployment evidence and blockers.
 
 NOT REAL EXECUTION READY. REAL EXECUTION NOT AUTHORIZED.
@@ -283,3 +284,44 @@ WRAPPER IMPLEMENTATION REVIEW READY
 VM PERMISSION CHANGES NOT AUTHORIZED
 
 REAL EXECUTION NOT AUTHORIZED
+
+## Current M1 closeout status — 2026-10-06
+
+The preceding phase records are historical. The dedicated VM now has the reviewed
+no-login chaoslab account and exact no-argv sudo boundary. The installed production
+v3 wrapper has passed the actual chaoslab -> sudo -> root FAKE child lifecycle
+suite, including HANDOFF, failure cleanup, STRICT status/destroy and signal tests.
+SIGKILL cannot produce a cleanup attestation: no result is UNKNOWN and exact known
+test children required harness cleanup. All FAKE authorizations were consumed or
+removed; cross-deployment, changed-policy, expiry and replay rejection passed.
+
+The REAL candidate is deployed separately at /opt/chaoslab/m1/api3-identified,
+root-owned, without a current symlink; original home-directory files remain.
+REAL policy is fixed and has no authorization. Version/root help and idle sandbox
+inspect/baseline passed without a real experiment. Version/help initialized an
+empty native SQLite store through eager package initialization. Root diagnosis
+proved all three tables empty and integrity OK; that exact SHA-locked DB was
+recoverably archived before regression, not deleted or adopted.
+
+Current probe build adds fixed-target cgroup-v2 usage_usec sampling, conservative
+residual scope and identity/CPU-based sandbox health. The pre-dispatch baseline
+is fsynced with the root binding; observation carries the same execution/UID/node/
+container/image. No binding means health UNKNOWN even if idle/readiness is good.
+Java correlates fresh observations using the existing recovery Validator/Gate.
+Neither a clean process group nor engine Destroyed alone means RecoveryVerified.
+
+Probe build SHA-256:
+`2e27c2f2b15fb011c1562f0a2fc19640e7b5e0f3fef1d9c166bf54969c654b94`.
+Windows portable Go tests and Linux full Go tests/vet passed. Installed SHA was
+independently checked after final-probe-verification.json reported passed=true.
+The actual root chain confirmed helper PRESENT while alive and CLEAR/HEALTHY
+after known fixture cleanup, with unchanged UID/execution and baseline 0%.
+The REAL policy was restored, sudo unchanged, no authorization remains.
+Do not rerun initialization scripts or bypass the fresh-store gate. No binding
+in the REAL slot means its read-only preflight health stays UNKNOWN, as intended.
+
+No REAL authorization or real Blade create is authorized. Ordinary backend
+runtime/configuration on the VM also remains unverified (java is not installed).
+See docs/08-m1-tool-compatibility.md and docs/10-m1-privilege-deployment.md for
+current evidence and blockers. No permission model change or new framework is
+needed to investigate these deployment blockers.

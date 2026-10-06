@@ -70,7 +70,8 @@ public class EmergencyStopApplicationService {
     private EmergencyStopExecutionResult recover(
             ExperimentExecution candidate
     ) {
-        if (candidate.getStatus() == ExperimentExecutionStatus.CREATE_UNCERTAIN
+        if ((candidate.getStatus() == ExperimentExecutionStatus.CREATE_UNCERTAIN
+                && !("blade-"+candidate.getId()).equals(candidate.getEngineExperimentId()))
                 || candidate.getStatus() == ExperimentExecutionStatus.PREPARING) {
             logFailure(candidate, EmergencyStopOutcome.MANUAL_INTERVENTION.name());
             return result(candidate, EmergencyStopOutcome.MANUAL_INTERVENTION);

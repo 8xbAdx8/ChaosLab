@@ -10,22 +10,23 @@ import (
 )
 
 type Binding struct {
-	Deployment    string    `json:"deployment"`
-	Executable    string    `json:"executable"`
-	PolicyDigest  string    `json:"policyDigest"`
-	ToolSHA       string    `json:"toolSha256"`
-	NsexecSHA     string    `json:"nsexecSha256"`
-	ChaosOSSHA    string    `json:"chaosOsSha256"`
-	YamlSHA       string    `json:"yamlSha256"`
-	ExpiresAt     time.Time `json:"expiresAt"`
-	ExecutionID   string    `json:"executionId"`
-	NativeUID     string    `json:"nativeUid"`
-	ContainerID   string    `json:"containerId"`
-	ImageID       string    `json:"imageId"`
-	ToolIdentity  string    `json:"toolIdentity"`
-	StateIdentity string    `json:"stateIdentity"`
-	NodeID        string    `json:"nodeId"`
-	CreatedAt     time.Time `json:"createdAt"`
+	Deployment    string       `json:"deployment"`
+	Executable    string       `json:"executable"`
+	PolicyDigest  string       `json:"policyDigest"`
+	ToolSHA       string       `json:"toolSha256"`
+	NsexecSHA     string       `json:"nsexecSha256"`
+	ChaosOSSHA    string       `json:"chaosOsSha256"`
+	YamlSHA       string       `json:"yamlSha256"`
+	ExpiresAt     time.Time    `json:"expiresAt"`
+	ExecutionID   string       `json:"executionId"`
+	NativeUID     string       `json:"nativeUid"`
+	ContainerID   string       `json:"containerId"`
+	ImageID       string       `json:"imageId"`
+	ToolIdentity  string       `json:"toolIdentity"`
+	StateIdentity string       `json:"stateIdentity"`
+	NodeID        string       `json:"nodeId"`
+	CreatedAt     time.Time    `json:"createdAt"`
+	Baseline      *CpuBaseline `json:"baseline,omitempty"`
 }
 
 func bindingFor(q Request, p Policy) Binding {
@@ -122,6 +123,18 @@ func (c config) authorize(q Request, p Policy) error {
 		return invalid
 	}
 	b := bindingFor(q, p)
+	if c.trustRoot == "" {
+		baseline, e := collectBaseline(p)
+		if e != nil {
+			return invalid
+		}
+		b.Baseline = baseline
+		if !a.ExpiresAt.After(time.Now().UTC()) {
+			return invalid
+		}
+		b.CreatedAt = time.Now().UTC()
+		b.ExpiresAt = b.CreatedAt.Add(30 * time.Second)
+	}
 	if writeExclusive(filepath.Join(c.state, "binding.json"), b) != nil {
 		return invalid
 	}

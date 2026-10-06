@@ -181,6 +181,23 @@ public final class ExperimentExecution {
                 "engine create outcome uncertain; manual intervention required", null, null);
     }
 
+    /** Trusted engine journal reference only; does not claim a native fault began. */
+    public ExperimentExecution markCreateUncertain(String journalReference) {
+        if (journalReference == null) return markCreateUncertain();
+        if (!("blade-"+id).equals(journalReference)) throw new IllegalArgumentException("recovery reference must match execution");
+        requireStatus(ExperimentExecutionStatus.PREPARING, "mark create uncertain with journal");
+        return copy(ExperimentExecutionStatus.CREATE_UNCERTAIN, journalReference,
+                "engine create outcome uncertain; committed recovery identity retained", null, null);
+    }
+
+    /** startedAt here is the recovery attempt time, NOT proof of the unknown fault start. */
+    public ExperimentExecution beginUncertainDestroy(Instant recoveryAttemptAt) {
+        requireStatus(ExperimentExecutionStatus.CREATE_UNCERTAIN, "recover uncertain create");
+        if (!("blade-"+id).equals(engineExperimentId)) throw new IllegalStateException("committed recovery reference required");
+        return copy(ExperimentExecutionStatus.DESTROYING, engineExperimentId, null,
+                Objects.requireNonNull(recoveryAttemptAt), null);
+    }
+
     public ExperimentExecution beginDestroy() {
         if (status == ExperimentExecutionStatus.DESTROYING) {
             return this;
@@ -319,7 +336,12 @@ public final class ExperimentExecution {
             case RUNNING -> requireActiveEngineState("running", false);
             case DESTROYING -> requireActiveEngineState("destroying", false);
             case SUCCESS -> requireActiveEngineState("successful", true);
-            case FAILED, CREATE_UNCERTAIN -> {
+            case CREATE_UNCERTAIN -> {
+                if (errorMessage == null || startedAt != null || finishedAt != null
+                        || (engineExperimentId != null && !("blade-"+id).equals(engineExperimentId)))
+                    throw new IllegalArgumentException("uncertain create requires error and optional same-execution journal reference");
+            }
+            case FAILED -> {
                 if (errorMessage == null
                         || engineExperimentId != null
                         || startedAt != null

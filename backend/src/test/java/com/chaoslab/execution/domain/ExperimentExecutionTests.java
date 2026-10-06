@@ -35,6 +35,15 @@ class ExperimentExecutionTests {
                 CREATED_AT, null, null, 0)).isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test void uncertainCreateMayRetainOnlyItsCommittedJournalReference() {
+        var prepared = execution();
+        var uncertain = prepared.markCreateUncertain("blade-"+prepared.getId());
+        assertThat(uncertain.getStartedAt()).isNull();
+        assertThat(uncertain.beginUncertainDestroy(CREATED_AT.plusSeconds(5)).getStatus()).isEqualTo(ExperimentExecutionStatus.DESTROYING);
+        assertThatThrownBy(() -> prepared.markCreateUncertain("blade-"+UUID.randomUUID())).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> prepared.markCreateUncertain().beginUncertainDestroy(CREATED_AT)).isInstanceOf(IllegalStateException.class);
+    }
+
     @Test
     void shouldPrepareFirstExecutionAttempt() {
         ExperimentExecution execution = execution();

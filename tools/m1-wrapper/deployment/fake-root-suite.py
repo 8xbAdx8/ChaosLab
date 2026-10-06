@@ -155,10 +155,16 @@ def main():
            memory=134217728,pids=32,cpuPercent=10,durationSeconds=10,nodeId=node,stateId='m1-fixture-state',
            toolSha256=FAKE_SHA,nsexecSha256=sha(small),chaosOsSha256=sha(small),yamlSha256=sha(small))
     put(POLICY,encode(p))
+    run_suite(p, idle_api, identity)
+
+
+def run_suite(p, idle_api, identity, report_name='fake-root-suite.json'):
+    """Internal resume seam; caller has checked fixed deployment and all pins."""
     r={'passed':False,'tests':[],'realAuthorizationCreated':False,'realBladeInvoked':False}
     known=None
     try:
-        if call('preflight')['code']!='OK':raise RuntimeError('fake preflight failed')
+        preflight=call('preflight')
+        if preflight['code']!='OK':raise RuntimeError('fake preflight failed: '+preflight['code'])
         for _ in range(3):
             if call()['code']!='CREATE_DISABLED':raise RuntimeError('missing auth not denied')
         r['withoutAuthorization']='CREATE_DISABLED x3'
@@ -190,15 +196,29 @@ def main():
                 if call()['code']!='CREATE_DISABLED':raise RuntimeError('replay accepted')
             elif not result['cleanupComplete'] or alive(known):raise RuntimeError('known child cleanup incomplete')
             r['tests'].append({'operation':op,'mode':mode,'result':result,'rootChild':True})
+            if expected=='HANDOFF':
+                during=call('observe')
+                if during.get('code')!='OK' or during.get('observation',{}).get('residual')!='PRESENT':
+                    raise RuntimeError('live FAKE helper not detected by residual probe')
             cleanup(known);known=None
+            if expected=='HANDOFF':
+                recovered=call('observe')
+                evidence=recovered.get('observation',{})
+                if recovered.get('code')!='OK' or evidence.get('residual')!='CLEAR' or evidence.get('health')!='HEALTHY' or evidence.get('nativeUid')!=Q['nativeUid'] or evidence.get('executionId')!=Q['executionId']:
+                    raise RuntimeError('FAKE recovery probe correlation/health not verified')
+                r['tests'].append({'probeAfterFakeHelperCleanup':evidence})
         for victim,sig in [('wrapper',signal.SIGTERM),('sudo',signal.SIGTERM),('wrapper',signal.SIGKILL)]:
             remove_test_files();put(STATE/'scenario',b'signal')
             put(STATE/'authorization.json',encode(authorization(p)))
             process=subprocess.Popen(CHAIN,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=ENV)
             process.stdin.write(encode(Q));process.stdin.close();process.stdin=None
             end=time.monotonic()+4
-            while not (STATE/'invocation.json').exists() and time.monotonic()<end:time.sleep(.02)
-            info=json.loads((STATE/'invocation.json').read_bytes());known=helper()
+            info=None
+            while time.monotonic()<end:
+                try:info=json.loads((STATE/'invocation.json').read_bytes());break
+                except (FileNotFoundError,ValueError,UnicodeError):time.sleep(.02)
+            if info is None:raise RuntimeError('no complete fixture invocation')
+            known=helper()
             fields=Path('/proc',str(info['pid']),'stat').read_text().rsplit(') ',1)[1].split()
             cli=(info['pid'],fields[19]);parent=int(fields[1])
             selected=None
@@ -241,7 +261,7 @@ def main():
             r['authorizationAbsent']=not (STATE/'authorization.json').exists()
         except Exception as e:r['cleanupBlocker']=type(e).__name__
         data=json.dumps(r,indent=2).encode()
-        put(AUDIT,data);put(STAGE/'fake-root-suite.json',data,0o644)
+        put(AUDIT.with_name(report_name),data);put(STAGE/report_name,data,0o644)
     print('CORE FAKE SUITE RECORDED; full A gate still pending termination checks')
     print('REAL EXECUTION NOT AUTHORIZED')
 
