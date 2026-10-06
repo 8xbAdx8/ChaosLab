@@ -61,18 +61,19 @@ class ChaosBladeWiringTests {
         when(verifier.verify(any())).thenReturn(TargetIdentityVerification.verified(identity));
         when(local.verifyBeforeCreate(any(), any())).thenReturn(BladeLocalIdentityVerifier.Result.LOCAL_IDENTITY_MATCHED_NEEDS_TARGET_CHECK);
         when(local.verify(any())).thenReturn(BladeLocalIdentityVerifier.Result.LOCAL_IDENTITY_MATCHED_NEEDS_TARGET_CHECK);
-        when(channel.create(any(), any())).thenAnswer(call -> {
+        when(channel.create(any(), anyString(), any())).thenAnswer(call -> {
+            uid = call.getArgument(1);
             DockerCpuCommandPlan plan = call.getArgument(0);
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             // Independent connection/thread sees committed intent and PREPARING before dispatch.
             committed(() -> {
                 assertThat(jdbc.queryForObject("SELECT status FROM experiment_executions WHERE id=?", String.class, plan.executionId().toString())).isEqualTo("PREPARING");
                 assertThat(jdbc.queryForObject("SELECT snapshot_format FROM blade_execution_snapshots WHERE execution_id=?", String.class, plan.executionId().toString())).isEqualTo("CRI_CPU_V1");
-                assertThat(journal.findByExecutionId(plan.executionId()).orElseThrow().uid()).isNull();
+                assertThat(journal.findByExecutionId(plan.executionId()).orElseThrow().uid()).isEqualTo(uid);
             });
             return ChaosBladeEngineTests.handoff("{\"code\":200,\"success\":true,\"result\":\""+uid+"\"}");
         });
-        when(channel.status(any(), any())).thenReturn(ChaosBladeEngineTests.status(uid, "Destroyed"));
+        when(channel.status(any(), any())).thenAnswer(call -> ChaosBladeEngineTests.status(uid, "Destroyed"));
         when(channel.destroy(any(), any())).thenAnswer(call -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             BladeRecoveryHandle handle = call.getArgument(0);
@@ -103,7 +104,7 @@ class ChaosBladeWiringTests {
         assertThat(result.errorMessage()).contains("ENGINE_DESTROYED_RECOVERY_UNVERIFIED");
         assertThat(result.finishedAt()).isNull();
         assertThat(service.start(ready.getId(), "once").created()).isFalse();
-        verify(channel, times(1)).create(any(), any());
+        verify(channel, times(1)).create(any(), anyString(), any());
         verify(channel).destroy(argThat(h -> uid.equals(h.uid())), any());
     }
     @Test void intentCommitFailurePreventsDispatch() {
@@ -117,48 +118,46 @@ class ChaosBladeWiringTests {
         var result = service.start(ready.getId(), "intent-fail");
         assertThat(result.execution().status()).isEqualTo(ExperimentExecutionStatus.FAILED);
         assertThat(journal.findByExecutionId(result.execution().id())).isEmpty();
-        verify(channel, never()).create(any(), any());
+        verify(channel, never()).create(any(), anyString(), any());
     }
     @Test void localIdentityFailurePreventsDispatch() {
         when(local.verifyBeforeCreate(any(), any())).thenReturn(BladeLocalIdentityVerifier.Result.TOOL_CONTENT_MISMATCH);
         assertThat(service.start(ready.getId(), "identity-fail").execution().status()).isEqualTo(ExperimentExecutionStatus.FAILED);
-        verify(channel, never()).create(any(), any());
+        verify(channel, never()).create(any(), anyString(), any());
     }
     @Test void freshTargetChangePreventsDispatch() {
         when(verifier.verify(any())).thenReturn(TargetIdentityVerification.verified(identity), TargetIdentityVerification.rejected("changed"));
         assertThat(service.start(ready.getId(), "target-fail").execution().status()).isEqualTo(ExperimentExecutionStatus.FAILED);
-        verify(channel, never()).create(any(), any());
+        verify(channel, never()).create(any(), anyString(), any());
     }
     @Test void malformedJsonRetainsOccupancyAndDoesNotReplayCreate() {
-        doReturn(ChaosBladeEngineTests.handoff("bad-json")).when(channel).create(any(), any());
+        doReturn(ChaosBladeEngineTests.handoff("bad-json")).when(channel).create(any(), anyString(), any());
         var result = service.start(ready.getId(), "uncertain");
         assertThat(result.execution().status()).isEqualTo(ExperimentExecutionStatus.CREATE_UNCERTAIN);
         assertThat(service.start(ready.getId(), "uncertain").created()).isFalse();
         var second = ready(identity.targetId());
         assertThatThrownBy(() -> service.start(second.getId(), "other"))
                 .isInstanceOf(ExperimentExecutionStartRejectedException.class);
-        verify(channel, times(1)).create(any(), any());
+        verify(channel, times(1)).create(any(), anyString(), any());
     }
     @Test void timeoutAfterDispatchIsUncertain() {
-        doReturn(new ProcessRunResult(ProcessRunResult.Outcome.TIMED_OUT, null, "", "", true)).when(channel).create(any(), any());
+        doReturn(new ProcessRunResult(ProcessRunResult.Outcome.TIMED_OUT, null, "", "", true)).when(channel).create(any(), anyString(), any());
         assertThat(service.start(ready.getId(), "timeout").execution().status()).isEqualTo(ExperimentExecutionStatus.CREATE_UNCERTAIN);
-        verify(channel, times(1)).create(any(), any());
+        verify(channel, times(1)).create(any(), anyString(), any());
     }
-    @Test void uidPersistenceFailureIsUncertainAndNoSecondReceiptIsInvented() {
+    @Test void uidMismatchIsUncertainAndPreallocatedUidSurvives() {
         doAnswer(call -> {
-            call.callRealMethod();
-            TransactionSynchronizationManager.registerSynchronization(new org.springframework.transaction.support.TransactionSynchronization() {
-                @Override public void beforeCommit(boolean readOnly) { throw new IllegalStateException("UID commit rejected"); }
-            });
-            return null;
-        }).when(journal).recordUid(any(), anyString());
+            uid = call.getArgument(1);
+            String wrong = uid.equals("0123456789abcdef") ? "fedcba9876543210" : "0123456789abcdef";
+            return ChaosBladeEngineTests.handoff("{\"code\":200,\"success\":true,\"result\":\""+wrong+"\"}");
+        }).when(channel).create(any(), anyString(), any());
         var result = service.start(ready.getId(), "uid-fail");
         assertThat(result.execution().status()).isEqualTo(ExperimentExecutionStatus.CREATE_UNCERTAIN);
-        assertThat(journal.findByExecutionId(result.execution().id()).orElseThrow().uid()).isNull();
+        assertThat(journal.findByExecutionId(result.execution().id()).orElseThrow().uid()).isEqualTo(uid);
         assertThat(service.start(ready.getId(), "uid-fail").created()).isFalse();
         assertThatThrownBy(() -> service.start(ready(identity.targetId()).getId(), "other"))
                 .isInstanceOf(ExperimentExecutionStartRejectedException.class);
-        verify(channel, times(1)).create(any(), any());
+        verify(channel, times(1)).create(any(), anyString(), any());
     }
     @Test void runningResultTransactionFailureBecomesUncertainWithDurableUid() {
         doAnswer(call -> {
@@ -174,7 +173,7 @@ class ChaosBladeWiringTests {
         assertThat(result.execution().status()).isEqualTo(ExperimentExecutionStatus.CREATE_UNCERTAIN);
         assertThat(journal.findByExecutionId(result.execution().id()).orElseThrow().uid()).isEqualTo(uid);
         assertThat(service.start(ready.getId(), "result-fail").created()).isFalse();
-        verify(channel, times(1)).create(any(), any());
+        verify(channel, times(1)).create(any(), anyString(), any());
     }
     @Test void destroySuccessWithoutDestroyedStatusDoesNotRecover() {
         var result = service.start(ready.getId(), "destroy-not-confirmed");

@@ -334,3 +334,71 @@ Intent前/本地身份失败可FAILED，Channel调用次数为0。从调用Chann
 PHASE 2C COMPLETE
 
 REAL EXECUTION NOT YET AUTHORIZED
+
+## Phase 2D：只读现场预检进展（2026-10-04，未完成）
+
+本节不是 Phase 2D 完成声明。没有运行真实 create、destroy 或故障，没有调整 sudo、Docker socket、组成员、capabilities 或文件权限。
+
+SSH 在虚拟机启动后重新连通，地址 192.168.32.131。实际检查用户为 w（uid/gid 1000），组列表不包含 docker；这不是已经批准的最终 Adapter 服务账号。`docker inspect chaoslab-cpu-sandbox` 返回 socket permission denied，因此容器完整 ID、image ID、Running、安全配置、目标 cgroup 和 CPU baseline 均 UNKNOWN，不能根据旧记录填充。
+
+### 当前部署文件
+
+根目录 `/home/w/chaosblade-api3.r3cL98`。只读 sha256sum 结果：
+
+| 文件 | SHA-256 |
+| --- | --- |
+| blade-chaoslab-api3-identified | c0c987bbd0aa9d158e90ab48f737680fe1b7eefdbf6c9e74744444c49c847e96 |
+| bin/nsexec | 693219257100421d3c2321c2b1bfb3d285d1b6eed1fa82feabd033797a51e793 |
+| bin/chaos_os | dee72446e32411f6a0d7a29c71b0ba0cc4dabbab1fcaba212c6c87d0ea965cfb |
+| yaml/chaosblade-cri-spec-1.8.1.yaml | f8deebf2b90c44f414745cc6316e0cef545332173a7ef9a1998b9804531e7880 |
+
+前三项与历史候选摘要一致；摘要一致不代表权限安全或 READY。部署根目录为 w:w 0700，CLI 为 w:w 0764，nsexec 为 w:w 0755；运行用户能够改写部署。`namei -l` 检查 nsexec 路径未显示符号链接，部署根下 maxdepth=3 的符号链接搜索无输出；尚不等同于所有未来配置路径的核验。根下 maxdepth=2 搜索 `.chaoslab*` 无输出；实际 node/state marker 路径和身份仍 UNKNOWN，不能凭空创建身份以通过检查。
+
+Docker socket 为 root:docker 0660。w 的 CapEff/CapPrm/CapAmb 均为零；三个可执行文件的 getcap 无输出。cgroup v2 已挂载，根和 system.slice 为 root 所有，未发现已经配置给本账号的目标 cgroup 委派证据。CRI 源码 `exec/executor_common_linux.go:214–226` 加载目标 cgroup manager 并加入 helper，失败会走失败清理；所以只有 CLI execute 权限远远不足。namespace 所需权限和具体最小授权尚未完成核验，不宣称仅添加某一个 capability 即可运行。
+
+### 当前阻塞及边界
+
+- 权限模型 BLOCKED：普通用户无法读取 Docker 目标，且尚无已核验的受限提权执行路径。不得通过 docker 组、宽泛 sudo、整个 Spring Boot root 或任意用户可访问 socket 来消除本阻塞。
+- 部署不可变性 BLOCKED：服务运行身份不能同时拥有候选及其父目录的改写权限；目前用户目录部署不满足该条件。
+- sandbox、CPU、residual、health 和最终恢复 Gate 的现场验证未完成；残留状态不能标记 CLEAR。
+- Native UID 源码初审发现 create 的持久 flag `--uid`、recordExpModel 优先采用非空 UID、experiment.uid UNIQUE 和普通 INSERT。尚未完成无害调用链/冲突测试，因此未改变 Java UID 持久化方案，也未实现 receipt。不得把源码初审当成已消除 UID durability 窗口。
+
+后续涉及可信安装目录、专用账号或受限特权边界的落地，应先明确范围再授权实施；本轮没有自行扩大部署权限。其余 Phase 2D 实现与双平台测试仍待完成，不引用 Phase 2C 测试结果充当本阶段验收。
+
+**Phase 2D INCOMPLETE — NOT REAL EXECUTION READY.**
+
+## Phase 2D-2：M1 Privileged Wrapper（2026-10-04）
+
+本节更新运行身份设计：未来 Real Backend 使用专用 `chaoslab` 服务账号，no login、无 sudo/docker 组、无 capabilities；`w` 仅为管理员。历史现场用户 w 的检查结果不等于未来服务账号验收。本轮未创建用户、未安装 wrapper、未修改 VM 权限/sudoers/systemd，没有以 root 运行 wrapper，没有执行真实 Blade 或故障。
+
+实现位于 `tools/m1-wrapper`，Go 1.25 标准库独立小模块，无第三方框架。详细协议、状态模型、源代码摘要、测试边界及应用前风险见该目录 README。生产入口 Linux euid=0、无 argv；没有可由环境变量/请求开启的测试模式。未来固定安装入口 `/usr/local/libexec/chaoslab-m1-wrapper`；本轮产物仅在被忽略的测试输出目录，fixture 全部位于临时目录。
+
+stdin 单 JSON，4 KiB、2 秒输入期限；拒绝未知/重复/大小写别名字段、尾随内容、非法 UTF-8、非法 UUID/UID。仅 preflight/create-cpu/status/destroy/observe。root policy 固定目标完整 ID/image、安全参数及文件摘要，不接受请求中的路径、容器、PID、namespace、cgroup、flags 或环境。固定 Docker Unix socket 只 GET 指定容器；没有任意 Docker 透传。`observe` 尚未实现探针，明确返回 OBSERVATION_UNKNOWN。
+
+### 预分配 UID：ACCEPT，但 Java 接线仍待后续
+
+对锁定 api3 的 disposable source copy 添加单独测试，所有 Executor 均替换为进程内 fake；未修改候选源树/二进制。真实 Cobra create 的持久 `--uid` 传入模型，真实 SQLite UNIQUE INSERT 在 fake 执行器入口之前对独立连接可见；重复 UID 在第二次执行器调用前拒绝，无替代 UID。create 返回、status 查询、destroy 查找/上下文/更新都保持同一 UID。
+
+wrapper fake-executable 测试另外证明：CSPRNG 8 字节生成 16 位小写 hex；模拟平台 intent 持久化后调用 wrapper；wrapper 的 binding 文件及目录 fsync 完成后 fake executable 才能启动，`--uid U` 的返回值必须仍等于 U。此处不是声称 Java 现有 recordIntent 已支持 UID；本轮仅实现 wrapper，未更改 Java/数据库。
+
+选择 PREALLOCATED_UID，不实现 durable create receipt。单实验 binding 是派发前授权/归属记录，包含 executionId/nativeUid/containerId/imageId/四文件摘要组合身份/state identity/node/createdAt，不是第二套回执机制。仅允许全新专用原生状态目录，已有 chaosblade.dat/WAL/SHM/journal 一律拒绝 create，避免将旧记录的 UID 碰撞误当成自己的实验。绑定 O_EXCL、文件 fsync、目录 fsync 后消耗授权；任何失败保留阻塞，不自动清理绑定或重放。授权最长五分钟，必须匹配全部身份且来自可信状态目录。
+
+### 生命周期及环境
+
+wrapper 不调用 shell，不 PATH 查找候选。生产清理环境、umask 077、额外 FD 标记 close-on-exec，子进程只接收固定白名单。候选有界哈希上限 128 MiB，检查所有父路径所有权/写权限/符号链接/ACL、执行位、companions 和 marker，再次执行前复验。
+
+create 只有 exit 0、输出正常结束、严格成功 JSON 且同 UID 才 HANDOFF，cleanupComplete=false；status/destroy 为严格前台。超时、取消、真实 SIGTERM、非零退出、输出超限、非法回执、不同 UID 均由 wrapper 清理已知子进程，TERM 后 KILL，pidfd 防止向复用 PID 发信号；create 不确定性仍保留绑定。继承 stdout 的 helper 导致有界 TIMEOUT，不会冒充正常交接。清理结果不是 residual CLEAR；快速逃逸/最终路径 TOCTOU/特权部署行为仍有边界。
+
+原 api3 timeout helper 也单独以编译型 fake executable 验证，带引号/空格的固定工具路径、状态环境、UID、euid 均保持。此测试调用候选已有固定 shell timer 实现，但没有调用真实 Blade；wrapper 自身不使用 sh -c。--timeout 仍非主要恢复机制。
+
+### 验证与停止线
+
+Linux uid 1000、无网络、无 Docker socket：wrapper 测试覆盖攻击性输入、绑定及生命周期；另行运行解析器/状态选择测试的 race 检查和 go vet。Windows 原生执行交叉编译的 Go 测试程序，只覆盖可移植逻辑，不声称覆盖 Linux 权限、fsync、pidfd 和进程清理；其生产执行路径被禁用。候选源码 TestM1UIDProof/TestM1TimeoutProof 两项通过。最终测试计数和构建/复验结果见 wrapper README 验收记录。
+
+未修改 api3、Java、migration 或现有 recovery-evidence 工具；没有部署、没有 Git 提交/推送。后续仍需审核 wrapper、Java 预分配 UID 事务/传输接线、专用账号与 sudo/PAM、root-owned 部署、真实目标安全属性、namespace/cgroup 兼容以及 CPU/residual/health 最终恢复门。不能直接把当前 wrapper 替换进现有 Java 的 executable 参数。
+
+WRAPPER IMPLEMENTATION REVIEW READY
+
+VM PERMISSION CHANGES NOT AUTHORIZED
+
+REAL EXECUTION NOT AUTHORIZED

@@ -24,13 +24,14 @@ public class JdbcBladeExecutionJournal {
     /** A new immutable intent must commit before dispatch; duplicate inserts fail closed. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void recordIntent(BladeExecutionSnapshot snapshot) {
-        if (snapshot.uid() != null) throw new IllegalArgumentException("intent must not contain a UID");
+        if (snapshot.uid() != null && !BladeExecutionSnapshot.CRI_CPU_V1.equals(snapshot.format()))
+            throw new IllegalArgumentException("legacy intent must not contain a UID");
         int inserted = jdbc.update("""
                 INSERT INTO blade_execution_snapshots
                 (execution_id, snapshot_format, target_id, container_id, image_id, metrics_job,
                  executor_instance_id, state_directory_id, tool_version, tool_sha256,
-                 cpu_percent, duration_seconds, recorded_at, recovery_deadline)
-                SELECT x.id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                 cpu_percent, duration_seconds, recorded_at, recovery_deadline, blade_uid)
+                SELECT x.id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 FROM experiment_executions x JOIN experiments e ON e.id = x.experiment_id
                 JOIN targets t ON t.id = e.target_id JOIN fault_scenarios s ON s.id = e.scenario_id
                 WHERE x.id = ? AND x.status = 'PREPARING' AND e.target_id = ?
@@ -39,6 +40,7 @@ public class JdbcBladeExecutionJournal {
                 snapshot.target().metricsJob(), snapshot.executorInstanceId(), snapshot.stateDirectoryId(),
                 snapshot.toolVersion(), snapshot.toolSha256(), snapshot.cpuPercent(), snapshot.durationSeconds(),
                 Timestamp.from(snapshot.recordedAt()), Timestamp.from(snapshot.recoveryDeadline()),
+                snapshot.uid(),
                 snapshot.executionId().toString(), snapshot.target().targetId().toString(), snapshot.durationSeconds());
         if (inserted != 1) throw new IllegalStateException("intent requires a matching committed preparing execution");
     }

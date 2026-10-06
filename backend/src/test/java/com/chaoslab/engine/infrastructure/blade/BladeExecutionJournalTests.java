@@ -68,6 +68,23 @@ class BladeExecutionJournalTests {
     }
 
     @Test
+    void preallocatedCriUidCommitsBeforeDispatchAndSurvivesOuterRollback() {
+        var base = intent();
+        var cri = new BladeExecutionSnapshot(base.executionId(), base.target(), base.executorInstanceId(),
+                base.stateDirectoryId(), base.toolVersion(), base.toolSha256(), base.cpuPercent(),
+                base.durationSeconds(), base.recordedAt(), base.recoveryDeadline(), null,
+                BladeExecutionSnapshot.CRI_CPU_V1).withPreallocatedUid("abcdef0123456789");
+        new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
+            journal.recordIntent(cri);
+            tx.setRollbackOnly();
+        });
+        var stored = new JdbcBladeExecutionJournal(jdbc).findByExecutionId(cri.executionId()).orElseThrow();
+        assertThat(stored).isEqualTo(cri);
+        assertThatThrownBy(() -> journal.recordIntent(cri)).isInstanceOf(DataAccessException.class);
+        assertThat(stored.recoveryHandle()).isPresent();
+    }
+
+    @Test
     void rejectsMissingIntentAndMismatchedRecoveryOwnership() {
         var intent = intent();
         var handle = handle(intent, "0123456789abcdef");

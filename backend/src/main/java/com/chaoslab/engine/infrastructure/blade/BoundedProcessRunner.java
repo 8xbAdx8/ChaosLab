@@ -67,6 +67,11 @@ final class BoundedProcessRunner {
     }
 
     ProcessRunResult run(List<String> arguments, BooleanSupplier cancelled, Lifecycle lifecycle) {
+        return run(arguments, cancelled, lifecycle, new byte[0]);
+    }
+
+    ProcessRunResult run(List<String> arguments, BooleanSupplier cancelled, Lifecycle lifecycle, byte[] input) {
+        if (input == null || input.length > 4096) throw new IllegalArgumentException("bounded stdin required");
         Objects.requireNonNull(lifecycle);
         List<String> command = new ArrayList<>();
         command.add(executable.toString());
@@ -89,11 +94,14 @@ final class BoundedProcessRunner {
         Map<Long, ProcessHandle> descendants = new LinkedHashMap<>();
         Thread stdout = Thread.ofVirtual().name("blade-stdout").start(() -> capture.read(stdoutForTest.apply(process.getInputStream()), false));
         Thread stderr = Thread.ofVirtual().name("blade-stderr").start(() -> capture.read(process.getErrorStream(), true));
+        Thread stdin = Thread.ofVirtual().name("blade-stdin").start(() -> {
+            try (var stream = process.getOutputStream()) { stream.write(input); }
+            catch (IOException exception) { capture.ioFailed.set(true); }
+        });
         ProcessRunResult.Outcome outcome = IO_FAILED;
         boolean interrupted = false;
         boolean cleaned;
         try {
-            process.getOutputStream().close();
             while (true) {
                 process.descendants().forEach(child -> descendants.putIfAbsent(child.pid(), child));
                 if (Thread.currentThread().isInterrupted() || cancelled.getAsBoolean()) {
@@ -130,8 +138,6 @@ final class BoundedProcessRunner {
         } catch (InterruptedException exception) {
             interrupted = true;
             outcome = CANCELLED;
-        } catch (IOException exception) {
-            outcome = IO_FAILED;
         } finally {
             // Clear interruption only during bounded cleanup, then restore it.
             interrupted |= Thread.interrupted();
@@ -140,6 +146,7 @@ final class BoundedProcessRunner {
             cleaned = outcome != HANDOFF && terminate(process, descendants);
             stdout.interrupt();
             stderr.interrupt();
+            stdin.interrupt();
             if (interrupted) {
                 Thread.currentThread().interrupt();
             }

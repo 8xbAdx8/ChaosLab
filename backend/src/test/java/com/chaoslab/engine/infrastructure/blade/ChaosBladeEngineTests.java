@@ -41,7 +41,8 @@ class ChaosBladeEngineTests {
         saved = new BladeExecutionSnapshot(intent.executionId(), identity, "node-1", "state-1", "api3", "c".repeat(64),
                 10, 10, intent.recordedAt(), intent.recoveryDeadline(), uid, "CRI_CPU_V1");
         when(journal.findByExecutionId(request.executionId())).thenReturn(Optional.of(saved));
-        when(channel.create(any(), any())).thenReturn(handoff("{\"code\":200,\"success\":true,\"result\":\"" + uid + "\"}"));
+        when(channel.create(any(), anyString(), any())).thenAnswer(invocation ->
+                handoff("{\"code\":200,\"success\":true,\"result\":\"" + invocation.getArgument(1) + "\"}"));
         when(channel.status(any(), any())).thenReturn(status(uid, "Destroyed"));
         when(channel.destroy(any(), any())).thenReturn(strict("{\"code\":200,\"success\":true,\"result\":\"command: cri cpu fullload --cpu-count=1, destroy time: now\"}"));
     }
@@ -55,10 +56,13 @@ class ChaosBladeEngineTests {
         assertThat(engine.create(request).status()).isEqualTo(EngineStatus.RUNNING);
         var order = inOrder(verifier, journal, local, channel);
         order.verify(verifier).verify(target);
-        order.verify(journal).recordIntent(any());
+        var persisted = org.mockito.ArgumentCaptor.forClass(BladeExecutionSnapshot.class);
+        order.verify(journal).recordIntent(persisted.capture());
+        assertThat(persisted.getValue().uid()).matches("[0-9a-f]{16}");
+        order.verify(verifier).verify(target);
         order.verify(local).verifyBeforeCreate(any(), any());
-        order.verify(channel).create(any(), any());
-        order.verify(journal).recordUid(argThat(h -> h.uid().equals(uid) && h.format().equals("CRI_CPU_V1")), eq("state-1"));
+        order.verify(channel).create(any(), eq(persisted.getValue().uid()), any());
+        verify(journal, never()).recordUid(any(), anyString());
     }
     @Test void intentFailureNeverDispatches() {
         doThrow(new IllegalStateException()).when(journal).recordIntent(any());
@@ -78,11 +82,14 @@ class ChaosBladeEngineTests {
     @Test void malformedJsonTimeoutAndUidWriteFailureAreUncertain() {
         for (var result : List.of(handoff("invalid"), handoff("{\"code\":200,\"success\":true,\"result\":\"bad-uid\"}"),
                 new ProcessRunResult(ProcessRunResult.Outcome.TIMED_OUT, null, "", "", true))) {
-            when(channel.create(any(), any())).thenReturn(result);
+            when(channel.create(any(), anyString(), any())).thenReturn(result);
             assertThatThrownBy(() -> engine.create(request)).isInstanceOf(EngineCreateUncertainException.class);
         }
-        when(channel.create(any(), any())).thenReturn(handoff("{\"code\":200,\"success\":true,\"result\":\""+uid+"\"}"));
-        doThrow(new IllegalStateException()).when(journal).recordUid(any(), anyString());
+        when(channel.create(any(), anyString(), any())).thenAnswer(invocation -> {
+            String allocated = invocation.getArgument(1);
+            String different = allocated.equals(uid) ? "fedcba9876543210" : uid;
+            return handoff("{\"code\":200,\"success\":true,\"result\":\""+different+"\"}");
+        });
         assertThatThrownBy(() -> engine.create(request)).isInstanceOf(EngineCreateUncertainException.class);
     }
     @Test void statusUsesPersistedUidAndRejectsMismatch() {

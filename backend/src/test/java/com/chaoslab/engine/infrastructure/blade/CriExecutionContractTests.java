@@ -76,7 +76,7 @@ class CriExecutionContractTests {
                 intent.stateDirectoryId(), intent.toolVersion(), intent.toolSha256(), intent.cpuPercent(), intent.durationSeconds(),
                 intent.recordedAt(), intent.recoveryDeadline(), UID, intent.format());
         assertThat(verifier.verify(recovery)).isEqualTo(BladeLocalIdentityVerifier.Result.LOCAL_IDENTITY_MATCHED_NEEDS_TARGET_CHECK);
-        assertThat(verifier.verifyBeforeCreate(recovery, plan)).isEqualTo(BladeLocalIdentityVerifier.Result.MISSING_RECOVERY_EVIDENCE);
+        assertThat(verifier.verifyBeforeCreate(recovery, plan)).isEqualTo(BladeLocalIdentityVerifier.Result.LOCAL_IDENTITY_MATCHED_NEEDS_TARGET_CHECK);
         assertThat(new BladeLocalIdentityVerifier(node, state, binary, "api3", sha(binary)).verify(recovery))
                 .isEqualTo(BladeLocalIdentityVerifier.Result.TOOL_PIN_MISMATCH);
         assertThat(verifier.verifyBeforeCreate(intent, plan(new DockerCpuCommandPlan.Deployment(root.resolve("other")))))

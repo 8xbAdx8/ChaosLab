@@ -12,6 +12,7 @@ import java.util.UUID;
 
 /** Opt-in adapter. Engine IDs are journal references, never invented native UIDs. */
 public final class ChaosBladeEngine implements ChaosEngine {
+    private static final java.security.SecureRandom UID_RANDOM = new java.security.SecureRandom();
     private final DockerCpuCommandPlan.Deployment deployment;
     private final String nodeId, stateId, version, sha;
     private final TargetRepository targets;
@@ -42,22 +43,27 @@ public final class ChaosBladeEngine implements ChaosEngine {
     @Override public EngineCreateResult create(ReadyExperimentRequest request) {
         outsideTransaction();
         var plan = DockerCpuCommandPlan.from(request, fresh(request.targetId()), deployment);
-        var intent = BladeExecutionSnapshot.intent(plan, nodeId, stateId, version, sha, clock.instant());
+        byte[] randomUid = new byte[8];
+        UID_RANDOM.nextBytes(randomUid);
+        String nativeUid = java.util.HexFormat.of().formatHex(randomUid);
+        var intent = BladeExecutionSnapshot.intent(plan, nodeId, stateId, version, sha, clock.instant())
+                .withPreallocatedUid(nativeUid);
         // Spring journal REQUIRES_NEW verifies committed PREPARING and commits before returning.
         // Duplicate intent fails closed: even a direct adapter replay cannot dispatch again.
         journal.recordIntent(intent);
+        if (!plan.target().equals(fresh(request.targetId())))
+            throw new IllegalStateException("target changed after UID commit");
         if (localVerifier.verifyBeforeCreate(intent, plan)
                 != BladeLocalIdentityVerifier.Result.LOCAL_IDENTITY_MATCHED_NEEDS_TARGET_CHECK)
             throw new IllegalStateException("local create identity rejected before dispatch");
         try {
-            var response = channel.create(plan, () -> Thread.currentThread().isInterrupted());
+            var response = channel.create(plan, nativeUid, () -> Thread.currentThread().isInterrupted());
             var uid = decoder.decodeCreate(response).uid();
-            journal.recordUid(new BladeRecoveryHandle(request.executionId(), nodeId, plan.target(), uid,
-                    BladeExecutionSnapshot.CRI_CPU_V1), stateId);
+            if (!nativeUid.equals(uid)) throw new IllegalStateException("create UID mismatch");
             return new EngineCreateResult(reference(request.executionId()), EngineStatus.RUNNING);
         } catch (RuntimeException uncertain) {
             // Do not expose raw stdout, paths or native UID in API/log exception messages.
-            // No second durable receipt yet: a failed UID commit is a Phase 2D prerequisite.
+            // UID was already committed before dispatch. Never overwrite it or retry create.
             throw new EngineCreateUncertainException();
         }
     }

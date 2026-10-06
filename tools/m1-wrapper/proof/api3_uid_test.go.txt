@@ -1,0 +1,89 @@
+// Copy only into an isolated copy of locked api3 cli/cmd for testing.
+// NEVER invoke its main executable. Every executor here is an in-process fake.
+package cmd
+
+import (
+ "bytes"
+ "context"
+ "database/sql"
+ "encoding/json"
+ "flag"
+ "os"
+ "path/filepath"
+ "testing"
+ "time"
+
+ "github.com/spf13/cobra"
+ "github.com/chaosblade-io/chaosblade/data"
+ "github.com/chaosblade-io/chaosblade-spec-go/spec"
+)
+
+// Candidate imports parse flags in init before testing.Init. Compile with
+// go test -c and launch WITHOUT arguments; only this fake test is selected.
+func TestMain(m *testing.M){
+ if len(os.Args)==3&&os.Args[1]=="destroy" {
+  // This TEST EXECUTABLE is the fake timer destination, not real Blade.
+  exe,_:=os.Executable();b,_:=json.Marshal(map[string]any{"tool":exe,"state":os.Getenv("CHAOSBLADE_DATAFILE_PATH"),"uid":os.Args[2],"euid":os.Geteuid()});os.WriteFile(filepath.Join(os.Getenv("CHAOSBLADE_DATAFILE_PATH"),"receipt.json"),b,0600);return
+ }
+ flag.Set("test.run","^TestM1(UID|Timeout)Proof$");flag.Set("test.v","true");os.Exit(m.Run())
+}
+
+func TestM1TimeoutProof(t *testing.T){
+ if os.Geteuid()==0{t.Fatal("must run non-root")}
+ dir:=t.TempDir();candidate:=filepath.Join(dir,"fake 'candidate' with spaces");exe,_:=os.Executable();b,e:=os.ReadFile(exe);if e!=nil{t.Fatal(e)};if e=os.WriteFile(candidate,b,0700);e!=nil{t.Fatal(e)}
+ u:="0123456789abcdef";command,e:=recoveryCommandFor(candidate,1,u);if e!=nil{t.Fatal(e)}
+ command.Env=[]string{"PATH=/usr/bin:/bin","HOME="+dir,"CHAOSBLADE_DATAFILE_PATH="+dir}
+ if e=command.Run();e!=nil{t.Fatal(e)}
+ deadline:=time.Now().Add(4*time.Second)
+ for time.Now().Before(deadline){raw,e:=os.ReadFile(filepath.Join(dir,"receipt.json"));if e==nil {var got struct{Tool string;State string;UID string;EUID int};if json.Unmarshal(raw,&got)!=nil||got.Tool!=candidate||got.State!=dir||got.UID!=u||got.EUID!=os.Geteuid(){t.Fatal(string(raw))};return};time.Sleep(20*time.Millisecond)}
+ t.Fatal("timer failed")
+}
+
+type uidProofExecutor struct {t *testing.T; dbPath string; uid string; calls int; destroyed bool}
+func(e *uidProofExecutor)Name()string{return "harmless-uid-proof"}
+func(e *uidProofExecutor)SetChannel(spec.Channel){}
+func(e *uidProofExecutor)Exec(u string,ctx context.Context,m *spec.ExpModel)*spec.Response{
+ e.calls++
+ if u!=e.uid||ctx.Value(spec.Uid)!=e.uid {e.t.Fatal("UID replaced before executor")}
+ // An independently opened SQLite connection must already see the UID.
+ db,err:=sql.Open("sqlite",e.dbPath);if err!=nil{e.t.Fatal(err)};defer db.Close()
+ var saved string;if err=db.QueryRow("SELECT uid FROM experiment WHERE uid=?",u).Scan(&saved);err!=nil||saved!=u{e.t.Fatal("not committed before executor",err)}
+ if destroy,ok:=spec.IsDestroy(ctx);ok {if destroy!=u{e.t.Fatal("destroy mismatch")};e.destroyed=true;return spec.ReturnSuccess(true)}
+ if m.ActionFlags[UidFlag]!=u{e.t.Fatal("Cobra inherited UID missing")}
+ // Current test process exists; no CPU load or external helper is started.
+ return spec.ReturnSuccess(os.Getpid())
+}
+
+func TestM1UIDProof(t *testing.T){
+ if os.Geteuid()==0{t.Fatal("must run non-root")}
+ dbPath:=filepath.Join(t.TempDir(),"proof.sqlite")
+ db,err:=sql.Open("sqlite",dbPath);if err!=nil{t.Fatal(err)};defer db.Close()
+ source:=&data.Source{DB:db};if err=source.InitExperimentTable();err!=nil{t.Fatal(err)}
+ old:=ds;SetDS(source);defer SetDS(old)
+ u:="0123456789abcdef";fake:=&uidProofExecutor{t:t,dbPath:dbPath,uid:u}
+ cc:=&CreateCommand{};cc.Init()
+ // Remove registered real actions BEFORE execution. Only our fake can run.
+ cc.command.RemoveCommand(cc.command.Commands()...)
+ root:=&cobra.Command{Use:"blade",SilenceErrors:true,SilenceUsage:true};root.AddCommand(cc.command)
+ cri:=&cobra.Command{Use:"cri"};cpu:=&cobra.Command{Use:"cpu"};leaf:=&cobra.Command{Use:"fullload"}
+ cc.command.AddCommand(cri);cri.AddCommand(cpu);cpu.AddCommand(leaf)
+ action:=&spec.ActionModel{ActionName:"fullload",ActionProcessHang:true};action.SetExecutor(fake)
+ leaf.RunE=cc.actionRunEFunc("cpu","cri",&actionCommand{},action)
+ var output bytes.Buffer;root.SetOut(&output);root.SetErr(&output)
+ root.SetArgs([]string{"create","cri","cpu","fullload","--uid",u})
+ if err=root.Execute();err!=nil{t.Fatal(err)}
+ var response struct{Success bool `json:"success"`;Result string `json:"result"`}
+ if json.Unmarshal(bytes.TrimSpace(output.Bytes()),&response)!=nil||!response.Success||response.Result!=u||fake.calls!=1{t.Fatal("create UID mismatch",output.String())}
+ // UNIQUE INSERT failure must return before fake executor, no replacement UID.
+ output.Reset();root.SetArgs([]string{"create","cri","cpu","fullload","--uid",u})
+ if err=root.Execute();err==nil||fake.calls!=1{t.Fatal("duplicate did not fail closed")}
+ var count int;db.QueryRow("SELECT COUNT(*) FROM experiment").Scan(&count);if count!=1{t.Fatal("silent replacement UID")}
+ sc:=&StatusCommand{};sc.Init();sc.commandType="create";output.Reset();sc.command.SetOut(&output)
+ if err=sc.runStatus(sc.command,[]string{u});err!=nil{t.Fatal(err)}
+ var status struct{Result data.ExperimentModel `json:"result"`};if json.Unmarshal(bytes.TrimSpace(output.Bytes()),&status)!=nil||status.Result.Uid!=u{t.Fatal("status UID mismatch",output.String())}
+ dc:=&DestroyCommand{baseExpCommandService:&baseExpCommandService{executors:map[string]spec.Executor{createExecutorKey("cri","cpu","fullload"):fake}}}
+ dc.command=&cobra.Command{Use:"destroy"};dc.command.SetOut(&output)
+ if err=dc.runDestroyWithUid(context.Background(),dc.command,[]string{u});err!=nil{t.Fatal(err)}
+ if !fake.destroyed||fake.calls!=2{t.Fatal("destroy did not use fake same UID")}
+ model,err:=source.QueryExperimentModelByUid(u);if err!=nil||model.Status!=Destroyed{t.Fatal("same UID not destroyed")}
+}

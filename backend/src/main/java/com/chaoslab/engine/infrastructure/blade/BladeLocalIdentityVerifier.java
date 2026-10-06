@@ -62,7 +62,7 @@ public final class BladeLocalIdentityVerifier {
 
     /** No invented UID. Identity approval is not permission to inject or proof of target identity. */
     public Result verifyBeforeCreate(BladeExecutionSnapshot intent, DockerCpuCommandPlan plan) {
-        if (intent == null || plan == null || intent.uid() != null || deployment == null
+        if (intent == null || plan == null || deployment == null
                 || !BladeExecutionSnapshot.CRI_CPU_V1.equals(intent.format())
                 || !deployment.equals(plan.deployment()) || !intent.executionId().equals(plan.executionId())
                 || !intent.target().equals(plan.target()) || intent.cpuPercent() != plan.percent()

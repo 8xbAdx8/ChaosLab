@@ -27,8 +27,7 @@ public class BladeEngineConfiguration {
     }
     @Bean
     BladeProcessChannel bladeProcessChannel(DockerCpuCommandPlan.Deployment deployment) throws java.io.IOException {
-        return new BladeProcessChannel(deployment, deployment.stateDirectory(),
-                Map.of("PATH", "/usr/sbin:/usr/bin:/sbin:/bin", "LANG", "C", "LC_ALL", "C"));
+        return BladeProcessChannel.privileged(deployment);
     }
     @Bean
     ChaosBladeEngine chaosBladeEngine(Environment env, DockerCpuCommandPlan.Deployment deployment,

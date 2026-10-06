@@ -56,10 +56,24 @@ public record BladeExecutionSnapshot(
         return createArguments(DockerCpuCommandPlan.DEFAULT_DEPLOYMENT);
     }
 
+    public BladeExecutionSnapshot withPreallocatedUid(String nativeUid) {
+        if (!CRI_CPU_V1.equals(format) || uid != null)
+            throw new IllegalStateException("preallocation requires a fresh CRI intent");
+        return new BladeExecutionSnapshot(executionId, target, executorInstanceId, stateDirectoryId,
+                toolVersion, toolSha256, cpuPercent, durationSeconds, recordedAt, recoveryDeadline,
+                Objects.requireNonNull(nativeUid), format);
+    }
+
     public List<String> createArguments(DockerCpuCommandPlan.Deployment deployment) {
-        return CRI_CPU_V1.equals(format)
+        var arguments = CRI_CPU_V1.equals(format)
                 ? DockerCpuCommandPlan.criArguments(deployment, target, cpuPercent, durationSeconds)
                 : DockerCpuCommandPlan.cpuArguments(target, cpuPercent, durationSeconds);
+        if (CRI_CPU_V1.equals(format) && uid != null) {
+            var allocated = new java.util.ArrayList<>(arguments);
+            allocated.add("--uid"); allocated.add(uid);
+            return List.copyOf(allocated);
+        }
+        return arguments;
     }
 
     public Optional<BladeRecoveryHandle> recoveryHandle() {
