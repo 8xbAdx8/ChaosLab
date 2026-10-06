@@ -13,10 +13,16 @@ regression; REAL read-only preflight passed, CPU baseline is 0%, and REAL create
 without authorization was rejected three times. Java preallocated UID, trusted
 root identity attestation and the existing recovery evidence Gate are now wired.
 Windows and isolated Linux backend verification passed. Actual Java backend
-runtime/configuration on the VM remains unverified (no java executable). See
+runtime/configuration on the VM has also passed the 2026-10-07 read-only
+acceptance: Java 21.0.12.1, ordinary uid999/gid987, dedicated loopback MySQL8,
+validated V1-V11, real beans and observed Java-to-root-wrapper ancestry. See
 `../../docs/10-m1-privilege-deployment.md` for deployment evidence and blockers.
 
-NOT REAL EXECUTION READY. REAL EXECUTION NOT AUTHORIZED.
+First REAL M1 executed once on 2026-10-07: **M1 INCOMPLETE**.
+Injection observed (0% -> 9.80%); active same-UID destroy reached engine Destroyed,
+but backend final status is ROLLBACK_FAILED, never SUCCESS. Later CLEAR/HEALTHY
+probes do not retroactively certify the failed recovery flow. Occupancy retained.
+REAL authorization consumed/absent; no second create authorized. Stop for review.
 
 ## Historical Phase 2D-2 implementation review (before installation)
 
@@ -321,7 +327,35 @@ Do not rerun initialization scripts or bypass the fresh-store gate. No binding
 in the REAL slot means its read-only preflight health stays UNKNOWN, as intended.
 
 No REAL authorization or real Blade create is authorized. Ordinary backend
-runtime/configuration on the VM also remains unverified (java is not installed).
+runtime/configuration subsequently passed the 2026-10-07 final read-only
+deployment acceptance (unchanged 698a905 artifact plus one-shot diagnostic main).
 See docs/08-m1-tool-compatibility.md and docs/10-m1-privilege-deployment.md for
 current evidence and blockers. No permission model change or new framework is
 needed to investigate these deployment blockers.
+
+Final read-only deployment report: java-readonly-deployment.json passed=true.
+HTTP is only 127.0.0.1:18080, MySQL only 127.0.0.1:3306/chaoslab_m1;
+repository commit/rollback tested only target metadata. No Experiment, execution
+or native UID exists. Root/no-argv sudo rule and all tool/policy identities are
+unchanged; ordinary Java cannot access Docker socket or write privileged paths.
+Probe readiness is true, residual CLEAR, CPU baseline 0%. Health without a
+recovery binding stays UNKNOWN, not RecoveryVerified. The diagnostic entry point
+uses existing private read-only seams of the actual configured beans, not mocks
+or a new endpoint. Standalone observe requires a binding and was not faked.
+This is readiness for a separately approved first experiment, not a successful
+real fault/recovery. Do not rerun database/deployment initializers.
+
+### First REAL M1 result supersedes the earlier readiness-only record
+
+See docs/evidence/m1-first-real-20261007.json (SHA-256
+7e8867fcdd2475ecf5c969c0eb6c1bf7539503c9a4ca65d42d0d0178dec5fffa).
+One backend create only, UID21d2d20071b3f449 committed before root authorization;
+binding/native record/strict successful receipt preserve that UID. Target cgroup
+contained the actual pinned nsexec/chaos_os in both during samples; CPU was
+9.800499% over 1.256354 seconds. Primary destroy was requested without waiting
+for timeout; native Destroyed timestamp was about 5.15 seconds after create.
+Backend reported IllegalStateException / ROLLBACK_FAILED. Exact failure cause
+was not preserved; timer-residual timing is a candidate inference, not a proven
+diagnosis. Root observations afterward showed 0%, CLEAR and HEALTHY. They were
+not used to rewrite the platform status or release occupancy. No retry, new
+authorization, configuration change or emergency stop was performed afterward.

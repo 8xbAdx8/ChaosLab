@@ -469,3 +469,61 @@ Java executable; actual nonroot backend/runtime/configuration verification is
 not established by the disposable Linux Stub tests.
 
 **NOT REAL EXECUTION READY — REAL EXECUTION NOT AUTHORIZED.**
+
+### 2026-10-07 final deployment acceptance supersedes the runtime blocker
+
+The dedicated VM now runs Java21.0.12.1 as chaoslab uid999/gid987, zero effective,
+permitted or ambient capabilities, no supplementary privileged group. Spring
+uses the unchanged 698a905 artifact, actual ChaosBladeEngine/Channel beans and
+dedicated MySQL8.0.46 at 127.0.0.1:3306/chaoslab_m1. Flyway V1-V11 validation,
+repository commit/rollback and loopback HTTP health/target read succeeded.
+The administrator observed the root wrapper's ancestry containing the actual
+Java PID, and the root report passed=true. No mocks or bean overrides were used.
+An independent read-only entry point invokes existing private seams so the
+locked production artifact stays unchanged. Unbound observation is obtained
+through preflight's actual root observeTarget, not a fabricated experiment UID.
+
+Full REAL policy/pins/target/node/state matched configured Java identity;
+Docker socket directly denied, privileged files not writable, sudo unchanged.
+Final root checks: REAL authorization/native store absent, experiments/executions/
+snapshots all zero, no pinned tool/helper process, sandbox isolation unchanged.
+The original idle container was restarted under the already-approved exact
+inspect/start procedure after sleep expired: same container/image, new runtime
+PID7575/start792426, stable cgroup and only sleep3600. Readiness residual CLEAR,
+probeReady=true, CPU0%; no-binding health UNKNOWN is intentional, not a recovery
+success. Independent SSH reconfirmed live Java PID7596, loopback HTTP UP and
+unchanged usage_usec99015 over a further two-second sample.
+
+**REAL EXECUTION READY — WAITING FOR USER CONFIRMATION.**
+REAL authorization remains ABSENT; no real create/fault/destroy was executed.
+
+### 2026-10-07 first approved REAL M1: INCOMPLETE, stop for manual review
+
+The previous statement is historical pre-experiment readiness. The user then
+approved exactly one real create. One-shot operator first-real-m1.py reserves a
+durable no-replay marker, verifies fresh fixed identities and baseline, then
+uses the normal backend API. The backend generated executionId/UID; an
+independent MySQL READ COMMITTED connection observed the committed CRI intent
+before root created a 15-second, full-policy/tool/target-bound authorization.
+No manual Blade create or application-code change was used.
+
+Execution8781633f-5915-47cf-86b7-87abae66a7cf, UID21d2d20071b3f449, one create.
+Root binding/native record and successful strict adapter receipt matched that
+UID. CPU0% baseline rose to9.800499% over1.256354s; both samples retained pinned
+nsexec8573/chaos_os8574 in the exact target cgroup. Primary backend destroy was
+requested immediately after that evidence, and the same UID reached Destroyed
+before the 10-second timeout. No second create was attempted.
+
+The backend nevertheless returned ROLLBACK_FAILED / engine destroy failed:
+IllegalStateException; there is no final successful recovery decision. Later
+same-subject root probes returned CLEAR/HEALTHY/CPU0%, but cannot certify the
+earlier platform flow retroactively. Existing ACTIVE_STATUSES retains occupancy
+for ROLLBACK_FAILED; live HTTP GET independently confirmed that state. Root
+authorization was consumed and is absent. No state/evidence/UID was cleared.
+
+The early Gate timing is consistent with a still-live timeout helper, but the
+generic exception does not prove the exact source of failure. Do not claim a
+diagnosis or fix from that inference alone. No repair, repeated destroy, fresh
+authorization or second experiment was undertaken after the stop line.
+
+**M1 INCOMPLETE — RECOVERY NOT VERIFIED — OCCUPANCY RETAINED.**

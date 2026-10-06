@@ -281,3 +281,132 @@ M2 记录而不扩展：并发特权更新/最终路径 TOCTOU、不受观测的
 Destroyed、fresh residual/health Gate。timer 仍活跃时保留占用，不猜 CLEAR。
 
 **NOT REAL EXECUTION READY。REAL EXECUTION NOT AUTHORIZED。**
+
+## 2026-10-06 最终只读 Java/MySQL 部署验收（进行中）
+
+用户授权 Java21、普通 chaoslab 后端和专用本地 MySQL；没有授权真实故障。
+本次后端从 git archive 的精确提交
+`698a905322104063ae130f810999723b72d9aca2` 重建，release21；没有修改该提交的
+后端类或 migrations。产物 SHA-256：
+`aa8bdfa116326ef6466648dc01eb804f64d04bba37c826e719767fae24dd23f1`。
+独立验收入口 SHA-256：
+`9a8ed0469c3f99aa1486040c8e7390f8425074afa205a858153c7380b878083e`。
+工作站与上传 VM 字节一致，Java 验收入口编译为 release21，部署脚本 AST 检查通过。
+
+锁定版本没有公开的无 UID Adapter 预检接口。为保持产物不变，一次性入口
+M1ReadOnlyAcceptance 启动原 ChaosLabApplication，获取原 Spring bean，反射调用
+原 ChaosBladeEngine.fresh 和 Channel.transport 的既有只读 seam。没有 mock、
+替换 bean、测试 engine、HTTP 验收 API 或第二套执行框架。工具验证使用
+UID-free 的内存 intent/plan，不创建 Experiment、不写 journal、不生成 native UID。
+独立 observe 必须有真实绑定，故不伪造 UID：读取现有 preflight 内部的
+observeTarget(no binding)，健康保持 UNKNOWN，不能作为 RecoveryVerified。
+
+部署脚本仅针对全新本地 MySQL，拒绝已有 MySQL/后台部署路径和非系统数据库。
+安装 Ubuntu 签名仓库 openjdk-21-jre-headless / mysql-server，不做全系统升级。
+MySQL bind/mysqlx-bind 在安装前固定为 127.0.0.1；管理连接固定本地 Unix socket，
+禁止读取客户端隐式 defaults。创建且只授予 `chaoslab_m1`@`127.0.0.1` 对
+`chaoslab_m1.*` 的 schema 权限，没有全局授权；不访问业务数据库。
+凭据随机生成并只写 root:chaoslab 0640 配置，不进入 argv/报告/聊天。
+
+部署路径 `/opt/chaoslab-backend/m1-698a905` root-owned、普通用户不可改；
+配置 `/etc/chaoslab-backend-m1` root:chaoslab 0750；后端普通工作/日志目录
+`/var/lib/chaoslab-backend-m1` chaoslab 0700，不是 privileged state/audit。
+通过 runuser 启动 JVM，uid999/gid987，无 capabilities，仅 HTTP127.0.0.1:18080。
+不改账号组、sudoers、wrapper、policy 或候选；不安装新提权边界。
+
+计划现场验证：Java21、Flyway V1-V11、实际 MySQL repository commit/rollback
+（仅 target 元数据）、Real Adapter 单实例、真实 Java PID 到 root wrapper 的进程
+祖先链、完整 policy/pins/target 身份对照、无 Docker socket 访问、CPU/residual
+readiness 和无绑定 health UNKNOWN；HTTP health/targets 只读查询。最终再次
+确认三张 experiment/execution/snapshot 表为0、REAL auth/native state 均不存在、
+无工具/helper 工作进程、sandbox同一身份与运行时安全设置和 idle CPU。
+
+管理员尚需在 VM 执行已上传脚本；没有现场报告前不宣称部署成功或 READY。
+
+### 2026-10-07：最终只读验收 PASS，停止线
+
+已读取管理员执行后的 java-readonly-deployment.json：passed=true。
+首轮读取时安装仍在进行，没有把暂时缺报告误当作完成；最终报告与独立
+SSH 当前进程/监听/摘要检查一致。日期按 Asia/Shanghai；报告UTC为10月6日16:30。
+
+1. Java：OpenJDK21.0.12.1，runtime21.0.12.1+1-1-24.04.4-Ubuntu。
+2. 后端 JVM PID7596，uid999/gid987，仅 group987；CapPrm/Eff/Amb 全零。
+3. MySQL8.0.46，仅127.0.0.1:3306/chaoslab_m1，mysqlx也仅loopback。
+   专用数据库账号只有该schema权限，无全局授权，凭据未输出。
+4. Spring Boot启动，127.0.0.1:18080/actuator/health=UP，targets读取成功。
+5. 单一真实ChaosBladeEngine注册，Fake/scheduler不注册；产物SHA与698a905构建一致。
+6. 实际Adapter.fresh→配置verifier→Channel→sudo→root wrapper通过；
+   root观察到wrapper祖先链含实际Java PID。没有直接root调用伪装Java通过。
+7. REAL完整policy/digest、固定executable/state/node、4项SHA、container/image
+   与Java配置/内存无UID验证模型完全一致；sudoers/policy/wrapper未改。
+8. sandbox仍sleep3600，基线0%；最终usage_usec99015。独立额外2秒采样不变。
+9. 真实root残留观察CLEAR、probeReady=true，无已知工具/helper工作进程。
+10. Health probe可用；没有REAL恢复binding，当前health=UNKNOWN，未声称恢复验证。
+    无UID观测来自preflight内部observeTarget，不伪造独立observe的绑定。
+11. 部署前后REAL authorization=ABSENT，native state=ABSENT；专用MySQL的
+    experiments、experiment_executions、blade_execution_snapshots均0。
+12. 无剩余本阶段阻塞。Flyway V1-V11 validated；真实MySQL Repository提交与
+    rollback均通过，仅保留一个sandbox别名target元数据，没有创建Experiment。
+
+sandbox的sleep此前已自然退出，脚本重新核验原配置后只启动同一现有容器，
+未run/create/update/exec。完整container/image不变；新PID7575/start792426，
+固定原cgroup、members=[7575]、仅lo、安全配置全保持。历史137原因仍UNKNOWN。
+
+后端通过一次性只读验收main启动同一生产Spring上下文并保持运行，不是开机
+自启部署；不要重复初始化器。重启可用锁定生产jar和已有受限配置，重新只读
+核验，不需要新架构/服务账号权限。任何未来运行时或工具/目标变化会使本次
+时点readiness过期，第一次实验前仍要fresh verification和新baseline。
+
+**REAL EXECUTION READY**
+
+**WAITING FOR USER CONFIRMATION**
+
+没有生成REAL authorization，没有运行真实blade create/CPU fault，完成后停止。
+
+## 2026-10-07 第一次真实 M1：INCOMPLETE，停止等待人工审核
+
+用户在上述只读验收后批准仅一次真实 create，10%/1CPU/timeout10秒，不重试。
+本节取代历史“未执行真实create”的当前状态，不改写原记录。
+执行器 first-real-m1.py SHA
+`0049074dffb64d4f9f287c91371884ba4124c257bc5c47a1b06ec0d7022f4b4c`；
+执行前4项无害纯函数/AST测试通过。该一次性管理员程序不是后端框架；
+先以O_EXCL+fsync保留attempt marker，唯一一个正常后端start API调用，
+只从独立MySQL连接读取已提交UID/intent，然后创建15秒single-use REAL授权。
+从未直接手工执行Blade create；本次未修改生产Java、wrapper、api3或权限模型。
+
+证据原样保存于 `docs/evidence/m1-first-real-20261007.json`，SHA
+`7e8867fcdd2475ecf5c969c0eb6c1bf7539503c9a4ca65d42d0d0178dec5fffa`，
+VM与工作站摘要相同；root审计原件保留。报告不包含数据库密码。
+
+- Experiment：`3edfc759-68b3-4932-a8c1-d878b64edede`。
+- Execution：`8781633f-5915-47cf-86b7-87abae66a7cf`。
+- Native UID：`21d2d20071b3f449`，由Java CSPRNG生成，CRI_CPU_V1/UID提交
+  后才创建root授权。MySQL durable settings=1/1，独立READ COMMITTED连接
+  看到PREPARING/intent时age72969微秒。没有HTTP指定UID、没有UID替换。
+- 正常API返回RUNNING；严格Adapter只接受同UID HANDOFF，root binding、
+  原生SQLite唯一实验记录和原生argv也等于同UID。
+- 固定原container/image未变，PID7575/start792426保持；CPU10/count1/timeout10
+  由完整policy和固定wrapper绑定，原生记录flags复核一致。
+- 基线0%；during1.256354373秒，usage_usec300364→423493，CPU9.800499%。
+  两次样本均有实际 pinned nsexec8573/chaos_os8574，故障不是模拟数据。
+- Asia/Shanghai约01:01:54主动请求正常后端destroy；同UID原生Destroyed
+  更新时间约01:01:57.512，早于10秒timeout，未把timeout作为主恢复机制。
+- 后端返回ROLLBACK_FAILED，errorMessage=`engine destroy failed: IllegalStateException`，
+  finishedAt为空，未SUCCESS。随后独立HTTP GET仍为ROLLBACK_FAILED，
+  该状态在现有ACTIVE_STATUSES中，目标占用保持。
+- 后续同execution/UID/target/node的root观察为CLEAR/HEALTHY/CPU0%；
+  另两秒SSH采样usage_usec851549不变。不能用这些较晚观察倒推或改写
+  先前主链恢复Gate结果。recoveryVerified始终false，M1不标记PASS。
+- REAL授权已消费/不存在；绑定、UID、原生数据库、journal和证据保留。
+  未增加create、未重新授权、未重试destroy、未修改目标或权限；没有失控CPU，
+  所以未执行sandbox stop/VM poweroff。sandbox仍为原idle进程。
+
+实际错误只有通用IllegalStateException，没有细分的原始Gate时点证据。
+时间线与timeout helper在早期Gate仍存活的情况一致，但这只是源码/时序推断，
+不是已经确认的根因；不据此擅自扩展机制或修复代码。
+
+**M1 INCOMPLETE**
+
+**RECOVERY NOT VERIFIED；OCCUPANCY RETAINED**
+
+本次唯一create许可已使用。已停止，等待人工审核；不得重复运行一次性脚本。
