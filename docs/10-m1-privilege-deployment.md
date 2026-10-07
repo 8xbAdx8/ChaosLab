@@ -447,3 +447,247 @@ root FAKE settling单独1项通过。Python观察15项/首次脚本pure+AST4项�
 **MINIMAL FIX VERIFIED**
 
 **SECOND M1 NOT YET AUTHORIZED**
+
+## 2026-10-07 SECOND M1 PREPARATION（现场执行待验收）
+
+用户仅授权准备，没有授权第二次 create。a1cd739 的 CI success 已确认；
+从精确 Git archive 在无网络、无 Docker socket、普通 uid1000 的 Corretto21
+容器重建，不使用工作区未提交改动。后端 JAR SHA：
+`1b7bec8f07f83e5cd6a48b4119ecde9588f127b07fa5d52266107251e7e069fd`。
+R2 一次性验收入口 SHA：
+`ab81768b4655c5844e536a0f5a9016ba7f44c063c3a883884ee5ceecbd364e17`。
+
+准备器 `tools/m1-wrapper/deployment/prepare-second-m1.py` SHA：
+`605d2be66675aee737ce5d3d8da3700b50c8a5f6b27f144d3a50dd2dbd9d15aa`。
+全部上传字节已在 VM 普通 SSH 链路重新计算并匹配 SHA。6项无害 pure/AST
+检查通过；新的验收入口之15秒默认窗口 seam 在 Windows 和隔离 Linux Java21
+通过：PRESENT→CLEAR/HEALTHY VERIFIED，destroy=1/create=0/status=2/observe=2；
+UID/target/node mismatch立即拒绝；PRESENT、UNKNOWN分别约15秒退出对应reason。
+这些尚不是 VM 部署或 SECOND M1 READY 的证明。
+
+固定计划路径：
+
+- R1 root-only archive：`/var/lib/chaoslab-m1/archive/m1-r1-21d2d20071b3f449`。
+- 原 `chaoslab_m1` 保留，旧artifact `/opt/chaoslab-backend/m1-698a905` 不覆盖。
+- 新artifact：`/opt/chaoslab-backend/m1-a1cd739`。
+- 新DB/账号：`chaoslab_m1_r2`，仅127.0.0.1、仅该schema权限。
+- 新配置：`/etc/chaoslab-backend-m1-r2` root:chaoslab0640。
+- 新普通工作目录：`/var/lib/chaoslab-backend-m1-r2` chaoslab0700。
+- 固定active state路径不变：`/var/lib/chaoslab-m1/state`，新stateId=m1-real-state-r2。
+
+准备器先检查R1身份/结果/原始evidence SHA、工具与sudo基线；如旧Java仍运行，
+只对精确旧部署身份使用pidfd正常终止，拒绝其他JVM。sandbox只按原inspect/start
+流程启动既有idle容器，不重建/update/exec。R1 MySQL完整dump、原native文件、
+marker、binding、policy、原JSON、后端commit/JAR SHA及4项tool SHA进入root-only
+archive，每个文件read-back SHA并检查SQLite copy的完整性/唯一已知Destroyed UID。
+没有把此native状态认证为R1 RecoveryVerified，R1永久保留INCOMPLETE/false。
+
+archive校验通过后，原active目录原样rename到archive/retired-active-state，可恢复
+且不删除；在同一固定路径新建marker-only generation。REAL policy只改变stateId，
+Java配置同步。不给wrapper引入请求路径，不修改wrapper/sudoers/账号/工具/容器配置。
+不会自动恢复旧policy或数据库；任何部分失败保留归档与现场，停止人工审核。
+
+新的M1R2ReadOnlyAcceptance启动真实生产Spring bean，通过原private readonly
+seam核验实际 Java→Channel→sudo→root preflight/observeTarget。独立的内存
+integration seam使用**同一个已加载a1cd739 Engine class**与mock external ports，
+不替换生产bean、不写journal或root state、不dispatch任何create/destroy。诊断专用
+Mockito/ByteBuddy/Objenesis为SHA锁定sidecar；不改backend.jar，不引入运行API或
+执行框架。root还复核loaded class SHA/code source/JVM argv及实际root wrapper
+祖先链包含新Java PID。真实无binding observation的health必须UNKNOWN；fixture
+的HEALTHY/VERIFIED只证明代码路径，不冒充现场恢复证据。
+
+最后检查：R1 row/evidence/archive未变，R2三张实验表0，active generation仅marker，
+authorization/binding/native DB均不存在，sandbox身份/isolation/runtime一致，
+residual CLEAR、baseline正常、sudo/账号/4 tool SHA/旧artifact不变。
+此时才可输出 SECOND M1 READY；真实第二次create仍须用户单独批准。
+
+当前普通SSH不能无密码取得管理员权限，已请管理员在VM执行一次准备器；
+没有收到并核验现场报告前，状态为 **SECOND M1 NOT READY（部署验收未完成）**。
+
+### 2026-10-07 23:04 Asia/Shanghai：SECOND M1 准备现场验收通过
+
+本节更新当前状态，不删除上面的准备计划、首次失败或 R1 记录。
+管理员执行一次准备器后，归档/R2 初始化完成，但新后端首次启动失败：
+`umask(077)` 将两个新 artifact 目录实际创建成 root:root0700，普通 chaoslab
+无法遍历目录读取 JAR/诊断 agent。初始报告保留于
+`docs/evidence/m1-r2-preparation-initial-20261007.json`，SHA
+`70094b316a0b45c78b0af704e5857f3d44acae85599dae5d62a6cb389310a2dd`。
+
+经用户批准的恢复器仅修正新 artifact 根目录和 diagnostic-libs 两个目录为
+root:root0755，未重复初始化数据库/轮换 state，也未改权限边界。恢复器 SHA：
+`06786386e150734cea4c937c70fbe154f270bb26eaba504fbd85475dc27abb59`。
+本地准备器已补显式目录 mode；原执行上传版本的历史 SHA 仍为上面的605d2be。
+无害 pure/AST 检查现为7项通过。
+
+最终 root 审计原件：`/var/lib/chaoslab-m1/audit/second-m1-readonly-resume.json`。
+非敏感副本原样保存于 `docs/evidence/m1-r2-readonly-ready-20261007.json`，
+VM/本地 SHA 一致：
+`24b3b577d96d950004885c3045d0d71ec95eca15441befc5afb9c0d01a22a1ed`。
+
+1. **R1 已永久封存且未改写。** root-only archive 的完整 MySQL dump、binding、
+   原生数据库及 marker、policy、首轮 JSON 和历史 row 均逐文件 read-back SHA
+   验证通过；manifest SHA：
+   `b641a077fa9d77c006fb6d247d272f45e80e52cae9dd55b15c6e97b53780be86`。
+   原 active 目录完整 rename 到 archive/retired-active-state，可恢复、未删除。
+   原 chaoslab_m1 数据库、ROLLBACK_FAILED row/version3/UID 及首轮证据不变；
+   R1 始终 INCOMPLETE、recoveryVerified=false，没有再次 destroy 或释放其占用。
+   首轮是否具体由 timeout helper 触发 PRESENT 仍 NOT CONFIRMED。
+2. **精确 a1cd739 后端实际运行。** 新 JAR SHA 与上述锁定构建一致，旧698a905
+   artifact 未覆盖。Java21.0.12.1，PID8273，UID999/GID987，groups仅987，
+   CapPrm/CapEff/CapAmb 全0；单一真实 ChaosBladeEngine 注册，HTTP仅
+   127.0.0.1:18080，Spring健康UP。root 校验了实际 loaded Engine class 的
+   codeSource/JVM argv 与产物 class SHA：
+   `11b768a7ea782f8d01ade61daeb10d94e8834bcd15199d59a085390fd7e35921`。
+3. **独立 R2 MySQL 通过。** MySQL8.0.46、本机127.0.0.1、仅
+   chaoslab_m1_r2 schema 权限；FlywayV1–V11 validated，真实 Repository
+   commit/rollback PASS。仅固定 target/scenario 元数据，三张实验表均0；
+   未复制 R1 execution/history，未用 H2 冒充验收。
+4. **R2 state 干净。** 固定路径不变，仅 root-owned marker
+   m1-real-state-r2；authorization、binding、native DB及其附属文件均不存在。
+   REAL policy 只改变 stateId，与 Java 配置一致，digest：
+   `b82056c51d558339fa46f9d57be3b967881d75c582a69ff2b6cbf990d2f89a11`。
+   node m1-executor、同 container/image、原4项 tool SHA、CPU10/count1/timeout10
+   均保持；wrapper SHA 保持
+   `2e27c2f2b15fb011c1562f0a2fc19640e7b5e0f3fef1d9c166bf54969c654b94`。
+5. **实际只读链路通过。** 真实 Spring adapter → BladeProcessChannel → sudo -n
+   → 安装的 root wrapper → REAL preflight/observeTarget。root 观察到 wrapper
+   祖先链包含实际 Java PID，未用直接 root 请求代替。Java 与 wrapper 的
+   tool/policy/node/state/container/image 身份全匹配；chaoslab 直接 Docker
+   socket 访问 Permission denied。sudoers、账号、wrapper/candidate 权限不变，
+   sh/bash/docker/env/python/systemctl/systemd-run/blade 负向 sudo 检查均拒绝。
+6. **同一个实际加载的修复类，无害稳定窗口验收通过。** 独立内存 fixture
+   仅 mock external ports，不替换生产 bean、不写 DB journal/root binding，
+   不实际派发 create/destroy；使用生产默认15秒窗口，而非缩短测试构造器。
+   PRESENT→CLEAR/HEALTHY 在284ms VERIFIED，fresh status/observe各2次；
+   UID/target/node不匹配立即 RECOVERY_IDENTITY_REJECTED；持续PRESENT
+   15001ms退出 RECOVERY_RESIDUAL_PRESENT，持续UNKNOWN15003ms退出
+   RECOVERY_EVIDENCE_INCOMPLETE。各 fixture destroyCalls=1、createCalls=0、
+   persistedIntentCount=0。此处 VERIFIED 仅证明代码可达，不是 R1 或 R2真实
+   恢复验证；没有第二次故障。
+7. **sandbox与baseline通过。** 原 idle 自然退出后，仅按批准流程启动现有
+   sandbox，未重建/update/exec。完整 container ID：
+   `18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f`；
+   image：`sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8`。
+   原隔离配置保持、Running=true，新PID7950/start610319，原cgroup仅成员7950，
+   命令sleep3600、接口仅lo。最终baseline0%、usage_usec126821，独立额外2秒
+   采样不变；residual CLEAR、probeReady=true。无恢复binding，真实health
+   **UNKNOWN**，没有伪造HEALTHY。
+
+无剩余本阶段 blocker。以上是验收时点事实；第二次实验前仍须重新 fresh 核验
+运行身份、sandbox runtime/隔离、全部 SHA/state/policy、baseline、无授权状态。
+本轮未生成 REAL authorization、未产生新实验 UID、未执行真实 Blade create/destroy。
+
+**SECOND M1 READY**
+
+**WAITING FOR USER CONFIRMATION**
+
+**SECOND M1 REAL CREATE NOT AUTHORIZED**。准备完成后停止；不得重复执行初始化器
+或恢复器，不自动开始第二次实验。
+
+### SECOND M1：用户已明确批准一次，现场结果待验收
+
+用户在 R2 READY 后明确批准固定原 sandbox / R2 clean generation、CPU10%、
+count1、timeout10秒，仅一次 create，成功或失败后停止。R1 的永久历史结论不变。
+新的一次性管理员执行器 `tools/m1-wrapper/deployment/second-real-m1.py` SHA：
+`977d92c5d8a231b89125f12f1077d6e0e7d453202c8e1cbb885d8e9aca526e1e`，
+上传 VM 后重新计算一致；不运行 first-real-m1.py 的 main、不重跑 R2 初始化。
+
+先使用 root-only 独占 attempt marker 防止重复执行，再 fresh 核验精确 a1cd739
+JAR/class/实际 Java UID999/GID987/caps0/启动参数、wrapper/4项tool/policy SHA、
+原 sudo 无argv边界、R1 archive/row/evidence、R2空实验表与marker-only state、
+原 sandbox inspect/runtime/isolation 与直接 cgroup CPU baseline、root residual
+CLEAR 和授权不存在。任一失败在 create 授权前 ABORTED。
+
+仅一次正常 backend start；通过独立 MySQL READ COMMITTED 连接和durability1/1
+验证 Java 已提交 PREPARING/CRI_CPU_V1/new UID/完整intent，之后才创建15秒
+single-use REAL授权，绑定同execution/UID、完整policy/tool集合/target/node/state。
+create 必须 strict HANDOFF receipt 与预提交UID相同，原生唯一记录/绑定一致。
+用直接 cgroup CPU 计数和固定工具成员证明约10%负载，然后仅一次正常 backend
+主动 destroy；要求原生 Destroyed 早于10秒timeout。不会通过脚本重复 destroy
+来代替生产 settling，或依赖timeout冒充主动恢复。
+
+为满足“每轮实际 Residual/Health”报告，使用 VM 现有 strace 对当前Java进程
+的固定 wrapper 子进程 stdout 做只读追踪。先通过无害 validation/dry-run
+确认实际 Java→root preflight 在追踪下仍成功，才允许 start/authorization；
+不能确认则 ABORTED。不替换 bean/ports、不修改 JAR/class/wrapper/policy，
+不读取或截取 pipe 消费者数据。原始 trace 只保留 root0700目录，不公开原始
+日志/stderr；仅解析固定wrapper进程及CLONE_THREAD的完整stdout JSON，
+导出同UID fresh status和有binding observation，未绑定preflight不是Gate轮次。
+每轮必须有新的status，未知/截断不能推测为CLEAR或VERIFIED。
+
+当前 Windows无害7项检查通过（Linux专用项1跳过），VM普通用户Linux7项通过，
+包括真实 strace6.8 对普通 printf 的格式fixture；没有sudo、Blade或故障。
+本轮脚本只在用户管理员一次执行后产生真正实验报告；仅上传不是已经授权派发。
+root-only预期结果路径为 `/var/lib/chaoslab-m1/audit/second-real-m1-result.json`，
+非敏感副本为 `/home/w/chaoslab-m1-2d3-20261004/second-real-m1-result.json`。
+
+最终仍只以生产 Validator/Gate 返回和已提交 SUCCESS 为恢复通过依据，
+独立 status/observe 用于佐证，不倒推改写旧结果。成功保留本次binding/native
+Destroyed与证据、授权已消费，立即停止；失败保留结果/占用与证据、不重试，
+必要时原sandbox停止/VM关闭仅是人工止损，不能冒充RecoveryVerified。
+
+**SECOND M1 RESULT PENDING**。尚未读取现场结果，不声称PASS或恢复已验证。
+
+### SECOND M1 实际结果：INCOMPLETE；后端 SUCCESS 与实验验收结论不同
+
+用户管理员仅执行一次上述脚本。原始 root 报告及固定真实 pipe trace 保留在VM；
+非敏感报告原样保存为 `docs/evidence/m1-second-real-20261007.json`，VM与本地SHA：
+`db66f4ac5df2ccbd1dc09bfd68c9e07389f6b73c9b440ff4385dae9f26909e67`。
+不得重复执行脚本、再次生成authorization或第三次create；不修改报告来取得PASS。
+
+- R2 Experiment：`72267c77-456a-4c53-8703-50aba249b725`。
+- Execution：`376bfef9-bbc4-4270-a38e-f930e73451bf`。
+- Java预分配Native UID：`a04cab156195155f`。
+- createApiAttempts=1，独立MySQL READ COMMITTED看到PREPARING/CRI intent及
+  同UID时age37303微秒；durability1/1，事务提交在15秒single-use授权前。
+- create真实HANDOFF/exit0/cleanupComplete=false，response UID、root binding、
+  原生唯一实验记录全等于同一个预提交UID；固定CRI CPU10/count1/timeout10。
+- fresh实际UID999后端/JAR、wrapper/tool/policy/R2marker、原target/image/runtime
+  和隔离、空状态/无授权/残留CLEAR/baseline均通过，sudo负向检查全拒绝。
+- 直接cgroup baseline：0%，1.038228086秒；during：10.6604309966%，
+  1.247660625秒，usage_usec567639→700645。实际固定nsexec9566及chaos_os9567
+  都在目标cgroup，故障数据不是fixture。
+
+以下为2026-10-07 Asia/Shanghai现场时间（原始报告为UTC）：
+
+| 事件 | 时间 | 含义 |
+| --- | --- | --- |
+| Native CreateTime | 23:27:03.914164650 | 原生实验创建时间 |
+| 正常后端主动destroy请求 | 23:27:07.119952 | 仅一次；create后约3.206秒已发起 |
+| Native Destroyed UpdateTime | 23:27:18.310320344 | 创建后14.396155秒，不满足执行器的早于10秒校验 |
+| Java收到同UID Destroyed status | 23:27:29.444303 | 实际生产wrapper stdout trace，不是脚本外部观察 |
+| 第1轮且唯一settling observation | 23:27:32.047704652 | CLEAR / HEALTHY / CPU0%，同execution/UID/node/target |
+| 后端提交SUCCESS | 23:27:32.203765 | 生产恢复路径已接受证据，version3 |
+
+本次仅观察到一轮CLEAR/HEALTHY，没有现场PRESENT→CLEAR多轮序列；不能把先前
+fixture结果冒称此次真实序列。该轮使用新鲜同UID Destroyed status及新鲜同主体
+观察，代码中只有既有Validator/Gate接受VERIFIED才能返回DESTROYED、最终写SUCCESS。
+因此生产Gate已接受恢复（由精确a1cd739代码路径和实际SUCCESS响应推导），不是
+一条另存的Gate审计字段。实验总验收却在其后因
+`native Destroyed not before timeout` 判为INCOMPLETE，报告recoveryVerified=false。
+
+**必须保留的差异：数据库最终为SUCCESS、实际occupancyReleased=true。**
+执行器在后端已完成SUCCESS之后才做“原生Destroyed早于timeout”的附加验收，
+因此本次失败没有按用户要求保留占用。这是当前实验收尾流程的验收缺口，不是
+可以隐瞒或用后续观察洗成PASS的情况。未擅自回写终态、重新占用、修改旧证据，
+也没有重试destroy/create。本轮到此停止，等待人工审核。
+
+仅凭请求时间与原生UpdateTime，不能断言timeout实际是主要恢复者，也不能证明
+主动destroy已经在timeout前生效。只读系统调用追踪可能增加时延，但目前原因
+**NOT CONFIRMED**；不把它写成已确认根因，不自动修复或再实验。
+
+后续同UID只读root观察23:27:33.436844554为CPU0%、CLEAR、HEALTHY。随后独立
+普通SSH读取同execution仍为SUCCESS/version3，原cgroup usage_usec1728872在
+额外2秒内不变，没有看到已知Blade/nsexec/chaos_os或strace工作进程。这些只能
+佐证当前已无可观察CPU负载，不能补足“主动恢复早于timeout”的缺失证据。
+
+authorization已消费且ABSENT；root binding/native DB仍保留，唯一UID原生状态
+Destroyed。没有重新授权、第二个R2 create、额外destroy或sandbox/VM止损。
+R1 archive/MySQL历史/原证据SHA复核未变，仍INCOMPLETE/recoveryVerified=false；
+FIRST M1是否具体由timeout helper触发仍未确认。
+
+**SECOND M1 INCOMPLETE**
+
+**EXPERIMENT REPORT recoveryVerified=false；BACKEND SUCCESS / OCCUPANCY RELEASED**
+
+**STOPPED — MANUAL REVIEW REQUIRED；NO FURTHER CREATE AUTHORIZED**

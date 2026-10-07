@@ -1,0 +1,264 @@
+{
+  "ready": true,
+  "status": "SECOND M1 READY",
+  "commit": "a1cd7394cf945390b257ef2e65007da9c9ac395f",
+  "firstM1": "INCOMPLETE",
+  "firstRecoveryVerified": false,
+  "realAuthorizationCreated": false,
+  "realCreateInvoked": false,
+  "backendArtifactSha256": "1b7bec8f07f83e5cd6a48b4119ecde9588f127b07fa5d52266107251e7e069fd",
+  "harnessSha256": "ab81768b4655c5844e536a0f5a9016ba7f44c063c3a883884ee5ceecbd364e17",
+  "r1Archive": {
+    "path": "/var/lib/chaoslab-m1/archive/m1-r1-21d2d20071b3f449",
+    "manifestSha256": "b641a077fa9d77c006fb6d247d272f45e80e52cae9dd55b15c6e97b53780be86",
+    "files": {
+      "chaoslab_m1.sql": {
+        "sha256": "9811fb79d4e763dde6a1ebba304a982658dc67b332de8d83862584a91d341930",
+        "size": 17159
+      },
+      "state-copy/.chaoslab-state-id": {
+        "sha256": "b79ca4c69a9bf37cfe52181a92a01fdb89ebd822437b86755e0b49f84e026b77",
+        "size": 14
+      },
+      "state-copy/binding.json": {
+        "sha256": "3e95902badeea9a88a47dba986bfb9e9f13f3e129bf197ee524584921bacab9d",
+        "size": 1232
+      },
+      "state-copy/chaosblade.dat": {
+        "sha256": "6e87e5341225fc2ad4ac1ebfbf71b56896706d7702a6e19b99f270fa8861a5b6",
+        "size": 49152
+      },
+      "policy-r1.json": {
+        "sha256": "9645e6c589812c933cd24d4ce648992940154677bb2504171a28a594b21c27ca",
+        "size": 832
+      },
+      "first-real-m1-result.json": {
+        "sha256": "7e8867fcdd2475ecf5c969c0eb6c1bf7539503c9a4ca65d42d0d0178dec5fffa",
+        "size": 13429
+      },
+      "r1-history-row.json": {
+        "sha256": "99b7340d72948a8f3c09f8f4a944a5507bcc1f4837802f98787a960853a5b109",
+        "size": 241
+      }
+    },
+    "readBackVerified": true
+  },
+  "startupCause": "UMASK_077_REMOVED_ARTIFACT_DIRECTORY_TRAVERSAL",
+  "beforeDirectoryModes": {
+    "/opt/chaoslab-backend/m1-a1cd739": 448,
+    "/opt/chaoslab-backend/m1-a1cd739/diagnostic-libs": 448
+  },
+  "javaResult": {
+    "commit": "a1cd7394cf945390b257ef2e65007da9c9ac395f",
+    "realCreateInvoked": false,
+    "javaVersion": "21.0.12.1+1-1-24.04.4-Ubuntu",
+    "pid": 8273,
+    "uid": 999,
+    "gid": 987,
+    "adapterClass": "com.chaoslab.engine.infrastructure.blade.ChaosBladeEngine",
+    "engineClassSha256": "11b768a7ea782f8d01ade61daeb10d94e8834bcd15199d59a085390fd7e35921",
+    "engineCodeSource": "file:/opt/chaoslab-backend/m1-a1cd739/app/BOOT-INF/classes/",
+    "databaseProduct": "MySQL",
+    "databaseVersion": "8.0.46-0ubuntu0.24.04.4",
+    "flyway": "V1-V11 validated",
+    "repositoryCommitRollback": "PASS; R2 target metadata only",
+    "harmlessIntegrationSeam": {
+      "settles": {
+        "observeCalls": 2,
+        "destroyCalls": 1,
+        "windowSeconds": 15,
+        "persistedIntentCount": 0,
+        "outcome": "VERIFIED",
+        "elapsedMs": 284,
+        "statusCalls": 2,
+        "createCalls": 0
+      },
+      "wrong-uid": {
+        "observeCalls": 1,
+        "destroyCalls": 1,
+        "windowSeconds": 15,
+        "persistedIntentCount": 0,
+        "outcome": "RECOVERY_IDENTITY_REJECTED",
+        "elapsedMs": 5,
+        "statusCalls": 1,
+        "createCalls": 0
+      },
+      "wrong-target": {
+        "observeCalls": 1,
+        "destroyCalls": 1,
+        "windowSeconds": 15,
+        "persistedIntentCount": 0,
+        "outcome": "RECOVERY_IDENTITY_REJECTED",
+        "elapsedMs": 4,
+        "statusCalls": 1,
+        "createCalls": 0
+      },
+      "wrong-node": {
+        "observeCalls": 1,
+        "destroyCalls": 1,
+        "windowSeconds": 15,
+        "persistedIntentCount": 0,
+        "outcome": "RECOVERY_IDENTITY_REJECTED",
+        "elapsedMs": 2,
+        "statusCalls": 1,
+        "createCalls": 0
+      },
+      "present": {
+        "observeCalls": 60,
+        "destroyCalls": 1,
+        "windowSeconds": 15,
+        "persistedIntentCount": 0,
+        "outcome": "RECOVERY_RESIDUAL_PRESENT",
+        "elapsedMs": 15001,
+        "statusCalls": 60,
+        "createCalls": 0
+      },
+      "unknown": {
+        "observeCalls": 60,
+        "destroyCalls": 1,
+        "windowSeconds": 15,
+        "persistedIntentCount": 0,
+        "outcome": "RECOVERY_EVIDENCE_INCOMPLETE",
+        "elapsedMs": 15003,
+        "statusCalls": 60,
+        "createCalls": 0
+      }
+    },
+    "fixtureScope": "Same loaded engine class; mocked external ports; no production bean overrides, DB journal or root dispatch",
+    "policy": {
+      "deployment": "REAL",
+      "executable": "/opt/chaoslab/m1/api3-identified/blade-chaoslab-api3-identified",
+      "stateDirectory": "/var/lib/chaoslab-m1/state",
+      "containerId": "18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f",
+      "imageId": "sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8",
+      "containerName": "chaoslab-cpu-sandbox",
+      "user": "65534:65534",
+      "nanoCpus": 500000000,
+      "memory": 134217728,
+      "pids": 32,
+      "cpuPercent": 10,
+      "durationSeconds": 10,
+      "nodeId": "m1-executor",
+      "stateId": "m1-real-state-r2",
+      "toolSha256": "c0c987bbd0aa9d158e90ab48f737680fe1b7eefdbf6c9e74744444c49c847e96",
+      "nsexecSha256": "693219257100421d3c2321c2b1bfb3d285d1b6eed1fa82feabd033797a51e793",
+      "chaosOsSha256": "dee72446e32411f6a0d7a29c71b0ba0cc4dabbab1fcaba212c6c87d0ea965cfb",
+      "yamlSha256": "f8deebf2b90c44f414745cc6316e0cef545332173a7ef9a1998b9804531e7880"
+    },
+    "policyDigest": "b82056c51d558339fa46f9d57be3b967881d75c582a69ff2b6cbf990d2f89a11",
+    "observation": {
+      "nodeId": "m1-executor",
+      "containerId": "18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f",
+      "imageId": "sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8",
+      "observedAt": "2026-10-07T15:04:02.561206951Z",
+      "cpuPercent": 0,
+      "sample": {
+        "pid": 7950,
+        "startTime": "610319",
+        "cgroup": "/sys/fs/cgroup/system.slice/docker-18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f.scope",
+        "usageUsec": 126821
+      },
+      "residual": "CLEAR",
+      "health": "UNKNOWN",
+      "probeReady": true
+    },
+    "observationRoute": "Actual Spring adapter/Channel -> sudo -> root preflight -> observeTarget(no binding)",
+    "directDockerSocket": "Permission denied",
+    "experimentalRows": 0,
+    "passed": true
+  },
+  "actualRootWrapperObserved": true,
+  "http": "127.0.0.1:18080",
+  "databaseScope": "127.0.0.1:3306/chaoslab_m1_r2; schema-only",
+  "r1DatabasePreserved": true,
+  "r1EvidenceUnchanged": true,
+  "r2ExperimentalRows": 0,
+  "policyDigest": "b82056c51d558339fa46f9d57be3b967881d75c582a69ff2b6cbf990d2f89a11",
+  "stateId": "m1-real-state-r2",
+  "wrapperSha256": "2e27c2f2b15fb011c1562f0a2fc19640e7b5e0f3fef1d9c166bf54969c654b94",
+  "finalPreflight": {
+    "version": 1,
+    "code": "OK",
+    "cleanupComplete": false,
+    "handoff": false,
+    "policy": {
+      "deployment": "REAL",
+      "executable": "/opt/chaoslab/m1/api3-identified/blade-chaoslab-api3-identified",
+      "stateDirectory": "/var/lib/chaoslab-m1/state",
+      "containerId": "18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f",
+      "imageId": "sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8",
+      "containerName": "chaoslab-cpu-sandbox",
+      "user": "65534:65534",
+      "nanoCpus": 500000000,
+      "memory": 134217728,
+      "pids": 32,
+      "cpuPercent": 10,
+      "durationSeconds": 10,
+      "nodeId": "m1-executor",
+      "stateId": "m1-real-state-r2",
+      "toolSha256": "c0c987bbd0aa9d158e90ab48f737680fe1b7eefdbf6c9e74744444c49c847e96",
+      "nsexecSha256": "693219257100421d3c2321c2b1bfb3d285d1b6eed1fa82feabd033797a51e793",
+      "chaosOsSha256": "dee72446e32411f6a0d7a29c71b0ba0cc4dabbab1fcaba212c6c87d0ea965cfb",
+      "yamlSha256": "f8deebf2b90c44f414745cc6316e0cef545332173a7ef9a1998b9804531e7880"
+    },
+    "policyDigest": "b82056c51d558339fa46f9d57be3b967881d75c582a69ff2b6cbf990d2f89a11",
+    "observation": {
+      "nodeId": "m1-executor",
+      "containerId": "18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f",
+      "imageId": "sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8",
+      "observedAt": "2026-10-07T15:04:04.554797706Z",
+      "cpuPercent": 0,
+      "sample": {
+        "pid": 7950,
+        "startTime": "610319",
+        "cgroup": "/sys/fs/cgroup/system.slice/docker-18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f.scope",
+        "usageUsec": 126821
+      },
+      "residual": "CLEAR",
+      "health": "UNKNOWN",
+      "probeReady": true
+    }
+  },
+  "finalSandboxSample": {
+    "monotonicNs": 6782779611952,
+    "usageUsec": 126821,
+    "cpuStat": {
+      "usage_usec": "126821",
+      "user_usec": "33168",
+      "system_usec": "93652",
+      "core_sched.force_idle_usec": "0",
+      "nr_periods": "3",
+      "nr_throttled": "0",
+      "throttled_usec": "0",
+      "nr_bursts": "0",
+      "burst_usec": "0"
+    },
+    "pid": 7950,
+    "startTime": "610319",
+    "cgroup": "/sys/fs/cgroup/system.slice/docker-18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f.scope",
+    "members": [
+      "7950"
+    ],
+    "command": [
+      "sleep",
+      "3600"
+    ],
+    "interfaces": [
+      "lo"
+    ]
+  },
+  "negativeSudo": {
+    "/bin/sh": true,
+    "/bin/bash": true,
+    "/usr/bin/docker": true,
+    "/usr/bin/env": true,
+    "/usr/bin/python3": true,
+    "/usr/bin/systemctl": true,
+    "/usr/bin/systemd-run": true,
+    "/opt/chaoslab/m1/api3-identified/blade-chaoslab-api3-identified": true
+  },
+  "authorizationAbsent": true,
+  "bindingAbsent": true,
+  "nativeDbAbsent": true,
+  "sudoUnchanged": true
+}

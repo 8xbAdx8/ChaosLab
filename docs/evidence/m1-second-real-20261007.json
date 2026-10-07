@@ -1,0 +1,447 @@
+{
+  "result": "M1 INCOMPLETE",
+  "recoveryVerified": false,
+  "createApiAttempts": 1,
+  "realAuthorizationCreated": true,
+  "noAutomaticRetry": true,
+  "firstM1": "INCOMPLETE",
+  "firstRecoveryVerified": false,
+  "backendCommit": "a1cd7394cf945390b257ef2e65007da9c9ac395f",
+  "backendJarSha256": "1b7bec8f07f83e5cd6a48b4119ecde9588f127b07fa5d52266107251e7e069fd",
+  "policyDigest": "b82056c51d558339fa46f9d57be3b967881d75c582a69ff2b6cbf990d2f89a11",
+  "settlingRounds": [
+    {
+      "round": 1,
+      "traceEpoch": 1791386852.049982,
+      "engineStatus": {
+        "uid": "a04cab156195155f",
+        "status": "Destroyed",
+        "traceEpoch": 1791386849.444303,
+        "nativeUpdateTime": "2026-10-07T15:27:18.310320344Z",
+        "nativeCreateTime": "2026-10-07T15:27:03.91416465Z"
+      },
+      "observation": {
+        "executionId": "376bfef9-bbc4-4270-a38e-f930e73451bf",
+        "nativeUid": "a04cab156195155f",
+        "nodeId": "m1-executor",
+        "containerId": "18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f",
+        "imageId": "sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8",
+        "observedAt": "2026-10-07T15:27:32.047704652Z",
+        "cpuPercent": 0,
+        "baselinePercent": 0,
+        "sample": {
+          "pid": 7950,
+          "startTime": "610319",
+          "cgroup": "/sys/fs/cgroup/system.slice/docker-18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f.scope",
+          "usageUsec": 1728872
+        },
+        "residual": "CLEAR",
+        "health": "HEALTHY",
+        "probeReady": true
+      }
+    }
+  ],
+  "r1ArchiveUnchanged": true,
+  "r1DatabaseUnchanged": true,
+  "r1EvidenceUnchanged": true,
+  "negativeSudo": {
+    "/bin/sh": true,
+    "/bin/bash": true,
+    "/usr/bin/docker": true,
+    "/usr/bin/env": true,
+    "/usr/bin/python3": true,
+    "/usr/bin/systemctl": true,
+    "/usr/bin/systemd-run": true,
+    "/opt/chaoslab/m1/api3-identified/blade-chaoslab-api3-identified": true
+  },
+  "preflight": {
+    "version": 1,
+    "code": "OK",
+    "cleanupComplete": false,
+    "handoff": false,
+    "policy": {
+      "deployment": "REAL",
+      "executable": "/opt/chaoslab/m1/api3-identified/blade-chaoslab-api3-identified",
+      "stateDirectory": "/var/lib/chaoslab-m1/state",
+      "containerId": "18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f",
+      "imageId": "sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8",
+      "containerName": "chaoslab-cpu-sandbox",
+      "user": "65534:65534",
+      "nanoCpus": 500000000,
+      "memory": 134217728,
+      "pids": 32,
+      "cpuPercent": 10,
+      "durationSeconds": 10,
+      "nodeId": "m1-executor",
+      "stateId": "m1-real-state-r2",
+      "toolSha256": "c0c987bbd0aa9d158e90ab48f737680fe1b7eefdbf6c9e74744444c49c847e96",
+      "nsexecSha256": "693219257100421d3c2321c2b1bfb3d285d1b6eed1fa82feabd033797a51e793",
+      "chaosOsSha256": "dee72446e32411f6a0d7a29c71b0ba0cc4dabbab1fcaba212c6c87d0ea965cfb",
+      "yamlSha256": "f8deebf2b90c44f414745cc6316e0cef545332173a7ef9a1998b9804531e7880"
+    },
+    "policyDigest": "b82056c51d558339fa46f9d57be3b967881d75c582a69ff2b6cbf990d2f89a11",
+    "observation": {
+      "nodeId": "m1-executor",
+      "containerId": "18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f",
+      "imageId": "sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8",
+      "observedAt": "2026-10-07T15:26:46.26193498Z",
+      "cpuPercent": 0,
+      "sample": {
+        "pid": 7950,
+        "startTime": "610319",
+        "cgroup": "/sys/fs/cgroup/system.slice/docker-18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f.scope",
+        "usageUsec": 126821
+      },
+      "residual": "CLEAR",
+      "health": "UNKNOWN",
+      "probeReady": true
+    }
+  },
+  "baseline": {
+    "samples": [
+      {
+        "pid": 7950,
+        "startTime": "610319",
+        "cgroup": "/sys/fs/cgroup/system.slice/docker-18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f.scope",
+        "usageUsec": 126821,
+        "monotonicNs": 8144409315204,
+        "members": [
+          "7950"
+        ],
+        "knownToolMembers": []
+      },
+      {
+        "pid": 7950,
+        "startTime": "610319",
+        "cgroup": "/sys/fs/cgroup/system.slice/docker-18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f.scope",
+        "usageUsec": 126821,
+        "monotonicNs": 8145447543290,
+        "members": [
+          "7950"
+        ],
+        "knownToolMembers": []
+      }
+    ],
+    "oneCpuPercent": 0.0,
+    "windowSeconds": 1.038228086
+  },
+  "backendPid": 8273,
+  "experimentId": "72267c77-456a-4c53-8703-50aba249b725",
+  "dryRun": {
+    "experiment": {
+      "id": "72267c77-456a-4c53-8703-50aba249b725",
+      "name": "M1 R2 one real CPU10",
+      "hypothesis": "One fixed bounded CPU worker; active same-UID recovery verified by fresh evidence",
+      "targetId": "55555555-5555-4555-8555-555555555555",
+      "scenarioId": "00000000-0000-0000-0000-000000000101",
+      "durationSeconds": 10,
+      "parameters": {
+        "percent": 10
+      },
+      "status": "READY",
+      "version": 2
+    },
+    "accepted": true,
+    "checks": [
+      {
+        "code": "EXPERIMENT_VALIDATED",
+        "passed": true,
+        "message": "experiment definition is validated"
+      },
+      {
+        "code": "TARGET_ENABLED",
+        "passed": true,
+        "message": "target is enabled"
+      },
+      {
+        "code": "ENVIRONMENT_ALLOWED",
+        "passed": true,
+        "message": "target environment is allowed"
+      },
+      {
+        "code": "SCENARIO_ENABLED",
+        "passed": true,
+        "message": "fault scenario is enabled"
+      },
+      {
+        "code": "DURATION_WITHIN_LIMIT",
+        "passed": true,
+        "message": "duration is within the platform safety limit"
+      },
+      {
+        "code": "SINGLE_TARGET_SCOPE",
+        "passed": true,
+        "message": "blast radius is limited to one explicit target"
+      },
+      {
+        "code": "ENGINE_TARGET_TYPE_ALLOWED",
+        "passed": true,
+        "message": "engine target type is allowed"
+      },
+      {
+        "code": "TARGET_IDENTITY_VERIFIED",
+        "passed": true,
+        "message": "Docker target identity is verified"
+      }
+    ],
+    "plan": {
+      "experimentId": "72267c77-456a-4c53-8703-50aba249b725",
+      "targetId": "55555555-5555-4555-8555-555555555555",
+      "targetName": "order-service",
+      "environment": "CHAOS_LAB",
+      "scenarioCode": "CPU_LOAD",
+      "targetCount": 1,
+      "durationSeconds": 10,
+      "recoveryWithinSeconds": 10,
+      "parameters": {
+        "percent": 10
+      }
+    }
+  },
+  "readonlyTraceVerifiedBeforeAuthorization": true,
+  "startSubmittedAt": "2026-10-07T15:26:50.269152Z",
+  "executionId": "376bfef9-bbc4-4270-a38e-f930e73451bf",
+  "nativeUid": "a04cab156195155f",
+  "committedIntent": {
+    "format": "CRI_CPU_V1",
+    "nodeId": "m1-executor",
+    "status": "PREPARING",
+    "ageUsec": 37303,
+    "attempt": 1,
+    "imageId": "sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8",
+    "stateId": "m1-real-state-r2",
+    "targetId": "55555555-5555-4555-8555-555555555555",
+    "nativeUid": "a04cab156195155f",
+    "cpuPercent": 10,
+    "toolSha256": "c0c987bbd0aa9d158e90ab48f737680fe1b7eefdbf6c9e74744444c49c847e96",
+    "containerId": "18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f",
+    "executionId": "376bfef9-bbc4-4270-a38e-f930e73451bf",
+    "toolVersion": "api3-identified",
+    "experimentId": "72267c77-456a-4c53-8703-50aba249b725",
+    "scenarioCode": "CPU_LOAD",
+    "durationSeconds": 10
+  },
+  "commitProof": "independent MySQL READ COMMITTED; durable settings=1/1; observed BEFORE authorization",
+  "authorizationCreatedAt": "2026-10-07T15:26:55.378960Z",
+  "authorization": {
+    "deployment": "REAL",
+    "executable": "/opt/chaoslab/m1/api3-identified/blade-chaoslab-api3-identified",
+    "policyDigest": "b82056c51d558339fa46f9d57be3b967881d75c582a69ff2b6cbf990d2f89a11",
+    "toolSha256": "c0c987bbd0aa9d158e90ab48f737680fe1b7eefdbf6c9e74744444c49c847e96",
+    "nsexecSha256": "693219257100421d3c2321c2b1bfb3d285d1b6eed1fa82feabd033797a51e793",
+    "chaosOsSha256": "dee72446e32411f6a0d7a29c71b0ba0cc4dabbab1fcaba212c6c87d0ea965cfb",
+    "yamlSha256": "f8deebf2b90c44f414745cc6316e0cef545332173a7ef9a1998b9804531e7880",
+    "expiresAt": "2026-10-07T15:27:10.377051Z",
+    "executionId": "376bfef9-bbc4-4270-a38e-f930e73451bf",
+    "nativeUid": "a04cab156195155f",
+    "containerId": "18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f",
+    "imageId": "sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8",
+    "toolIdentity": "4152b36ac9a051ccdf022856ca296acaf32bd434852e90c93cb923ad462d18f0",
+    "stateIdentity": "m1-real-state-r2",
+    "nodeId": "m1-executor",
+    "createdAt": "2026-10-07T15:26:55.377051Z"
+  },
+  "createResponse": {
+    "id": "376bfef9-bbc4-4270-a38e-f930e73451bf",
+    "experimentId": "72267c77-456a-4c53-8703-50aba249b725",
+    "attempt": 1,
+    "idempotencyKey": "m1-r2-once-d7869323-3515-49f6-a26c-996fb3ae0e0b",
+    "status": "RUNNING",
+    "engineExperimentId": "blade-376bfef9-bbc4-4270-a38e-f930e73451bf",
+    "createdAt": "2026-10-07T15:26:53.621424022Z",
+    "startedAt": "2026-10-07T15:27:05.694152154Z",
+    "version": 1
+  },
+  "rootBinding": {
+    "deployment": "REAL",
+    "executable": "/opt/chaoslab/m1/api3-identified/blade-chaoslab-api3-identified",
+    "policyDigest": "b82056c51d558339fa46f9d57be3b967881d75c582a69ff2b6cbf990d2f89a11",
+    "toolSha256": "c0c987bbd0aa9d158e90ab48f737680fe1b7eefdbf6c9e74744444c49c847e96",
+    "nsexecSha256": "693219257100421d3c2321c2b1bfb3d285d1b6eed1fa82feabd033797a51e793",
+    "chaosOsSha256": "dee72446e32411f6a0d7a29c71b0ba0cc4dabbab1fcaba212c6c87d0ea965cfb",
+    "yamlSha256": "f8deebf2b90c44f414745cc6316e0cef545332173a7ef9a1998b9804531e7880",
+    "expiresAt": "2026-10-07T15:27:32.148307906Z",
+    "executionId": "376bfef9-bbc4-4270-a38e-f930e73451bf",
+    "nativeUid": "a04cab156195155f",
+    "containerId": "18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f",
+    "imageId": "sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8",
+    "toolIdentity": "4152b36ac9a051ccdf022856ca296acaf32bd434852e90c93cb923ad462d18f0",
+    "stateIdentity": "m1-real-state-r2",
+    "nodeId": "m1-executor",
+    "createdAt": "2026-10-07T15:27:02.148307906Z",
+    "baseline": {
+      "sample": {
+        "pid": 7950,
+        "startTime": "610319",
+        "cgroup": "/sys/fs/cgroup/system.slice/docker-18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f.scope",
+        "usageUsec": 126821
+      },
+      "percent": 0,
+      "observedAt": "2026-10-07T15:27:02.148305384Z"
+    }
+  },
+  "nativeAfterCreate": {
+    "uid": "a04cab156195155f",
+    "command": "cri",
+    "subCommand": "cpu fullload",
+    "status": "Success",
+    "flags": " --container-id=18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f --uid=a04cab156195155f --timeout=10 --container-runtime=docker --cpu-count=1 --cpu-percent=10"
+  },
+  "createTransportReceipt": {
+    "version": 1,
+    "code": "OK",
+    "outcome": "HANDOFF",
+    "exitCode": 0,
+    "cleanupComplete": false,
+    "handoff": true,
+    "nativeUid": "a04cab156195155f",
+    "response": {
+      "code": 200,
+      "success": true,
+      "result": "a04cab156195155f"
+    }
+  },
+  "during": {
+    "samples": [
+      {
+        "pid": 7950,
+        "startTime": "610319",
+        "cgroup": "/sys/fs/cgroup/system.slice/docker-18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f.scope",
+        "usageUsec": 567639,
+        "monotonicNs": 8163963395133,
+        "members": [
+          "7950",
+          "9566",
+          "9567"
+        ],
+        "knownToolMembers": [
+          {
+            "pid": 9566,
+            "executable": "/opt/chaoslab/m1/api3-identified/bin/nsexec"
+          },
+          {
+            "pid": 9567,
+            "executable": "/opt/chaoslab/m1/api3-identified/bin/chaos_os"
+          }
+        ]
+      },
+      {
+        "pid": 7950,
+        "startTime": "610319",
+        "cgroup": "/sys/fs/cgroup/system.slice/docker-18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f.scope",
+        "usageUsec": 700645,
+        "monotonicNs": 8165211055758,
+        "members": [
+          "7950",
+          "9566",
+          "9567"
+        ],
+        "knownToolMembers": [
+          {
+            "pid": 9566,
+            "executable": "/opt/chaoslab/m1/api3-identified/bin/nsexec"
+          },
+          {
+            "pid": 9567,
+            "executable": "/opt/chaoslab/m1/api3-identified/bin/chaos_os"
+          }
+        ]
+      }
+    ],
+    "oneCpuPercent": 10.660430996610156,
+    "windowSeconds": 1.247660625
+  },
+  "faultObserved": true,
+  "activeDestroyRequestedAt": "2026-10-07T15:27:07.119952Z",
+  "backendDestroy": {
+    "id": "376bfef9-bbc4-4270-a38e-f930e73451bf",
+    "experimentId": "72267c77-456a-4c53-8703-50aba249b725",
+    "attempt": 1,
+    "idempotencyKey": "m1-r2-once-d7869323-3515-49f6-a26c-996fb3ae0e0b",
+    "status": "SUCCESS",
+    "engineExperimentId": "blade-376bfef9-bbc4-4270-a38e-f930e73451bf",
+    "createdAt": "2026-10-07T15:26:53.621424Z",
+    "startedAt": "2026-10-07T15:27:05.694152Z",
+    "finishedAt": "2026-10-07T15:27:32.203764707Z",
+    "version": 3
+  },
+  "destroyCompletedAt": "2026-10-07T15:27:32.290707Z",
+  "destroyTransportReceipt": {
+    "version": 1,
+    "code": "OK",
+    "outcome": "EXITED",
+    "exitCode": 0,
+    "cleanupComplete": true,
+    "handoff": false,
+    "response": {
+      "code": 200,
+      "success": true,
+      "result": {
+        "target": "cpu",
+        "action": "fullload",
+        "flags": {
+          "container-id": "18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f",
+          "container-runtime": "docker",
+          "cpu-count": "1",
+          "cpu-percent": "10",
+          "timeout": "10",
+          "uid": "a04cab156195155f"
+        },
+        "ActionProcessHang": false
+      }
+    }
+  },
+  "nativeDestroyedAt": "2026-10-07T15:27:18.310320344Z",
+  "blocker": "native Destroyed not before timeout",
+  "failureObservation": {
+    "version": 1,
+    "code": "OK",
+    "cleanupComplete": false,
+    "handoff": false,
+    "observation": {
+      "executionId": "376bfef9-bbc4-4270-a38e-f930e73451bf",
+      "nativeUid": "a04cab156195155f",
+      "nodeId": "m1-executor",
+      "containerId": "18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f",
+      "imageId": "sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8",
+      "observedAt": "2026-10-07T15:27:33.436844554Z",
+      "cpuPercent": 0,
+      "baselinePercent": 0,
+      "sample": {
+        "pid": 7950,
+        "startTime": "610319",
+        "cgroup": "/sys/fs/cgroup/system.slice/docker-18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f.scope",
+        "usageUsec": 1728872
+      },
+      "residual": "CLEAR",
+      "health": "HEALTHY",
+      "probeReady": true
+    }
+  },
+  "finalBackendExecution": {
+    "id": "376bfef9-bbc4-4270-a38e-f930e73451bf",
+    "experimentId": "72267c77-456a-4c53-8703-50aba249b725",
+    "attempt": 1,
+    "idempotencyKey": "m1-r2-once-d7869323-3515-49f6-a26c-996fb3ae0e0b",
+    "status": "SUCCESS",
+    "engineExperimentId": "blade-376bfef9-bbc4-4270-a38e-f930e73451bf",
+    "createdAt": "2026-10-07T15:26:53.621424Z",
+    "startedAt": "2026-10-07T15:27:05.694152Z",
+    "finishedAt": "2026-10-07T15:27:32.203765Z",
+    "version": 3
+  },
+  "authorizationAbsent": true,
+  "bindingPresent": true,
+  "authorizationConsumed": true,
+  "nativeDbPresent": true,
+  "executionFinalStatus": "SUCCESS",
+  "occupancyReleased": true,
+  "nativeFinalRecord": {
+    "uid": "a04cab156195155f",
+    "command": "cri",
+    "subCommand": "cpu fullload",
+    "status": "Destroyed",
+    "flags": " --container-id=18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f --uid=a04cab156195155f --timeout=10 --container-runtime=docker --cpu-count=1 --cpu-percent=10"
+  },
+  "finishedAt": "2026-10-07T15:27:33.534509Z"
+}

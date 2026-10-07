@@ -1,0 +1,49 @@
+{
+  "ready": false,
+  "status": "SECOND M1 NOT READY",
+  "commit": "a1cd7394cf945390b257ef2e65007da9c9ac395f",
+  "firstM1": "INCOMPLETE",
+  "firstRecoveryVerified": false,
+  "realAuthorizationCreated": false,
+  "realCreateInvoked": false,
+  "backendArtifactSha256": "1b7bec8f07f83e5cd6a48b4119ecde9588f127b07fa5d52266107251e7e069fd",
+  "harnessSha256": "ab81768b4655c5844e536a0f5a9016ba7f44c063c3a883884ee5ceecbd364e17",
+  "existingSandboxRestarted": true,
+  "r1Archive": {
+    "path": "/var/lib/chaoslab-m1/archive/m1-r1-21d2d20071b3f449",
+    "manifestSha256": "b641a077fa9d77c006fb6d247d272f45e80e52cae9dd55b15c6e97b53780be86",
+    "files": {
+      "chaoslab_m1.sql": {
+        "sha256": "9811fb79d4e763dde6a1ebba304a982658dc67b332de8d83862584a91d341930",
+        "size": 17159
+      },
+      "state-copy/.chaoslab-state-id": {
+        "sha256": "b79ca4c69a9bf37cfe52181a92a01fdb89ebd822437b86755e0b49f84e026b77",
+        "size": 14
+      },
+      "state-copy/binding.json": {
+        "sha256": "3e95902badeea9a88a47dba986bfb9e9f13f3e129bf197ee524584921bacab9d",
+        "size": 1232
+      },
+      "state-copy/chaosblade.dat": {
+        "sha256": "6e87e5341225fc2ad4ac1ebfbf71b56896706d7702a6e19b99f270fa8861a5b6",
+        "size": 49152
+      },
+      "policy-r1.json": {
+        "sha256": "9645e6c589812c933cd24d4ce648992940154677bb2504171a28a594b21c27ca",
+        "size": 832
+      },
+      "first-real-m1-result.json": {
+        "sha256": "7e8867fcdd2475ecf5c969c0eb6c1bf7539503c9a4ca65d42d0d0178dec5fffa",
+        "size": 13429
+      },
+      "r1-history-row.json": {
+        "sha256": "99b7340d72948a8f3c09f8f4a944a5507bcc1f4837802f98787a960853a5b109",
+        "size": 241
+      }
+    },
+    "readBackVerified": true
+  },
+  "blocker": "R2 backend stopped; inspect restricted report/log",
+  "failedPhase": "actual R2 Java readonly acceptance"
+}
