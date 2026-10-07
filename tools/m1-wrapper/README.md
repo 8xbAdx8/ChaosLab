@@ -24,6 +24,12 @@ but backend final status is ROLLBACK_FAILED, never SUCCESS. Later CLEAR/HEALTHY
 probes do not retroactively certify the failed recovery flow. Occupancy retained.
 REAL authorization consumed/absent; no second create authorized. Stop for review.
 
+2026-10-07 root-cause-only follow-up: harmless Java and isolated root FAKE tests
+confirmed the one-observe PRESENT failure path. A local Java-only bounded
+status/observe settling fix and allowlisted recovery reasons passed Windows/Linux
+verification; production root probe/Gate/wrapper unchanged, no VM upgrade or
+REAL authorization. First M1 remains INCOMPLETE. Second M1 is NOT authorized.
+
 ## Historical Phase 2D-2 implementation review (before installation)
 
 Phase 2D-2. Go 1.25, standard library only. Production target: Linux amd64.

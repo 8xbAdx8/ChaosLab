@@ -527,3 +527,72 @@ diagnosis or fix from that inference alone. No repair, repeated destroy, fresh
 authorization or second experiment was undertaken after the stop line.
 
 **M1 INCOMPLETE — RECOVERY NOT VERIFIED — OCCUPANCY RETAINED.**
+
+### 2026-10-07 root-cause-only: bounded recovery evidence settling
+
+The single-observe defect is reproduced, not inferred from a process name. Before
+changing production code, a harmless Java test supplied Destroyed, then PRESENT,
+then CLEAR/HEALTHY. The unmodified adapter threw immediately, made only one
+observe call and never reached the second observation. That characterization
+test passed against the old code. The retained regression now requires VERIFIED
+after the second, fresh status/observe pair, with exactly one active destroy.
+
+An opt-in isolated Linux root fixture also passed using the existing FAKE
+dispatcher and **unchanged** production residual probe: fake HANDOFF leaves a
+harmless, naturally exiting helper, strict fake destroy/status confirms the same
+UID Destroyed, residual is PRESENT while the pinned fake helper lives and CLEAR
+after it exits. The cgroup-members file is synthetic and confined to a temporary
+directory; root process visibility is real. No Docker socket, host PID namespace,
+REAL policy, installed VM wrapper or real Blade is involved. CPU/health and
+final Gate correlation are supplied by the harmless Java fixtures, not claimed
+as new VM health acceptance.
+
+The real incident's exact first-observe evidence was not retained, so the
+specific claim that its timeout helper caused the original failure remains
+**NOT CONFIRMED**. This fix addresses the confirmed single-observe failure path;
+it does not retroactively certify or alter the first M1.
+
+After one active destroy and same-UID Destroyed, the adapter admits read-only
+settling attempts for a fixed 15-second monotonic window, sleeping at most
+250ms between attempts. Each later attempt rechecks identity and obtains a new
+status before a new observe. The existing Validator retains its 10-second
+freshness limit, full subject matching and unchanged Gate. No create/destroy is
+replayed. A VERIFIED result is accepted only before the monotonic deadline.
+The window is an admission/acceptance deadline, not a promise of a 15-second
+HTTP response: already-running verification/transport calls finish under their
+existing bounded timeouts (10 seconds per transport plus bounded cleanup);
+one verification consists of two sequential preflights. Late evidence cannot
+produce SUCCESS. The application keeps committed DESTROYING/occupancy throughout.
+
+- Fresh PRESENT through the window: MANUAL / RECOVERY_RESIDUAL_PRESENT.
+- UNKNOWN, unavailable, stale, unhealthy or otherwise incomplete evidence:
+  INCOMPLETE / RECOVERY_EVIDENCE_INCOMPLETE, never SUCCESS.
+- UID/target/node/execution mismatch: immediate MANUAL / RECOVERY_IDENTITY_REJECTED.
+- Destroy/status not confirmed: ENGINE_RECOVERY_NOT_CONFIRMED, never recovered.
+- Interruption preserves the flag and yields incomplete evidence.
+
+A small typed EngineRecoveryException carries only these four allowlisted
+reasons to the application; the persisted errorMessage uses the reason, never
+raw exception messages, stderr, file paths or root details. Existing terminal
+behavior remains ROLLBACK_FAILED with occupancy held on failure; SUCCESS is only
+written after the unchanged Validator/Gate yields VERIFIED. No transient
+ROLLBACK_FAILED-to-SUCCESS transition was added.
+
+Verification: Windows JDK24/release21 and isolated nonroot Linux Corretto21 full
+backend verify each ran 360 tests, zero failures/errors (Windows one existing
+symlink skip, Linux zero skips). Demo reactor verify passed on both, 10 tests
+each. Wrapper: 14 Windows portable tests, 22 Linux nonroot tests plus go vet;
+the opt-in root settling fixture passed separately. Windows Python observation
+tests 15 and existing one-shot operator pure/AST tests 4 passed. Sources/dependency
+cache were read-only for Linux, network none and no Docker socket.
+
+Production changes are limited to ChaosBladeEngine, BladeProcessChannel's
+identity-failure classification, the two-line application reason mapping and
+one tiny typed exception. Probe/Validator/Gate, api3, migrations, sudoers and
+installed binaries are unchanged. This revision is **not deployed to the VM**.
+Original first-M1 evidence SHA remains
+7e8867fcdd2475ecf5c969c0eb6c1bf7539503c9a4ca65d42d0d0178dec5fffa.
+
+**ROOT CAUSE CONFIRMED (single-observe code path; exact first-incident trigger not confirmed)**
+
+**MINIMAL FIX VERIFIED — SECOND M1 NOT YET AUTHORIZED.**

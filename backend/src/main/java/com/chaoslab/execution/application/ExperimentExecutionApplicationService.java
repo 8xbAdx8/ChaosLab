@@ -468,6 +468,8 @@ public class ExperimentExecutionApplicationService {
     }
 
     private String rollbackFailureMessage(RuntimeException exception) {
+        if (exception instanceof com.chaoslab.engine.application.EngineRecoveryException recovery)
+            return recovery.reason().name();
         return "engine destroy failed: " + exceptionType(exception);
     }
 

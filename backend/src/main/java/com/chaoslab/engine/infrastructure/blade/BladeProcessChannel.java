@@ -139,7 +139,8 @@ public final class BladeProcessChannel {
                 || !expected.executorInstanceId().equals(o.path("nodeId").asText())
                 || !expected.target().containerId().equals(o.path("containerId").asText())
                 || !expected.target().imageId().equals(o.path("imageId").asText()))
-            throw new IllegalStateException("observation identity mismatch");
+            throw new com.chaoslab.engine.application.EngineRecoveryException(
+                    com.chaoslab.engine.application.EngineRecoveryException.Reason.RECOVERY_IDENTITY_REJECTED);
         var residual = BladeRecoveryEvidenceGate.ResidualObservation.valueOf(o.path("residual").asText());
         var health = BladeRecoveryEvidenceGate.HealthObservation.valueOf(o.path("health").asText());
         if (health == BladeRecoveryEvidenceGate.HealthObservation.HEALTHY) {

@@ -112,6 +112,12 @@ class BladeWrapperTransportTests {
                 +"\"containerId\":\""+h.target().containerId()+"\",\"imageId\":\""+h.target().imageId()+"\","
                 +"\"observedAt\":\"2026-10-06T14:00:00Z\",\"residual\":\"CLEAR\",\"health\":\"HEALTHY\",\"cpuPercent\":0.1,\"baselinePercent\":0}}";
         assertThat(BladeProcessChannel.decodeObservation(json,h).health()).isEqualTo(BladeRecoveryEvidenceGate.HealthObservation.HEALTHY);
+        for (String wrong : java.util.List.of(json.replace(UID,"fedcba9876543210"), json.replace("node-1","node-2"),
+                json.replace("a".repeat(64), "c".repeat(64)), json.replace(h.executionId().toString(), java.util.UUID.randomUUID().toString()))) {
+            assertThatThrownBy(() -> BladeProcessChannel.decodeObservation(wrong,h))
+                    .isInstanceOf(com.chaoslab.engine.application.EngineRecoveryException.class)
+                    .hasMessage("RECOVERY_IDENTITY_REJECTED");
+        }
         for (String bad : java.util.List.of(json+"{}", json.replace(UID,"fedcba9876543210"),
                 json.replace("node-1","node-2"), json.replace(h.executionId().toString(), java.util.UUID.randomUUID().toString()),
                 json.replace("\"cpuPercent\":0.1", "\"cpuPercent\":10"),json.replace("\"baselinePercent\":0", "\"baselinePercent\":false"))) {

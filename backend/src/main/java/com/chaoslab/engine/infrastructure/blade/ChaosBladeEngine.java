@@ -1,6 +1,7 @@
 package com.chaoslab.engine.infrastructure.blade;
 
 import com.chaoslab.engine.application.EngineCreateUncertainException;
+import com.chaoslab.engine.application.EngineRecoveryException;
 import com.chaoslab.engine.application.model.*;
 import com.chaoslab.engine.application.port.ChaosEngine;
 import com.chaoslab.safety.application.model.VerifiedDockerTarget;
@@ -8,7 +9,9 @@ import com.chaoslab.safety.application.port.TargetIdentityVerifier;
 import com.chaoslab.target.application.port.TargetRepository;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import java.time.Clock;
+import java.time.Duration;
 import java.util.UUID;
+import static com.chaoslab.engine.application.EngineRecoveryException.Reason.*;
 
 /** Opt-in adapter. Engine IDs are journal references, never invented native UIDs. */
 public final class ChaosBladeEngine implements ChaosEngine {
@@ -21,12 +24,22 @@ public final class ChaosBladeEngine implements ChaosEngine {
     private final JdbcBladeExecutionJournal journal;
     private final BladeProcessChannel channel;
     private final Clock clock;
+    private final Duration settlingWindow;
     private final BladeResponseDecoder decoder = new BladeResponseDecoder(BladeExecutionSnapshot.CRI_CPU_V1);
 
     public ChaosBladeEngine(DockerCpuCommandPlan.Deployment deployment, String nodeId, String stateId,
                             String version, String sha, TargetRepository targets, TargetIdentityVerifier targetVerifier,
                             BladeLocalIdentityVerifier localVerifier, JdbcBladeExecutionJournal journal,
                             BladeProcessChannel channel, Clock clock) {
+        this(deployment, nodeId, stateId, version, sha, targets, targetVerifier, localVerifier,
+                journal, channel, clock, Duration.ofSeconds(15));
+    }
+
+    // Package-only short deadline for harmless tests; production is fixed at 15 seconds.
+    ChaosBladeEngine(DockerCpuCommandPlan.Deployment deployment, String nodeId, String stateId,
+                     String version, String sha, TargetRepository targets, TargetIdentityVerifier targetVerifier,
+                     BladeLocalIdentityVerifier localVerifier, JdbcBladeExecutionJournal journal,
+                     BladeProcessChannel channel, Clock clock, Duration settlingWindow) {
         this.deployment = deployment;
         this.nodeId = nodeId;
         this.stateId = stateId;
@@ -38,6 +51,10 @@ public final class ChaosBladeEngine implements ChaosEngine {
         this.journal = journal;
         this.channel = channel;
         this.clock = clock;
+        if (settlingWindow.isNegative() || settlingWindow.isZero()
+                || settlingWindow.compareTo(Duration.ofSeconds(15)) > 0)
+            throw new IllegalArgumentException("invalid recovery settling window");
+        this.settlingWindow = settlingWindow;
     }
 
     @Override public EngineCreateResult create(ReadyExperimentRequest request) {
@@ -83,6 +100,12 @@ public final class ChaosBladeEngine implements ChaosEngine {
 
     @Override public EngineDestroyResult destroy(EngineExperimentId reference) {
         outsideTransaction();
+        try { return destroyAndSettle(reference); }
+        catch (EngineRecoveryException safe) { throw safe; }
+        catch (RuntimeException unavailable) { throw new EngineRecoveryException(ENGINE_RECOVERY_NOT_CONFIRMED); }
+    }
+
+    private EngineDestroyResult destroyAndSettle(EngineExperimentId reference) {
         var recoveryStarted = clock.instant();
         var saved = load(reference);
         verifyRecovery(saved);
@@ -91,20 +114,51 @@ public final class ChaosBladeEngine implements ChaosEngine {
         // Reverify and query the same persisted UID; acknowledgement alone proves nothing.
         var fresh = verifyRecovery(saved);
         var observation = decoder.decodeStatus(channel.status(handle, () -> false));
+        if (!handle.uid().equals(observation.uid())) throw new EngineRecoveryException(RECOVERY_IDENTITY_REJECTED);
         if (decision(saved, fresh, observation) != BladeRecoveryContract.Decision.CONFIRMED_RECOVERED)
-            throw new IllegalStateException("engine recovery not confirmed");
-        var confirmedAt = clock.instant();
-        BladeProcessChannel.RecoveryObservation evidence;
-        try { evidence = channel.observe(handle); }
-        catch (RuntimeException unknown) { evidence = null; }
-        var assessment = BladeRecoveryEvidenceValidator.assess(handle, recoveryStarted, clock.instant(), java.time.Duration.ofSeconds(10),
-                new BladeRecoveryEvidenceValidator.Observation<>(handle, confirmedAt, BladeRecoveryContract.Decision.CONFIRMED_RECOVERED),
-                evidence == null ? null : new BladeRecoveryEvidenceValidator.Observation<>(evidence.subject(), evidence.observedAt(), evidence.residual()),
-                evidence == null ? null : new BladeRecoveryEvidenceValidator.Observation<>(evidence.subject(), evidence.observedAt(), evidence.health()));
-        if (assessment == BladeRecoveryEvidenceGate.Outcome.MANUAL_INTERVENTION)
-            throw new IllegalStateException("recovery evidence requires manual intervention");
-        return new EngineDestroyResult(reference, assessment == BladeRecoveryEvidenceGate.Outcome.VERIFIED
-                ? EngineStatus.DESTROYED : EngineStatus.ENGINE_RECOVERED);
+            throw new EngineRecoveryException(ENGINE_RECOVERY_NOT_CONFIRMED);
+        // One active destroy only. The window starts after same-UID Destroyed is confirmed.
+        // nanoTime bounds retries even if the evidence Clock is fixed or moves backwards.
+        long deadline = System.nanoTime() + settlingWindow.toNanos();
+        while (true) {
+            if (Thread.currentThread().isInterrupted())
+                throw new EngineRecoveryException(RECOVERY_EVIDENCE_INCOMPLETE);
+            var confirmedAt = clock.instant();
+            BladeProcessChannel.RecoveryObservation evidence;
+            try { evidence = channel.observe(handle); }
+            catch (EngineRecoveryException identityRejected) { throw identityRejected; }
+            catch (RuntimeException unknown) { evidence = null; }
+            var assessment = BladeRecoveryEvidenceValidator.assess(handle, recoveryStarted, clock.instant(), Duration.ofSeconds(10),
+                    new BladeRecoveryEvidenceValidator.Observation<>(handle, confirmedAt, BladeRecoveryContract.Decision.CONFIRMED_RECOVERED),
+                    evidence == null ? null : new BladeRecoveryEvidenceValidator.Observation<>(evidence.subject(), evidence.observedAt(), evidence.residual()),
+                    evidence == null ? null : new BladeRecoveryEvidenceValidator.Observation<>(evidence.subject(), evidence.observedAt(), evidence.health()));
+            // Subject mismatch is not settling and must never be retried into a success.
+            if (evidence != null && !handle.equals(evidence.subject()))
+                throw new EngineRecoveryException(RECOVERY_IDENTITY_REJECTED);
+            long remaining = deadline - System.nanoTime();
+            if (assessment == BladeRecoveryEvidenceGate.Outcome.VERIFIED && remaining > 0)
+                return new EngineDestroyResult(reference, EngineStatus.DESTROYED);
+            if (remaining <= 0)
+                throw new EngineRecoveryException(assessment == BladeRecoveryEvidenceGate.Outcome.MANUAL_INTERVENTION
+                        ? RECOVERY_RESIDUAL_PRESENT : RECOVERY_EVIDENCE_INCOMPLETE);
+            try { java.util.concurrent.TimeUnit.NANOSECONDS.sleep(Math.min(remaining, Duration.ofMillis(250).toNanos())); }
+            catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new EngineRecoveryException(RECOVERY_EVIDENCE_INCOMPLETE);
+            }
+            if (System.nanoTime() >= deadline)
+                throw new EngineRecoveryException(assessment == BladeRecoveryEvidenceGate.Outcome.MANUAL_INTERVENTION
+                        ? RECOVERY_RESIDUAL_PRESENT : RECOVERY_EVIDENCE_INCOMPLETE);
+            // Each candidate acceptance needs NEW engine status and NEW same-subject evidence.
+            // No replay of create or destroy; existing identity checks remain unchanged.
+            fresh = verifyRecovery(saved);
+            if (System.nanoTime() >= deadline) throw new EngineRecoveryException(RECOVERY_EVIDENCE_INCOMPLETE);
+            observation = decoder.decodeStatus(channel.status(handle, () -> Thread.currentThread().isInterrupted()));
+            if (!handle.uid().equals(observation.uid())) throw new EngineRecoveryException(RECOVERY_IDENTITY_REJECTED);
+            if (decision(saved, fresh, observation) != BladeRecoveryContract.Decision.CONFIRMED_RECOVERED)
+                throw new EngineRecoveryException(ENGINE_RECOVERY_NOT_CONFIRMED);
+            if (System.nanoTime() >= deadline) throw new EngineRecoveryException(RECOVERY_EVIDENCE_INCOMPLETE);
+        }
     }
 
     private BladeRecoveryContract.Decision decision(BladeExecutionSnapshot saved, VerifiedDockerTarget fresh,
@@ -115,11 +169,15 @@ public final class ChaosBladeEngine implements ChaosEngine {
 
     private VerifiedDockerTarget verifyRecovery(BladeExecutionSnapshot saved) {
         if (saved.recoveryHandle().isEmpty() || !nodeId.equals(saved.executorInstanceId())
-                || !stateId.equals(saved.stateDirectoryId())
-                || localVerifier.verify(saved) != BladeLocalIdentityVerifier.Result.LOCAL_IDENTITY_MATCHED_NEEDS_TARGET_CHECK)
-            throw new IllegalStateException("recovery identity unavailable; manual intervention required");
+                || !stateId.equals(saved.stateDirectoryId()))
+            throw new EngineRecoveryException(RECOVERY_IDENTITY_REJECTED);
+        var local = localVerifier.verify(saved);
+        if (local == BladeLocalIdentityVerifier.Result.LOCAL_EVIDENCE_UNAVAILABLE)
+            throw new EngineRecoveryException(RECOVERY_EVIDENCE_INCOMPLETE);
+        if (local != BladeLocalIdentityVerifier.Result.LOCAL_IDENTITY_MATCHED_NEEDS_TARGET_CHECK)
+            throw new EngineRecoveryException(RECOVERY_IDENTITY_REJECTED);
         var fresh = fresh(saved.target().targetId());
-        if (!fresh.equals(saved.target())) throw new IllegalStateException("recovery target changed");
+        if (!fresh.equals(saved.target())) throw new EngineRecoveryException(RECOVERY_IDENTITY_REJECTED);
         return fresh;
     }
 

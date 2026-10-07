@@ -101,7 +101,7 @@ class ChaosBladeWiringTests {
         assertThat(snapshot.uid()).isEqualTo(uid);
         var result = service.destroy(ready.getId(), started.execution().id());
         assertThat(result.status()).isEqualTo(ExperimentExecutionStatus.ROLLBACK_FAILED);
-        assertThat(result.errorMessage()).contains("ENGINE_DESTROYED_RECOVERY_UNVERIFIED");
+        assertThat(result.errorMessage()).isEqualTo("RECOVERY_EVIDENCE_INCOMPLETE");
         assertThat(result.finishedAt()).isNull();
         assertThat(service.start(ready.getId(), "once").created()).isFalse();
         verify(channel, times(1)).create(any(), anyString(), any());
@@ -190,6 +190,27 @@ class ChaosBladeWiringTests {
                 && x.getStatus() == ExperimentExecutionStatus.ROLLBACK_FAILED));
     }
 
+    @Test void transientResidualRemainsDestroyingUntilFreshVerifiedEvidenceAndPersistsNoFailure() {
+        var started = service.start(ready.getId(), "evidence-settles");
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        when(channel.observe(any())).thenAnswer(call -> {
+            // Independent DB read proves occupancy is still held throughout settling.
+            committed(() -> assertThat(jdbc.queryForObject("SELECT status FROM experiment_executions WHERE id=?",
+                    String.class, started.execution().id().toString())).isEqualTo("DESTROYING"));
+            return new BladeProcessChannel.RecoveryObservation(call.getArgument(0), java.time.Instant.now(),
+                    calls.getAndIncrement() == 0 ? BladeRecoveryEvidenceGate.ResidualObservation.PRESENT
+                            : BladeRecoveryEvidenceGate.ResidualObservation.CLEAR,
+                    BladeRecoveryEvidenceGate.HealthObservation.HEALTHY);
+        });
+        assertThat(service.destroy(ready.getId(), started.execution().id()).status()).isEqualTo(ExperimentExecutionStatus.SUCCESS);
+        verify(channel, times(1)).destroy(any(), any());
+        verify(channel, times(2)).status(any(), any());
+        verify(channel, times(2)).observe(any());
+        verify(channel, times(1)).create(any(), anyString(), any()); // initial STUB only
+        verify(executions, never()).update(argThat(x -> x.getId().equals(started.execution().id())
+                && x.getStatus() == ExperimentExecutionStatus.ROLLBACK_FAILED));
+    }
+
     @Test void unknownPresentStaleOrWrongSubjectEvidenceNeverReleasesOccupancy() {
         for (String mode : List.of("residual-unknown", "residual-present", "health-unknown", "stale", "wrong-execution")) {
             var second = ready(identity.targetId());
@@ -205,6 +226,8 @@ class ChaosBladeWiringTests {
             });
             var result = service.destroy(second.getId(), started.execution().id());
             assertThat(result.status()).isEqualTo(ExperimentExecutionStatus.ROLLBACK_FAILED);
+            assertThat(result.errorMessage()).isEqualTo(mode.equals("residual-present") ? "RECOVERY_RESIDUAL_PRESENT"
+                    : mode.equals("wrong-execution") ? "RECOVERY_IDENTITY_REJECTED" : "RECOVERY_EVIDENCE_INCOMPLETE");
             assertThat(result.finishedAt()).isNull();
             assertThatThrownBy(() -> service.start(ready(identity.targetId()).getId(), "blocked-"+mode))
                     .isInstanceOf(ExperimentExecutionStartRejectedException.class);

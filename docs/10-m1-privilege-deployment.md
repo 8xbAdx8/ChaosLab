@@ -410,3 +410,40 @@ VM与工作站摘要相同；root审计原件保留。报告不包含数据库�
 **RECOVERY NOT VERIFIED；OCCUPANCY RETAINED**
 
 本次唯一create许可已使用。已停止，等待人工审核；不得重复运行一次性脚本。
+
+### 2026-10-07 root-cause-only 最小修复验收（未部署 VM）
+
+第一次 M1 仍为 INCOMPLETE，ROLLBACK_FAILED/占用/原始证据未改写。
+本轮未 SSH 修改 VM、未运行首次脚本、未生成 REAL authorization、未调用真实
+Blade，也未重试原实验 destroy。新构建仅用于本地无害验证，不替换在 VM 运行的
+698a905 后端或已安装 wrapper。
+
+修复前的定向 Java characterization 测试 PASS：Destroyed → 首次 PRESENT
+立即异常，observe 仅一次；准备好的后续 CLEAR/HEALTHY 没被读取。独立隔离
+root FAKE fixture PASS：合法 helper 交接、strict destroy/status Destroyed、
+原 residual probe PRESENT → helper 自然退出 → CLEAR。使用临时合成 cgroup
+members 文件和真实 root 假 helper 进程，不冒充 VM 的 CPU/health 探针证据。
+由此确认单次 observe 失败路径；首轮现场具体 timeout helper 触发仍 NOT CONFIRMED。
+
+最小改动：固定15秒单调 settling admission/acceptance window；只重复只读
+身份核验/status/observe，主动 destroy 仍只有一次。每个可能通过的后续轮次
+重新取得同 UID Destroyed 和新鲜同主体观察，继续使用原10秒 freshness、
+原 Validator/Gate。已在途的有界读调用可越过窗口返回，但晚到证据禁止 SUCCESS，
+因此不把15秒窗口冒称HTTP整体硬超时。不削弱 root sleep/nsexec/chaos_os/timeout
+helper 检查、不用 timeout 代替主动恢复、不新增调度/监督/证据框架。
+
+稳定持久化 reason：ENGINE_RECOVERY_NOT_CONFIRMED、RECOVERY_RESIDUAL_PRESENT、
+RECOVERY_EVIDENCE_INCOMPLETE、RECOVERY_IDENTITY_REJECTED。PRESENT 到截止点
+为 MANUAL；UNKNOWN/过期/缺失证据为 INCOMPLETE；主体不匹配立即 MANUAL。
+失败域状态保持 ROLLBACK_FAILED/占用，只有 VERIFIED 才直接 SUCCESS。
+
+Windows/Linux 后端 full verify 各360项、0失败/错误；Windows既有1跳过，Linux0。
+两端 demo verify 各10项通过。Windows wrapper14项、Linux非root22项+vet通过；
+root FAKE settling单独1项通过。Python观察15项/首次脚本pure+AST4项通过。
+具体方法、边界和复现说明见 docs/08-m1-tool-compatibility.md。
+
+**ROOT CAUSE CONFIRMED（单次观察缺陷；首轮具体残留触发未确认）**
+
+**MINIMAL FIX VERIFIED**
+
+**SECOND M1 NOT YET AUTHORIZED**

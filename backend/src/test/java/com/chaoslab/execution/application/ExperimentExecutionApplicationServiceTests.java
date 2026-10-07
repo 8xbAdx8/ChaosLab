@@ -500,6 +500,25 @@ class ExperimentExecutionApplicationServiceTests {
     }
 
     @Test
+    void shouldPersistOnlyAllowlistedRecoveryReasonsAndRetainOccupancy() {
+        for (var reason : com.chaoslab.engine.application.EngineRecoveryException.Reason.values()) {
+            Target target = target(true);
+            var runningExperiment = runningExperiment(target, scenario(true));
+            var runningExecution = runningExecution(runningExperiment.getId(), 1, "reason-"+reason.name());
+            given(executionRepository.findById(runningExecution.getId())).willReturn(Optional.of(runningExecution));
+            given(experimentRepository.findById(runningExperiment.getId())).willReturn(Optional.of(runningExperiment));
+            given(executionRepository.update(any(ExperimentExecution.class))).willAnswer(call -> call.getArgument(0));
+            given(experimentRepository.update(any(Experiment.class))).willAnswer(call -> call.getArgument(0));
+            given(chaosEngine.destroy(any(EngineExperimentId.class)))
+                    .willThrow(new com.chaoslab.engine.application.EngineRecoveryException(reason));
+            var result = service.destroy(runningExperiment.getId(), runningExecution.getId());
+            assertThat(result.status()).isEqualTo(ExperimentExecutionStatus.ROLLBACK_FAILED);
+            assertThat(result.errorMessage()).isEqualTo(reason.name());
+            assertThat(result.finishedAt()).isNull();
+        }
+    }
+
+    @Test
     void shouldRetryDestroyAfterRollbackFailure() {
         Target target = target(true);
         FaultScenario scenario = scenario(true);

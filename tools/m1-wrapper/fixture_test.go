@@ -33,7 +33,7 @@ func TestMain(m *testing.M) {
 	}
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
-		case "create", "status", "destroy", "fixture-helper", "fixture-timer":
+		case "create", "status", "destroy", "fixture-helper", "fixture-timer", "fixture-settling-helper":
 			fixture()
 			return
 		}
@@ -42,6 +42,10 @@ func TestMain(m *testing.M) {
 }
 func fixture() {
 	state := os.Getenv("CHAOSBLADE_DATAFILE_PATH")
+	if os.Args[1] == "fixture-settling-helper" {
+		time.Sleep(1500 * time.Millisecond) // harmless independently exiting helper
+		return
+	}
 	if os.Args[1] == "fixture-timer" {
 		time.Sleep(600 * time.Millisecond)
 		exe, _ := os.Executable()
@@ -69,6 +73,17 @@ func fixture() {
 	}
 	raw, _ := json.Marshal(info)
 	os.WriteFile(filepath.Join(state, "invocation.json"), raw, 0600)
+	if mode == "settling" && os.Args[1] == "create" {
+		exe, _ := os.Executable()
+		cmd := exec.Command(exe, "fixture-settling-helper")
+		cmd.Env = os.Environ()
+		if e := cmd.Start(); e != nil {
+			os.Exit(79)
+		}
+		os.WriteFile(filepath.Join(state, "helper.pid"), []byte(strconv.Itoa(cmd.Process.Pid)), 0600)
+		cmd.Process.Release()
+		time.Sleep(100 * time.Millisecond)
+	}
 	if (strings.Contains(mode, "helper") || mode == "timeout" || mode == "overflow" || mode == "nonzero" || mode == "malformed" || mode == "different-uid" || mode == "signal") && !(mode == "timeout-helper" && os.Args[1] == "destroy") {
 		exe, _ := os.Executable()
 		cmd := exec.Command(exe, "fixture-helper")
@@ -113,6 +128,18 @@ func fixture() {
 	}
 	if mode == "different-uid" {
 		uid = "fedcba9876543210"
+	}
+	if mode == "settling" && os.Args[1] == "destroy" {
+		os.WriteFile(filepath.Join(state, "destroyed"), []byte(uid), 0600)
+		json.NewEncoder(os.Stdout).Encode(map[string]any{"code": 200, "success": true, "result": "command: cri cpu fullload --cpu-count=1, destroy time: fixture"})
+		return
+	}
+	if mode == "settling" && os.Args[1] == "status" {
+		if _, e := os.Stat(filepath.Join(state, "destroyed")); e != nil {
+			os.Exit(77)
+		}
+		json.NewEncoder(os.Stdout).Encode(map[string]any{"code": 200, "success": true, "result": map[string]string{"Uid": uid, "Command": "cri", "SubCommand": "cpu fullload", "Flag": "", "Status": "Destroyed", "Error": "", "CreateTime": "", "UpdateTime": ""}})
+		return
 	}
 	json.NewEncoder(os.Stdout).Encode(map[string]any{"code": 200, "success": true, "result": uid})
 }
