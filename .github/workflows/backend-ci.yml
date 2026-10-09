@@ -33,6 +33,8 @@ jobs:
         run: python3 -m unittest discover -s demo-services -p 'test_*.py'
       - name: Test disabled historical M1 harness
         run: python3 tools/m1-wrapper/deployment/test_second_real_m1.py
+      - name: Test single-shot M1 Core operator without privileged execution
+        run: python3 tools/m1-wrapper/deployment/test_core_real_once.py
       - name: Preserve historical evidence and Core acceptance boundary
         run: python3 tools/m1-wrapper/deployment/test_m1_core_contract.py
 
