@@ -15,6 +15,8 @@ import static com.chaoslab.engine.application.EngineRecoveryException.Reason.*;
 
 /** Opt-in adapter. Engine IDs are journal references, never invented native UIDs. */
 public final class ChaosBladeEngine implements ChaosEngine {
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(ChaosBladeEngine.class);
+    private static final tools.jackson.databind.json.JsonMapper SUMMARY_JSON = tools.jackson.databind.json.JsonMapper.builder().build();
     private static final java.security.SecureRandom UID_RANDOM = new java.security.SecureRandom();
     private final DockerCpuCommandPlan.Deployment deployment;
     private final String nodeId, stateId, version, sha;
@@ -92,7 +94,7 @@ public final class ChaosBladeEngine implements ChaosEngine {
         var observation = decoder.decodeStatus(channel.status(saved.recoveryHandle().orElseThrow(), () -> false));
         var decision = decision(saved, fresh, observation);
         return new EngineStatusResult(reference, switch (decision) {
-            case CONFIRMED_RECOVERED -> EngineStatus.DESTROYED;
+            case CONFIRMED_RECOVERED -> EngineStatus.ENGINE_RECOVERED;
             case DESTROY_REQUIRED -> EngineStatus.RUNNING;
             default -> throw new IllegalStateException("unsafe engine status; manual intervention required");
         });
@@ -110,7 +112,11 @@ public final class ChaosBladeEngine implements ChaosEngine {
         var saved = load(reference);
         verifyRecovery(saved);
         var handle = saved.recoveryHandle().orElseThrow();
-        decoder.decodeDestroy(channel.destroy(handle, () -> false));
+        var acknowledgement = channel.destroy(handle, () -> false);
+        decoder.decodeDestroy(acknowledgement);
+        // Do not infer causality from an invocation or its native wall-clock fields.
+        var active = channel.activeRecoveryProvenance(handle, acknowledgement);
+        boolean activeProven = active == BladeProcessChannel.ActiveRecoveryProvenance.CONFIRMED;
         // Reverify and query the same persisted UID; acknowledgement alone proves nothing.
         var fresh = verifyRecovery(saved);
         var observation = decoder.decodeStatus(channel.status(handle, () -> false));
@@ -120,6 +126,7 @@ public final class ChaosBladeEngine implements ChaosEngine {
         // One active destroy only. The window starts after same-UID Destroyed is confirmed.
         // nanoTime bounds retries even if the evidence Clock is fixed or moves backwards.
         long deadline = System.nanoTime() + settlingWindow.toNanos();
+        int round = 0;
         while (true) {
             if (Thread.currentThread().isInterrupted())
                 throw new EngineRecoveryException(RECOVERY_EVIDENCE_INCOMPLETE);
@@ -132,12 +139,25 @@ public final class ChaosBladeEngine implements ChaosEngine {
                     new BladeRecoveryEvidenceValidator.Observation<>(handle, confirmedAt, BladeRecoveryContract.Decision.CONFIRMED_RECOVERED),
                     evidence == null ? null : new BladeRecoveryEvidenceValidator.Observation<>(evidence.subject(), evidence.observedAt(), evidence.residual()),
                     evidence == null ? null : new BladeRecoveryEvidenceValidator.Observation<>(evidence.subject(), evidence.observedAt(), evidence.health()));
-            // Subject mismatch is not settling and must never be retried into a success.
-            if (evidence != null && !handle.equals(evidence.subject()))
-                throw new EngineRecoveryException(RECOVERY_IDENTITY_REJECTED);
             long remaining = deadline - System.nanoTime();
-            if (assessment == BladeRecoveryEvidenceGate.Outcome.VERIFIED && remaining > 0)
-                return new EngineDestroyResult(reference, EngineStatus.DESTROYED);
+            boolean sameSubject = evidence == null || handle.equals(evidence.subject());
+            boolean eligible = sameSubject && assessment == BladeRecoveryEvidenceGate.Outcome.VERIFIED && remaining > 0 && activeProven;
+            recoverySummary(handle, recoveryStarted, observation, evidence, assessment, ++round, activeProven, eligible);
+            // Subject mismatch is not settling and must never be retried into a success.
+            if (!sameSubject) throw new EngineRecoveryException(RECOVERY_IDENTITY_REJECTED);
+            if (assessment == BladeRecoveryEvidenceGate.Outcome.VERIFIED && remaining > 0 && !activeProven)
+                throw new EngineRecoveryException(ACTIVE_RECOVERY_NOT_CONFIRMED);
+            // Logging is not a timing authority. Recheck admission and freshness
+            // after the diagnostic sink before returning a SUCCESS-eligible result.
+            remaining = deadline - System.nanoTime();
+            if (eligible && remaining > 0) {
+                assessment = BladeRecoveryEvidenceValidator.assess(handle, recoveryStarted, clock.instant(), Duration.ofSeconds(10),
+                        new BladeRecoveryEvidenceValidator.Observation<>(handle, confirmedAt, BladeRecoveryContract.Decision.CONFIRMED_RECOVERED),
+                        new BladeRecoveryEvidenceValidator.Observation<>(evidence.subject(), evidence.observedAt(), evidence.residual()),
+                        new BladeRecoveryEvidenceValidator.Observation<>(evidence.subject(), evidence.observedAt(), evidence.health()));
+                if (assessment == BladeRecoveryEvidenceGate.Outcome.VERIFIED)
+                    return new EngineDestroyResult(reference, EngineStatus.DESTROYED);
+            }
             if (remaining <= 0)
                 throw new EngineRecoveryException(assessment == BladeRecoveryEvidenceGate.Outcome.MANUAL_INTERVENTION
                         ? RECOVERY_RESIDUAL_PRESENT : RECOVERY_EVIDENCE_INCOMPLETE);
@@ -159,6 +179,29 @@ public final class ChaosBladeEngine implements ChaosEngine {
                 throw new EngineRecoveryException(ENGINE_RECOVERY_NOT_CONFIRMED);
             if (System.nanoTime() >= deadline) throw new EngineRecoveryException(RECOVERY_EVIDENCE_INCOMPLETE);
         }
+    }
+
+    /** Fixed allowlist only. No UID, tool paths, raw stdout/stderr or exception text.
+     * safe physical recovery evidence may be logged even when provenance blocks SUCCESS.
+     * These are diagnostic summaries, never a second Gate or a post-terminal veto.
+     */
+    private static void recoverySummary(BladeRecoveryHandle handle, java.time.Instant started,
+            BladeResponseDecoder.StatusObservation status, BladeProcessChannel.RecoveryObservation evidence,
+            BladeRecoveryEvidenceGate.Outcome gate, int round, boolean activeProven, boolean eligible) {
+        var summary = SUMMARY_JSON.createObjectNode();
+        summary.put("executionId", handle.executionId().toString());
+        summary.put("recoveryAttemptStartedAt", started.toString());
+        summary.put("nativeStatus", status.status().name());
+        summary.put("residual", evidence == null || evidence.residual() == null ? "UNKNOWN" : evidence.residual().name());
+        summary.put("health", evidence == null || evidence.health() == null ? "UNKNOWN" : evidence.health().name());
+        summary.put("gateOutcome", gate.name());
+        summary.put("round", round);
+        summary.put("observedAt", evidence == null || evidence.observedAt() == null ? null : evidence.observedAt().toString());
+        summary.put("activeRecovery", activeProven ? "CONFIRMED" : "NOT_CONFIRMED");
+        summary.put("successEligible", eligible); // At observation time; final monotonic/freshness check still applies.
+        summary.put("reason", gate == BladeRecoveryEvidenceGate.Outcome.VERIFIED && !activeProven
+                ? ACTIVE_RECOVERY_NOT_CONFIRMED.name() : null);
+        LOG.info("M1_RECOVERY_SUMMARY {}", summary);
     }
 
     private BladeRecoveryContract.Decision decision(BladeExecutionSnapshot saved, VerifiedDockerTarget fresh,

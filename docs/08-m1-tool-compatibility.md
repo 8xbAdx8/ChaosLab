@@ -596,3 +596,127 @@ Original first-M1 evidence SHA remains
 **ROOT CAUSE CONFIRMED (single-observe code path; exact first-incident trigger not confirmed)**
 
 **MINIMAL FIX VERIFIED — SECOND M1 NOT YET AUTHORIZED.**
+
+### 2026-10-09 M1 final SUCCESS contract (no third create)
+
+This section supersedes the future acceptance contract, **not** either historical
+result. R1 remains INCOMPLETE. R2 remains externally INCOMPLETE with backend
+SUCCESS, occupancyReleased=true and external recoveryVerified=false. Its actual
+recovery actor, the 14.4-second native timestamp interval and any material strace
+effect remain NOT CONFIRMED. No VM deployment or historical rewrite occurred.
+
+#### A–D: source-traced waits and causality
+
+The source references below refer to locked CLI base
+`e8e0d3adc90c414d9dc9a04a13f53ebadfbda8dc` with the existing cli-api2/nsexec
+patches, CRI base `fc16e67d2ca469a37c9ec98878fe0f618a0712d9` with the existing
+api3 patch, and its pinned exec-os v1.8.1 dependency. These candidates were read,
+not modified. Fixture compilation uses disposable source copies only.
+
+| Question | Source / actual wait | Conclusion |
+| --- | --- | --- |
+| A: active destroy | Java `ChaosBladeEngine.destroy`: identity preflights, strict wrapper destroy/pipe completion, renewed identity preflights, native status, then bounded status/observe settling. Wrapper `operation.lock` serializes wrapper requests; runner waits for foreground completion, bounded child cleanup and pipes. CLI `cli/cmd/destroy.go:149–166,207–218` waits for the executor, then SQL UPDATE, then prints its response. CRI `exec/executor_common_linux.go:118–153` waits for namespace/chaos_os CombinedOutput. exec-os `exec/cpu/cpu.go:395` delegates `exec/exec.go:32–61`: PID lookup and kill; no matching processes is also success. | These are separate waits, not one atomic recovery operation. Preflight includes baseline sampling; the Java 15-second window starts after initial Destroyed confirmation, not at request arrival. Native context is Background; wrapper/Java timeouts do not prove who caused recovery. |
+| B: timeout path | CLI `cli/cmd/recovery_command.go:26–36` starts a background sleep and invokes the same `destroy UID`. `create.go:251–279` starts that helper in PostRun, after the create executor/record/UID output. `destroy.go:76–91` routes the same destroy function. | Active and timeout share the native destroy path. The timer bypasses wrapper `operation.lock`. Its countdown origin is not CreateTime. No caller provenance is recorded. |
+| C: native times | `cli/cmd/command.go:93–114` sets CreateTime before INSERT/create effect. `data/experiment.go:164–177` evaluates `time.Now().Format(RFC3339Nano)` as the argument of the status UPDATE after executor return, before SQL completion/commit. | UpdateTime is the wall-clock value supplied to the last record update. It is neither destroy-start time nor database-commit time nor independently verified full recovery completion time. A later destroy can overwrite it. |
+| D: discriminate actor? | `destroy.go:149–166` returns success for an already-Destroyed record; concurrent callers may both pass the initial read and run the executor. No caller field, common arbitration or causally bound native receipt exists. | Neither timestamps nor an object ExpModel acknowledgement, successful invocation, fixed child identity, or monotonic start/end can prove ACTIVE rather than TIMEOUT caused recovery. |
+
+**TIMESTAMP CANNOT PROVE RECOVERY CAUSALITY.** In particular,
+`UpdateTime < CreateTime + timeout` is not an accepted production predicate.
+
+#### Harmless root/source evidence
+
+`tools/m1-wrapper/proof/api3_destroy_causality_test.go.txt` compiles into a
+disposable copy of the locked CLI. It exercises the actual DestroyCommand and
+SQLite code with **fake executors only**; it never executes blade main/create,
+CPU pressure, Docker, namespace or cgroup operations. The actual timeout command
+launches the fake test executable. A temporary exclusive winner file models
+which fake executor changed synthetic recovery state; it is **not** a native
+receipt or production provenance mechanism.
+
+All four scenarios passed as root euid=0 in a network-none, cap-drop-ALL,
+no-new-privileges, read-only isolated local Docker container with only temporary
+state, source/cache read-only mounts and no Docker socket or VM mounts:
+
+- Active: fake active executor wins; native same-UID status becomes Destroyed.
+- Timeout: the real timer command invokes the same native destroy path; fake
+  TIMEOUT wins and status becomes Destroyed.
+- Racing: active enters first and waits 1.8 seconds; the one-second timer wins
+  synthetic recovery. Active subsequently returns an object ExpModel success
+  and overwrites UpdateTime. Thus even the object acknowledgement plus the last
+  native timestamp cannot establish active causality.
+- Slow: active waits 200ms; destroy does not return before executor completion.
+
+The existing opt-in root FAKE wrapper settling fixture also passed unchanged:
+Destroyed/PRESENT becomes CLEAR after a harmless helper exits naturally. It does
+not claim a real CPU fault or establish the R2 actor.
+
+#### Small production contract change
+
+`BladeProcessChannel.activeRecoveryProvenance` is a package-local two-value
+predicate. For the current locked candidate it always returns NOT_CONFIRMED.
+No request, environment, config, native JSON or wrapper field can enable it.
+CONFIRMED appears only in mocked hypothetical trusted-receipt tests; **there is
+no real proof implementation** and this change does not make M1 ready.
+
+The engine still calls destroy exactly once, obtains fresh same-UID Destroyed
+status and uses the existing Validator/Gate and unchanged probes. If physical
+Gate=VERIFIED but active provenance is absent, it throws the allowlisted
+`ACTIVE_RECOVERY_NOT_CONFIRMED` before returning EngineStatus.DESTROYED.
+Application failure handling commits ROLLBACK_FAILED, leaves finishedAt=null and
+retains occupancy. Residual PRESENT, UNKNOWN, health UNKNOWN, stale evidence and
+identity mismatches remain non-success with their existing safe reasons. A plain
+native status returns ENGINE_RECOVERED rather than implying full DESTROYED/M1.
+
+Future real SUCCESS therefore requires proven active provenance **and** fresh
+same-subject engine/residual/health Gate acceptance before the SUCCESS transaction.
+Physical recovery via timeout may still be recorded diagnostically, but cannot
+be passed off as active recovery. Audits retain only allowlisted failure reasons;
+report code remains SUCCESS/finishedAt based, with no R1/R2 backfill.
+
+The existing logger emits a small JSON `M1_RECOVERY_SUMMARY` per round:
+executionId, recoveryAttemptStartedAt, nativeStatus, residual, health, gateOutcome,
+round, observedAt, activeRecovery, successEligible and reason. No raw stdout,
+stderr, UID, root paths, secrets or arbitrary output are included. successEligible
+is diagnostic at observation time, not a final approval: monotonic deadline and
+Validator freshness are checked again after logging before returning DESTROYED.
+No strace attachment or external post-terminal active-recovery veto is required.
+The historical R2 harness now refuses to run before any side effect; its original
+source/trace/evidence remains preserved in commit b31086f and on the untouched VM.
+
+#### Provenance blocker and minimal next design (not implemented)
+
+A wrapper-only receipt containing execution/UID/child identity/monotonic interval
+proves invocation, not cause. Serializing only wrapper requests is insufficient
+because the native timer bypasses that boundary. Killing the timer, excluding
+helpers from residual checks, trusting wall-clock comparisons or accepting an
+already-Destroyed acknowledgement would weaken the specified criterion.
+
+A separately approved minimal candidate protocol would need shared single-UID
+arbitration for **both active and timeout**, a trusted caller/attempt identity,
+and a durable receipt causally tied to the actual recovery effect (not the current
+no-process success). A crash after claiming but before action, a race, missing
+receipt or ambiguous effect must stay UNKNOWN. That design requires candidate
+source/protocol review and new locked hashes; none is authorized/implemented here.
+No generic framework, second journal, migration or VM permission change was added.
+
+#### Verification / stop line
+
+Windows JDK24 targeting release21 and isolated nonroot Linux Corretto21 full
+backend verify: **369 tests, zero failures/errors** (one existing Windows skip,
+zero Linux skips). Demo reactor verify: **10 tests per OS**, both PASS. Windows
+wrapper portable tests: **14 PASS**; Linux full wrapper suite and go vet PASS,
+root-only fixture separately PASS; native source fake proof **4 PASS**. Python
+demo tests **15 PASS**, R2-preparation tests **7 PASS**, disabled-R2-harness tests
+**8 total, one Windows-only platform skip**. Linux test containers had no network
+or Docker socket. CI now includes Windows/Linux Java21 plus isolated root proofs.
+
+Original evidence SHA-256 remains:
+
+- R1: `7e8867fcdd2475ecf5c969c0eb6c1bf7539503c9a4ca65d42d0d0178dec5fffa`.
+- R2: `db66f4ac5df2ccbd1dc09bfd68c9e07389f6b73c9b440ff4385dae9f26909e67`.
+
+**ACTIVE RECOVERY PROVENANCE MODEL = NOT POSSIBLE WITH CURRENT CANDIDATE**
+
+**SUCCESS CONTRACT FIXED (fail-closed, not a new provenance implementation)**
+
+**POST-SUCCESS ACCEPTANCE GAP CLOSED — M1 BLOCKED — THIRD M1 NOT AUTHORIZED**

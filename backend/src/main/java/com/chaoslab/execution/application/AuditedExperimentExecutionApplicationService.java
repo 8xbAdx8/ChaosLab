@@ -170,10 +170,16 @@ public class AuditedExperimentExecutionApplicationService {
             auditor.complete(intent, AuditResult.SUCCESS, null);
             return;
         }
+        String failure = "EXECUTION_" + execution.status().name();
+        if (execution.errorMessage() != null) {
+            try {
+                failure = com.chaoslab.engine.application.EngineRecoveryException.Reason.valueOf(execution.errorMessage()).name();
+            } catch (IllegalArgumentException unknown) { /* Never copy arbitrary diagnostic text into audit. */ }
+        }
         auditor.complete(
                 intent,
                 AuditResult.FAILED,
-                "EXECUTION_" + execution.status().name()
+                failure
         );
     }
 

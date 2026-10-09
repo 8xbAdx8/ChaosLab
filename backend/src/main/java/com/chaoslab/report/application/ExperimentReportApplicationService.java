@@ -97,6 +97,9 @@ public class ExperimentReportApplicationService {
         ExperimentExecution execution = executions.findById(executionId)
                 .filter(found -> found.getExperimentId().equals(experimentId))
                 .orElseThrow(() -> new ExperimentExecutionNotFoundException(executionId));
+        // Future SUCCESS is committed only after the adapter's entire production
+        // contract, including active provenance. Do not reinterpret/backfill
+        // historical R2 rows here; report generation does not certify native cause.
         if (execution.getStatus() != ExperimentExecutionStatus.SUCCESS
                 || execution.getStartedAt() == null
                 || execution.getFinishedAt() == null) {

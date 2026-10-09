@@ -20,6 +20,10 @@ def write_line(epoch, envelope):
 
 
 class SecondM1Tests(unittest.TestCase):
+    def test_historical_harness_cannot_execute_or_veto_a_future_success(self):
+        with self.assertRaisesRegex(RuntimeError, 'HISTORICAL_R2_HARNESS_DISABLED'):
+            M['main']()  # Raises before root checks, imports, tracing, SQL or HTTP.
+
     @unittest.skipUnless(sys.platform == 'linux' and shutil.which('strace'), 'Linux strace format fixture only')
     def test_real_strace_format_with_unprivileged_printf_only(self):
         # Never sudo or run the production wrapper: a fixed ordinary printf child.

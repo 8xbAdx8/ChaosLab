@@ -6,6 +6,7 @@ import java.util.Objects;
 public final class EngineRecoveryException extends IllegalStateException {
     public enum Reason {
         ENGINE_RECOVERY_NOT_CONFIRMED,
+        ACTIVE_RECOVERY_NOT_CONFIRMED,
         RECOVERY_RESIDUAL_PRESENT,
         RECOVERY_EVIDENCE_INCOMPLETE,
         RECOVERY_IDENTITY_REJECTED

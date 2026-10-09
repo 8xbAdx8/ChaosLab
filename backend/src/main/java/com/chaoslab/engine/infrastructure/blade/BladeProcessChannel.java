@@ -74,6 +74,17 @@ public final class BladeProcessChannel {
         return run(handle.destroyArguments(deployment), cancelled, BoundedProcessRunner.Lifecycle.STRICT_FOREGROUND);
     }
 
+    enum ActiveRecoveryProvenance { CONFIRMED, NOT_CONFIRMED }
+
+    /** Locked api3 has no caller/causal receipt. Invocation, exit=0, ExpModel,
+     * monotonic duration and native timestamps are NOT provenance. No request,
+     * environment or wrapper JSON field can enable this check. CONFIRMED is only
+     * a hypothetical trusted-receipt fixture seam until a new protocol is reviewed.
+     */
+    ActiveRecoveryProvenance activeRecoveryProvenance(BladeRecoveryHandle handle, ProcessRunResult acknowledgement) {
+        return ActiveRecoveryProvenance.NOT_CONFIRMED;
+    }
+
     /** No request identity or caller paths. Root verifies its fixed deployment and live sandbox. */
     public tools.jackson.databind.JsonNode preflight() {
         if (!wrapperTransport) throw new IllegalStateException("privileged preflight required");

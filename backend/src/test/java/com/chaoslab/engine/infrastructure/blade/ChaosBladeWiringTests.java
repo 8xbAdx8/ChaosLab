@@ -81,6 +81,8 @@ class ChaosBladeWiringTests {
                     handle.executionId().toString())).isEqualTo("DESTROYING"));
             return ChaosBladeEngineTests.strict("{\"code\":200,\"success\":true,\"result\":\"command: cri cpu fullload --cpu-count=1, destroy time: now\"}");
         });
+        // Synthetic trusted-provenance port only; current api3 always reports NOT_CONFIRMED.
+        when(channel.activeRecoveryProvenance(any(), any())).thenReturn(BladeProcessChannel.ActiveRecoveryProvenance.CONFIRMED);
     }
     private Experiment ready(UUID target) {
         return experiments.insert(Experiment.create(UUID.randomUUID(), "stub CRI", "available", target,
@@ -180,14 +182,42 @@ class ChaosBladeWiringTests {
         when(channel.status(any(), any())).thenReturn(ChaosBladeEngineTests.status(uid, "Success"));
         assertThat(service.destroy(ready.getId(), result.execution().id()).status()).isEqualTo(ExperimentExecutionStatus.ROLLBACK_FAILED);
     }
-    @Test void completeFreshEvidenceReleasesOccupancyOnlyAfterGate() {
+    @Test void completeFreshEvidenceReleasesOccupancyOnlyAfterGate() throws Exception {
         var started = service.start(ready.getId(), "evidence-success");
         when(channel.observe(any())).thenAnswer(call -> new BladeProcessChannel.RecoveryObservation(call.getArgument(0),
                 java.time.Instant.now(), BladeRecoveryEvidenceGate.ResidualObservation.CLEAR, BladeRecoveryEvidenceGate.HealthObservation.HEALTHY));
         var result = service.destroy(ready.getId(), started.execution().id());
         assertThat(result.status()).isEqualTo(ExperimentExecutionStatus.SUCCESS);
+        assertThat(result.finishedAt()).isNotNull();
+        committed(() -> {
+            assertThat(jdbc.queryForObject("SELECT status FROM experiment_executions WHERE id=?", String.class,
+                    result.id().toString())).isEqualTo("SUCCESS");
+            assertThat(executions.existsByTargetIdAndStatuses(identity.targetId(), List.of(
+                    ExperimentExecutionStatus.PREPARING, ExperimentExecutionStatus.CREATE_UNCERTAIN,
+                    ExperimentExecutionStatus.RUNNING, ExperimentExecutionStatus.DESTROYING,
+                    ExperimentExecutionStatus.ROLLBACK_FAILED))).isFalse();
+        });
+        verify(channel, times(1)).destroy(any(), any());
         verify(executions, never()).update(argThat(x -> x.getId().equals(started.execution().id())
                 && x.getStatus() == ExperimentExecutionStatus.ROLLBACK_FAILED));
+    }
+
+    @Test void gateVerifiedWithoutActiveProvenanceNeverCommitsSuccessOrReleasesOccupancy() throws Exception {
+        var started = service.start(ready.getId(), "unattributed-recovery");
+        when(channel.activeRecoveryProvenance(any(), any())).thenReturn(BladeProcessChannel.ActiveRecoveryProvenance.NOT_CONFIRMED);
+        when(channel.observe(any())).thenAnswer(call -> new BladeProcessChannel.RecoveryObservation(call.getArgument(0),
+                java.time.Instant.now(), BladeRecoveryEvidenceGate.ResidualObservation.CLEAR, BladeRecoveryEvidenceGate.HealthObservation.HEALTHY));
+        var result = service.destroy(ready.getId(), started.execution().id());
+        assertThat(result.status()).isEqualTo(ExperimentExecutionStatus.ROLLBACK_FAILED);
+        assertThat(result.errorMessage()).isEqualTo("ACTIVE_RECOVERY_NOT_CONFIRMED");
+        assertThat(result.finishedAt()).isNull();
+        committed(() -> assertThat(jdbc.queryForObject("SELECT status FROM experiment_executions WHERE id=?", String.class,
+                result.id().toString())).isEqualTo("ROLLBACK_FAILED"));
+        assertThatThrownBy(() -> service.start(ready(identity.targetId()).getId(), "blocked-after-timeout"))
+                .isInstanceOf(ExperimentExecutionStartRejectedException.class);
+        verify(executions, never()).update(argThat(x -> x.getId().equals(result.id()) && x.getStatus() == ExperimentExecutionStatus.SUCCESS));
+        verify(channel, times(1)).destroy(any(), any());
+        verify(channel, times(1)).create(any(), anyString(), any()); // Initial STUB only.
     }
 
     @Test void transientResidualRemainsDestroyingUntilFreshVerifiedEvidenceAndPersistsNoFailure() {

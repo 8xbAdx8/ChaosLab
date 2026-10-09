@@ -164,6 +164,17 @@ class ExperimentReportApplicationServiceTests {
                 TargetEnvironment.CHAOS_LAB)));
     }
 
+    @Test void activeRecoveryUnconfirmedExecutionCannotGenerateRecoveredReport() {
+        ExperimentExecution execution = mock(ExperimentExecution.class);
+        given(execution.getExperimentId()).willReturn(EXPERIMENT_ID);
+        given(execution.getStatus()).willReturn(ExperimentExecutionStatus.ROLLBACK_FAILED);
+        given(executions.findById(EXECUTION_ID)).willReturn(Optional.of(execution));
+        assertThatThrownBy(() -> service.create(EXPERIMENT_ID, EXECUTION_ID, "unconfirmed"))
+                .isInstanceOf(ReportCreationRejectedException.class).extracting("code").isEqualTo("EXECUTION_NOT_RECOVERED");
+        verify(reports, never()).insert(any());
+        verifyNoInteractions(observations, audits);
+    }
+
     private ExperimentExecution givenCompleteExecution() {
         ExperimentExecution execution = mock(ExperimentExecution.class);
         given(execution.getExperimentId()).willReturn(EXPERIMENT_ID);

@@ -9,7 +9,11 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
@@ -27,3 +31,41 @@ jobs:
         run: bash ./backend/mvnw -f demo-services/pom.xml --batch-mode verify
       - name: Test observation scripts and dashboard
         run: python3 -m unittest discover -s demo-services -p 'test_*.py'
+      - name: Test disabled historical M1 harness
+        run: python3 tools/m1-wrapper/deployment/test_second_real_m1.py
+
+  harmless-root-proof:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.x'
+          cache: false
+      - name: Test wrapper without privileged targets
+        working-directory: tools/m1-wrapper
+        run: go test ./...
+      - name: Existing root FAKE lifecycle (no Blade or Docker socket)
+        working-directory: tools/m1-wrapper
+        run: |
+          CGO_ENABLED=0 go test -c -o /tmp/m1-root-fixture .
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:rw,exec,size=256m -e M1_ROOT_FIXTURE=1 -v /tmp/m1-root-fixture:/fixture:ro --entrypoint /fixture golang:1.25 -test.run '^TestRootFakeDestroyedBeforeHelperSettles$' -test.v
+      - uses: actions/checkout@v7
+        with:
+          repository: chaosblade-io/chaosblade
+          ref: e8e0d3adc90c414d9dc9a04a13f53ebadfbda8dc
+          path: fixtures/chaosblade-patched
+      - uses: actions/checkout@v7
+        with:
+          repository: chaosblade-io/chaosblade-exec-cri
+          ref: fc16e67d2ca469a37c9ec98878fe0f618a0712d9
+          path: fixtures/chaosblade-cri-patched
+      - name: Locked candidate source proof, fake executors ONLY
+        shell: bash
+        run: |
+          git -C fixtures/chaosblade-patched apply "$GITHUB_WORKSPACE/tools/chaosblade-patches/cli-api2.patch" "$GITHUB_WORKSPACE/tools/chaosblade-patches/nsexec-handshake.patch"
+          git -C fixtures/chaosblade-cri-patched apply "$GITHUB_WORKSPACE/tools/chaosblade-patches/cri-api3-candidate.patch"
+          cp tools/m1-wrapper/proof/api3_destroy_causality_test.go.txt fixtures/chaosblade-patched/cli/cmd/m1_causality_proof_test.go
+          cd fixtures/chaosblade-patched
+          CGO_ENABLED=0 go test -p 2 -c -o /tmp/m1-causality-proof ./cli/cmd
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:rw,exec,size=256m -v /tmp/m1-causality-proof:/fixture:ro --entrypoint /fixture golang:1.25

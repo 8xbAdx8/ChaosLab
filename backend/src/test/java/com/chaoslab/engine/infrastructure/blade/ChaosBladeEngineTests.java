@@ -46,6 +46,8 @@ class ChaosBladeEngineTests {
                 handoff("{\"code\":200,\"success\":true,\"result\":\"" + invocation.getArgument(1) + "\"}"));
         when(channel.status(any(), any())).thenReturn(status(uid, "Destroyed"));
         when(channel.destroy(any(), any())).thenReturn(strict("{\"code\":200,\"success\":true,\"result\":\"command: cri cpu fullload --cpu-count=1, destroy time: now\"}"));
+        // Hypothetical authenticated provenance, NOT an api3 capability assertion.
+        when(channel.activeRecoveryProvenance(any(), any())).thenReturn(BladeProcessChannel.ActiveRecoveryProvenance.CONFIRMED);
     }
     static ProcessRunResult handoff(String text) { return new ProcessRunResult(ProcessRunResult.Outcome.HANDOFF, 0, text, "", false); }
     static ProcessRunResult strict(String text) { return new ProcessRunResult(ProcessRunResult.Outcome.EXITED, 0, text, "", true); }
@@ -94,7 +96,7 @@ class ChaosBladeEngineTests {
         assertThatThrownBy(() -> engine.create(request)).isInstanceOf(EngineCreateUncertainException.class);
     }
     @Test void statusUsesPersistedUidAndRejectsMismatch() {
-        assertThat(engine.status(reference).status()).isEqualTo(EngineStatus.DESTROYED);
+        assertThat(engine.status(reference).status()).isEqualTo(EngineStatus.ENGINE_RECOVERED);
         verify(channel).status(argThat(h -> h.uid().equals(uid)), any());
         when(channel.status(any(), any())).thenReturn(status("fedcba9876543210", "Destroyed"));
         assertThatThrownBy(() -> engine.status(reference)).isInstanceOf(IllegalStateException.class);
@@ -220,5 +222,57 @@ class ChaosBladeEngineTests {
             assertReason(EngineRecoveryException.Reason.RECOVERY_EVIDENCE_INCOMPLETE);
             assertThat(Thread.currentThread().isInterrupted()).isTrue();
         } finally { Thread.interrupted(); }
+    }
+
+    @Test void recoveredByTimeoutOrUnattributedDestroyCannotBecomeDestroyedResult() {
+        when(channel.activeRecoveryProvenance(any(), any())).thenReturn(BladeProcessChannel.ActiveRecoveryProvenance.NOT_CONFIRMED);
+        observe(BladeRecoveryEvidenceGate.ResidualObservation.CLEAR, BladeRecoveryEvidenceGate.HealthObservation.HEALTHY, Duration.ZERO);
+        assertReason(EngineRecoveryException.Reason.ACTIVE_RECOVERY_NOT_CONFIRMED);
+        verify(channel, times(1)).destroy(any(), any());
+        verify(channel, times(1)).observe(any()); // Physical recovery evidence retained in safe summary.
+        verify(channel, never()).create(any(), anyString(), any());
+    }
+
+    @Test void missingProvenanceFailsClosedEvenWithAllPhysicalRecoveryEvidence() {
+        when(channel.activeRecoveryProvenance(any(), any())).thenReturn(null);
+        observe(BladeRecoveryEvidenceGate.ResidualObservation.CLEAR, BladeRecoveryEvidenceGate.HealthObservation.HEALTHY, Duration.ZERO);
+        assertReason(EngineRecoveryException.Reason.ACTIVE_RECOVERY_NOT_CONFIRMED);
+    }
+
+    @Test void structuredRoundsContainOnlyAllowlistedSafeFieldsAndNoStraceDependency() {
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(ChaosBladeEngine.class);
+        var appender = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        appender.start(); logger.addAppender(appender);
+        try {
+            when(channel.activeRecoveryProvenance(any(), any())).thenReturn(BladeProcessChannel.ActiveRecoveryProvenance.NOT_CONFIRMED);
+            observe(BladeRecoveryEvidenceGate.ResidualObservation.CLEAR, BladeRecoveryEvidenceGate.HealthObservation.HEALTHY, Duration.ZERO);
+            assertReason(EngineRecoveryException.Reason.ACTIVE_RECOVERY_NOT_CONFIRMED);
+            assertThat(appender.list).hasSize(1);
+            String message = appender.list.getFirst().getFormattedMessage();
+            var root = tools.jackson.databind.json.JsonMapper.builder().build().readTree(message.substring("M1_RECOVERY_SUMMARY ".length()));
+            assertThat(root.propertyNames()).containsExactlyInAnyOrder("executionId", "recoveryAttemptStartedAt", "nativeStatus", "residual", "health",
+                    "gateOutcome", "round", "observedAt", "activeRecovery", "successEligible", "reason");
+            assertThat(root.path("gateOutcome").asString()).isEqualTo("VERIFIED");
+            assertThat(root.path("successEligible").asBoolean()).isFalse();
+            assertThat(root.path("reason").asString()).isEqualTo("ACTIVE_RECOVERY_NOT_CONFIRMED");
+            assertThat(message).doesNotContain(uid, deployment.executable().toString(), "stderr", "stdout", "secret", "strace");
+        } finally { logger.detachAppender(appender); appender.stop(); }
+    }
+
+    @Test void delayedDiagnosticSinkCannotExtendRecoveryAdmissionWindow() {
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(ChaosBladeEngine.class);
+        var appender = new ch.qos.logback.core.AppenderBase<ch.qos.logback.classic.spi.ILoggingEvent>() {
+            @Override protected void append(ch.qos.logback.classic.spi.ILoggingEvent event) {
+                try { Thread.sleep(80); } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+            }
+        };
+        var shortWindow = new ChaosBladeEngine(deployment, "node-1", "state-1", "api3", "c".repeat(64),
+                targets, verifier, local, journal, channel, Clock.systemUTC(), Duration.ofMillis(50));
+        observe(BladeRecoveryEvidenceGate.ResidualObservation.CLEAR, BladeRecoveryEvidenceGate.HealthObservation.HEALTHY, Duration.ZERO);
+        appender.start(); logger.addAppender(appender);
+        try {
+            assertThatThrownBy(() -> shortWindow.destroy(reference)).isInstanceOf(EngineRecoveryException.class)
+                    .hasMessage("RECOVERY_EVIDENCE_INCOMPLETE");
+        } finally { logger.detachAppender(appender); appender.stop(); }
     }
 }

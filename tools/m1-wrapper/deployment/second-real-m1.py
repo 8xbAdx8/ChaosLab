@@ -121,6 +121,10 @@ def settling_rows(rows, execution, uid, policy, requested_at):
 
 
 def main():
+    # Historical executable is preserved in commit b31086f with its original SHA.
+    # It cannot be reused as a future acceptance harness: timing/causal criteria
+    # now belong before backend SUCCESS, and strace is not an M1 dependency.
+    raise RuntimeError('HISTORICAL_R2_HARNESS_DISABLED; THIRD M1 NOT AUTHORIZED')
     require(os.geteuid() == 0 and len(sys.argv) == 1, 'administrator required; no arguments')
     os.umask(0o077)
     for name, pin in [('first-real-m1.py', FIRST_SCRIPT_SHA), ('prepare-second-m1.py', PREP_SHA)]:

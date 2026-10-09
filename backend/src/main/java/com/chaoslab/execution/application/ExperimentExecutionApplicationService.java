@@ -230,6 +230,9 @@ public class ExperimentExecutionApplicationService {
                     "ENGINE_DESTROYED_RECOVERY_UNVERIFIED: residual and health evidence required");
         if (result.status() != EngineStatus.DESTROYED)
             return recordRollbackFailure(destroying, experiment, "engine destroy returned unexpected status " + result.status());
+        // DESTROYED is the adapter's complete production acceptance result, not
+        // an exit/status acknowledgement. All M1 criteria must precede this
+        // transaction; no external harness can retroactively certify/veto SUCCESS.
         Instant finishedAt = clock.instant();
         if (finishedAt.isBefore(destroying.getStartedAt())) finishedAt = destroying.getStartedAt();
         var successful = executionRepository.update(destroying.markSuccess(finishedAt));
