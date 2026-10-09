@@ -1,0 +1,370 @@
+{
+  "result": "M1 CORE PASS",
+  "mergeCommit": "0cb29a13690e89a5d4bda2be1c64ebb3408f5536",
+  "createApiAttempts": 1,
+  "destroyApiAttempts": 1,
+  "realAuthorizationCreated": true,
+  "recoveryCause": "UNKNOWN",
+  "physicalRecovery": "VERIFIED",
+  "automaticRetry": false,
+  "preflight": {
+    "version": 1,
+    "code": "OK",
+    "cleanupComplete": false,
+    "handoff": false,
+    "policy": {
+      "deployment": "REAL",
+      "executable": "/opt/chaoslab/m1/api3-identified/blade-chaoslab-api3-identified",
+      "stateDirectory": "/var/lib/chaoslab-m1/state",
+      "containerId": "18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f",
+      "imageId": "sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8",
+      "containerName": "chaoslab-cpu-sandbox",
+      "user": "65534:65534",
+      "nanoCpus": 500000000,
+      "memory": 134217728,
+      "pids": 32,
+      "cpuPercent": 10,
+      "durationSeconds": 10,
+      "nodeId": "m1-core-r3-executor",
+      "stateId": "m1-core-r3-state",
+      "toolSha256": "c0c987bbd0aa9d158e90ab48f737680fe1b7eefdbf6c9e74744444c49c847e96",
+      "nsexecSha256": "693219257100421d3c2321c2b1bfb3d285d1b6eed1fa82feabd033797a51e793",
+      "chaosOsSha256": "dee72446e32411f6a0d7a29c71b0ba0cc4dabbab1fcaba212c6c87d0ea965cfb",
+      "yamlSha256": "f8deebf2b90c44f414745cc6316e0cef545332173a7ef9a1998b9804531e7880"
+    },
+    "policyDigest": "e12cee75d1e08fcdf74e0089b45d6949f6c816db8c774aafd00776b9e6ed2eef",
+    "observation": {
+      "nodeId": "m1-core-r3-executor",
+      "containerId": "18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f",
+      "imageId": "sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8",
+      "observedAt": "2026-10-09T17:38:48.715934959Z",
+      "cpuPercent": 0,
+      "sample": {
+        "pid": 2313,
+        "startTime": "65253",
+        "cgroup": "/sys/fs/cgroup/system.slice/docker-18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f.scope",
+        "usageUsec": 113031
+      },
+      "residual": "CLEAR",
+      "health": "UNKNOWN",
+      "probeReady": true
+    }
+  },
+  "baselineCpuPercent": 0,
+  "sandboxRuntime": {
+    "monotonicNs": 2390083569849,
+    "usageUsec": 113031,
+    "cpuStat": {
+      "usage_usec": "113031",
+      "user_usec": "33418",
+      "system_usec": "79613",
+      "core_sched.force_idle_usec": "0",
+      "nr_periods": "4",
+      "nr_throttled": "1",
+      "throttled_usec": "13926",
+      "nr_bursts": "0",
+      "burst_usec": "0"
+    },
+    "pid": 2313,
+    "startTime": "65253",
+    "cgroup": "/sys/fs/cgroup/system.slice/docker-18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f.scope",
+    "members": [
+      "2313"
+    ],
+    "command": [
+      "sleep",
+      "3600"
+    ],
+    "interfaces": [
+      "lo"
+    ]
+  },
+  "freshPreflightPassed": true,
+  "startedAt": "2026-10-09T17:38:49.373587Z",
+  "experimentId": "aa73e482-5584-4e03-baca-0ba6a7b0c635",
+  "startSubmittedAt": "2026-10-09T17:38:51.102781Z",
+  "executionId": "dd07ca41-fbbc-416f-944a-712100376c86",
+  "nativeUid": "2d479cbbf2ea6dfe",
+  "committedIntent": {
+    "format": "CRI_CPU_V1",
+    "nodeId": "m1-core-r3-executor",
+    "status": "PREPARING",
+    "ageUsec": 39932,
+    "attempt": 1,
+    "imageId": "sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8",
+    "stateId": "m1-core-r3-state",
+    "targetId": "66666666-6666-4666-8666-666666666666",
+    "nativeUid": "2d479cbbf2ea6dfe",
+    "cpuPercent": 10,
+    "toolSha256": "c0c987bbd0aa9d158e90ab48f737680fe1b7eefdbf6c9e74744444c49c847e96",
+    "containerId": "18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f",
+    "executionId": "dd07ca41-fbbc-416f-944a-712100376c86",
+    "toolVersion": "api3-identified",
+    "experimentId": "aa73e482-5584-4e03-baca-0ba6a7b0c635",
+    "scenarioCode": "CPU_LOAD",
+    "durationSeconds": 10
+  },
+  "commitProof": "Independent READ COMMITTED MySQL query with durability1/1 BEFORE authorization",
+  "authorizationCreatedAt": "2026-10-09T17:38:55.237232Z",
+  "createResponse": {
+    "id": "dd07ca41-fbbc-416f-944a-712100376c86",
+    "experimentId": "aa73e482-5584-4e03-baca-0ba6a7b0c635",
+    "attempt": 1,
+    "idempotencyKey": "m1-core-once-5bc914ba-596a-4c67-bdc5-3578c244ff5f",
+    "status": "RUNNING",
+    "engineExperimentId": "blade-dd07ca41-fbbc-416f-944a-712100376c86",
+    "createdAt": "2026-10-09T17:38:53.686940761Z",
+    "startedAt": "2026-10-09T17:39:00.955376028Z",
+    "version": 1
+  },
+  "rootBinding": {
+    "deployment": "REAL",
+    "executable": "/opt/chaoslab/m1/api3-identified/blade-chaoslab-api3-identified",
+    "policyDigest": "e12cee75d1e08fcdf74e0089b45d6949f6c816db8c774aafd00776b9e6ed2eef",
+    "toolSha256": "c0c987bbd0aa9d158e90ab48f737680fe1b7eefdbf6c9e74744444c49c847e96",
+    "nsexecSha256": "693219257100421d3c2321c2b1bfb3d285d1b6eed1fa82feabd033797a51e793",
+    "chaosOsSha256": "dee72446e32411f6a0d7a29c71b0ba0cc4dabbab1fcaba212c6c87d0ea965cfb",
+    "yamlSha256": "f8deebf2b90c44f414745cc6316e0cef545332173a7ef9a1998b9804531e7880",
+    "expiresAt": "2026-10-09T17:39:28.857504081Z",
+    "executionId": "dd07ca41-fbbc-416f-944a-712100376c86",
+    "nativeUid": "2d479cbbf2ea6dfe",
+    "containerId": "18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f",
+    "imageId": "sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8",
+    "toolIdentity": "4152b36ac9a051ccdf022856ca296acaf32bd434852e90c93cb923ad462d18f0",
+    "stateIdentity": "m1-core-r3-state",
+    "nodeId": "m1-core-r3-executor",
+    "createdAt": "2026-10-09T17:38:58.857504081Z",
+    "baseline": {
+      "sample": {
+        "pid": 2313,
+        "startTime": "65253",
+        "cgroup": "/sys/fs/cgroup/system.slice/docker-18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f.scope",
+        "usageUsec": 113031
+      },
+      "percent": 0,
+      "observedAt": "2026-10-09T17:38:58.857503528Z"
+    }
+  },
+  "productionAuditsAfterCreate": [
+    {
+      "result": "SUCCESS",
+      "operation": "M1_CPU_OBSERVATION",
+      "occurredAt": "2026-10-09 17:39:00.937361",
+      "parameters": {
+        "nodeId": "m1-core-r3-executor",
+        "imageId": "sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8",
+        "stateId": "m1-core-r3-state",
+        "version": 1,
+        "nativeUid": "2d479cbbf2ea6dfe",
+        "usageUsec": 433244,
+        "cpuPercent": 10.911216516130064,
+        "observedAt": "2026-10-09T17:39:00.884779278Z",
+        "toolSha256": "c0c987bbd0aa9d158e90ab48f737680fe1b7eefdbf6c9e74744444c49c847e96",
+        "containerId": "18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f",
+        "baselinePercent": 0.0
+      }
+    },
+    {
+      "result": "SUCCESS",
+      "operation": "START_EXPERIMENT",
+      "occurredAt": "2026-10-09 17:39:01.014281",
+      "parameters": {
+        "percent": 10
+      }
+    }
+  ],
+  "activeDestroyRequestedAt": "2026-10-09T17:39:01.107241Z",
+  "backendDestroyResponse": {
+    "id": "dd07ca41-fbbc-416f-944a-712100376c86",
+    "experimentId": "aa73e482-5584-4e03-baca-0ba6a7b0c635",
+    "attempt": 1,
+    "idempotencyKey": "m1-core-once-5bc914ba-596a-4c67-bdc5-3578c244ff5f",
+    "status": "SUCCESS",
+    "engineExperimentId": "blade-dd07ca41-fbbc-416f-944a-712100376c86",
+    "createdAt": "2026-10-09T17:38:53.686941Z",
+    "startedAt": "2026-10-09T17:39:00.955376Z",
+    "finishedAt": "2026-10-09T17:39:14.128253825Z",
+    "version": 3
+  },
+  "finalBackendExecution": {
+    "id": "dd07ca41-fbbc-416f-944a-712100376c86",
+    "experimentId": "aa73e482-5584-4e03-baca-0ba6a7b0c635",
+    "attempt": 1,
+    "idempotencyKey": "m1-core-once-5bc914ba-596a-4c67-bdc5-3578c244ff5f",
+    "status": "SUCCESS",
+    "engineExperimentId": "blade-dd07ca41-fbbc-416f-944a-712100376c86",
+    "createdAt": "2026-10-09T17:38:53.686941Z",
+    "startedAt": "2026-10-09T17:39:00.955376Z",
+    "finishedAt": "2026-10-09T17:39:14.128254Z",
+    "version": 3
+  },
+  "occupancyRetained": false,
+  "productionAudits": [
+    {
+      "result": "SUCCESS",
+      "operation": "M1_CPU_OBSERVATION",
+      "occurredAt": "2026-10-09 17:39:00.937361",
+      "parameters": {
+        "nodeId": "m1-core-r3-executor",
+        "imageId": "sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8",
+        "stateId": "m1-core-r3-state",
+        "version": 1,
+        "nativeUid": "2d479cbbf2ea6dfe",
+        "usageUsec": 433244,
+        "cpuPercent": 10.911216516130064,
+        "observedAt": "2026-10-09T17:39:00.884779278Z",
+        "toolSha256": "c0c987bbd0aa9d158e90ab48f737680fe1b7eefdbf6c9e74744444c49c847e96",
+        "containerId": "18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f",
+        "baselinePercent": 0.0
+      }
+    },
+    {
+      "result": "SUCCESS",
+      "operation": "START_EXPERIMENT",
+      "occurredAt": "2026-10-09 17:39:01.014281",
+      "parameters": {
+        "percent": 10
+      }
+    },
+    {
+      "result": "SUCCESS",
+      "operation": "M1_PHYSICAL_RECOVERY",
+      "occurredAt": "2026-10-09 17:39:14.114461",
+      "parameters": {
+        "health": "HEALTHY",
+        "nodeId": "m1-core-r3-executor",
+        "imageId": "sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8",
+        "stateId": "m1-core-r3-state",
+        "version": 1,
+        "residual": "CLEAR",
+        "nativeUid": "2d479cbbf2ea6dfe",
+        "observedAt": "2026-10-09T17:39:14.072386121Z",
+        "toolSha256": "c0c987bbd0aa9d158e90ab48f737680fe1b7eefdbf6c9e74744444c49c847e96",
+        "containerId": "18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f",
+        "nativeStatus": "Destroyed",
+        "recoveryCause": "UNKNOWN",
+        "engineObservedAt": "2026-10-09T17:39:12.927484031Z",
+        "physicalRecovery": "VERIFIED",
+        "activeDestroyRequest": "ACKNOWLEDGED",
+        "recoveryAttemptStartedAt": "2026-10-09T17:39:01.204784207Z"
+      }
+    },
+    {
+      "result": "SUCCESS",
+      "operation": "DESTROY_EXPERIMENT",
+      "occurredAt": "2026-10-09 17:39:14.160577",
+      "parameters": {
+        "percent": 10
+      }
+    }
+  ],
+  "productionCpuEvidence": {
+    "nodeId": "m1-core-r3-executor",
+    "imageId": "sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8",
+    "stateId": "m1-core-r3-state",
+    "version": 1,
+    "nativeUid": "2d479cbbf2ea6dfe",
+    "usageUsec": 433244,
+    "cpuPercent": 10.911216516130064,
+    "observedAt": "2026-10-09T17:39:00.884779278Z",
+    "toolSha256": "c0c987bbd0aa9d158e90ab48f737680fe1b7eefdbf6c9e74744444c49c847e96",
+    "containerId": "18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f",
+    "baselinePercent": 0.0
+  },
+  "duringCpuPercent": 10.911216516130064,
+  "productionPhysicalAssessment": {
+    "health": "HEALTHY",
+    "nodeId": "m1-core-r3-executor",
+    "imageId": "sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8",
+    "stateId": "m1-core-r3-state",
+    "version": 1,
+    "residual": "CLEAR",
+    "nativeUid": "2d479cbbf2ea6dfe",
+    "observedAt": "2026-10-09T17:39:14.072386121Z",
+    "toolSha256": "c0c987bbd0aa9d158e90ab48f737680fe1b7eefdbf6c9e74744444c49c847e96",
+    "containerId": "18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f",
+    "nativeStatus": "Destroyed",
+    "recoveryCause": "UNKNOWN",
+    "engineObservedAt": "2026-10-09T17:39:12.927484031Z",
+    "physicalRecovery": "VERIFIED",
+    "activeDestroyRequest": "ACKNOWLEDGED",
+    "recoveryAttemptStartedAt": "2026-10-09T17:39:01.204784207Z"
+  },
+  "recoveryRounds": [
+    {
+      "executionId": "dd07ca41-fbbc-416f-944a-712100376c86",
+      "recoveryAttemptStartedAt": "2026-10-09T17:39:01.204784207Z",
+      "nativeStatus": "DESTROYED",
+      "residual": "PRESENT",
+      "health": "HEALTHY",
+      "gateOutcome": "MANUAL_INTERVENTION",
+      "round": 1,
+      "observedAt": "2026-10-09T17:39:09.395862258Z",
+      "activeDestroyRequest": "ACKNOWLEDGED",
+      "recoveryCause": "UNKNOWN",
+      "cpuFaultObserved": true,
+      "successEligible": false,
+      "reason": null
+    },
+    {
+      "executionId": "dd07ca41-fbbc-416f-944a-712100376c86",
+      "recoveryAttemptStartedAt": "2026-10-09T17:39:01.204784207Z",
+      "nativeStatus": "DESTROYED",
+      "residual": "CLEAR",
+      "health": "HEALTHY",
+      "gateOutcome": "VERIFIED",
+      "round": 2,
+      "observedAt": "2026-10-09T17:39:14.072386121Z",
+      "activeDestroyRequest": "ACKNOWLEDGED",
+      "recoveryCause": "UNKNOWN",
+      "cpuFaultObserved": true,
+      "successEligible": true,
+      "reason": null
+    }
+  ],
+  "recoveryGate": "VERIFIED",
+  "nativeRecord": {
+    "totalExperiments": 1,
+    "records": [
+      {
+        "uid": "2d479cbbf2ea6dfe",
+        "command": "cri",
+        "subCommand": "cpu fullload",
+        "status": "Destroyed"
+      }
+    ]
+  },
+  "afterObservation": {
+    "version": 1,
+    "code": "OK",
+    "cleanupComplete": false,
+    "handoff": false,
+    "observation": {
+      "executionId": "dd07ca41-fbbc-416f-944a-712100376c86",
+      "nativeUid": "2d479cbbf2ea6dfe",
+      "nodeId": "m1-core-r3-executor",
+      "containerId": "18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f",
+      "imageId": "sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8",
+      "observedAt": "2026-10-09T17:39:15.445350322Z",
+      "cpuPercent": 0,
+      "baselinePercent": 0,
+      "sample": {
+        "pid": 2313,
+        "startTime": "65253",
+        "cgroup": "/sys/fs/cgroup/system.slice/docker-18bb4f8734edbd6e1dc35582692677bcfcf98fef175832fc1d1e29361faab97f.scope",
+        "usageUsec": 865361
+      },
+      "residual": "CLEAR",
+      "health": "HEALTHY",
+      "probeReady": true
+    }
+  },
+  "afterCpuPercent": 0,
+  "authorizationAbsent": true,
+  "authorizationConsumed": true,
+  "bindingPresent": true,
+  "nativeDbPresent": true,
+  "historicalRowsUnchanged": true,
+  "historicalEvidenceUnchanged": true,
+  "finishedAt": "2026-10-09T17:39:15.552712Z"
+}
