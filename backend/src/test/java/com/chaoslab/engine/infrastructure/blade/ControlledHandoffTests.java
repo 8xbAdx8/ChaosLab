@@ -1,6 +1,7 @@
 package com.chaoslab.engine.infrastructure.blade;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import java.io.FilterInputStream;
@@ -16,6 +17,9 @@ import static com.chaoslab.engine.infrastructure.blade.ProcessRunResult.Outcome.
 @Timeout(20)
 class ControlledHandoffTests {
     @TempDir Path directory;
+    @AfterEach void releaseWorkingDirectory() throws Exception {
+        ProcessFixture.releaseWindowsWorkingDirectory(directory);
+    }
     Path java = Path.of(System.getProperty("java.home"), "bin",
             System.getProperty("os.name").startsWith("Windows") ? "java.exe" : "java");
 

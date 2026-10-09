@@ -5,6 +5,35 @@ import java.util.Arrays;
 
 /** Harmless child JVM used by transport tests; never invokes Blade or Docker. */
 public final class ProcessFixture {
+    /** Test-only bounded cleanup for hosted Windows file-in-use errors.
+     * All process assertions/helper cleanup happen BEFORE this hook. No recursion,
+     * process killing, relaxed assertions or ignored persistent filesystem errors.
+     */
+    static void releaseWindowsWorkingDirectory(Path directory) throws Exception {
+        if (!System.getProperty("os.name").startsWith("Windows") || !java.nio.file.Files.exists(directory)) return;
+        Path target = directory.toRealPath();
+        Path temporaryRoot = Path.of(System.getProperty("java.io.tmpdir")).toRealPath();
+        if (!target.startsWith(temporaryRoot) || !target.getFileName().toString().startsWith("junit-")
+                || java.nio.file.Files.isSymbolicLink(directory)) throw new java.io.IOException("unexpected test working directory");
+        long deadline = System.nanoTime() + java.time.Duration.ofSeconds(2).toNanos();
+        while (true) {
+            try {
+                // Only flat files in this exact JUnit-owned fixture directory.
+                try (var children = java.nio.file.Files.list(target)) {
+                    for (Path file : children.toList()) {
+                        if (!java.nio.file.Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS))
+                            throw new java.io.IOException("unexpected fixture entry");
+                        java.nio.file.Files.deleteIfExists(file);
+                    }
+                }
+                java.nio.file.Files.deleteIfExists(target); return;
+            } catch (java.nio.file.FileSystemException held) {
+                if (System.nanoTime() >= deadline) throw held;
+                Thread.sleep(20);
+            }
+        }
+    }
+
     public static void main(String[] args) throws Exception {
         switch (args[0]) {
             case "handoff-ok", "handoff-bad-json", "handoff-wait", "handoff-nonzero", "handoff-flood" -> {

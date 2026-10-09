@@ -808,3 +808,11 @@ the four locked-source fake destroy scenarios also PASS. Python demo 15, R2
 preparation 7, historical disabled harness 8 (one Windows platform skip), and new
 historical SHA/Core boundary 2 PASS. These are harmless code tests, not VM field
 acceptance or a claim that current VM runs this revision.
+
+An initial hosted Windows CI run passed the runner's flood assertions but failed
+JUnit's subsequent temporary-directory removal with an OS file-in-use error.
+The PR run showed the same filesystem error in ControlledHandoffTests after its
+helper-death assertions. Shared test-only cleanup now waits at most two seconds
+to remove flat fixture files and the exact validated JUnit-owned temporary
+directory (no symlinks/recursion); persistent errors still fail. It neither kills/excludes children nor
+changes runner outcomes, cleanupComplete, production code or test assertions.
