@@ -13,13 +13,19 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
-/** Storage only. Neither the Fake engine nor a real executor calls this journal yet. */
+/** Immutable intent and append-only M1 observations in the existing audit store. */
 @Repository
 @Transactional(readOnly = true)
 public class JdbcBladeExecutionJournal {
     private final JdbcTemplate jdbc;
+    private final com.chaoslab.audit.application.port.AuditLogRepository audits;
 
-    public JdbcBladeExecutionJournal(JdbcTemplate jdbc) { this.jdbc = jdbc; }
+    @org.springframework.beans.factory.annotation.Autowired
+    public JdbcBladeExecutionJournal(JdbcTemplate jdbc, com.chaoslab.audit.application.port.AuditLogRepository audits) {
+        this.jdbc = jdbc; this.audits = java.util.Objects.requireNonNull(audits);
+    }
+    /** Read-only reloading seam; it cannot append evidence. */
+    JdbcBladeExecutionJournal(JdbcTemplate jdbc) { this.jdbc = jdbc; this.audits = null; }
 
     /** A new immutable intent must commit before dispatch; duplicate inserts fail closed. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -68,6 +74,99 @@ public class JdbcBladeExecutionJournal {
     public Optional<BladeExecutionSnapshot> findByExecutionId(UUID executionId) {
         return jdbc.query("SELECT * FROM blade_execution_snapshots WHERE execution_id = ?",
                 this::map, executionId.toString()).stream().findFirst();
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordCpuFault(BladeExecutionSnapshot saved, BladeProcessChannel.RecoveryObservation observed) {
+        if (!validCpuFault(saved, observed, Instant.now())) throw new IllegalStateException("CPU fault evidence unavailable");
+        var data = evidenceSubject(saved);
+        data.put("baselinePercent", observed.cpu().baseline());
+        data.put("cpuPercent", observed.cpu().percent());
+        data.put("usageUsec", observed.cpu().usageUsec());
+        data.put("observedAt", observed.observedAt().toString());
+        appendObservation(saved, "M1_CPU_OBSERVATION", "PREPARING", data);
+    }
+
+    /** Durable during evidence must exist before recovery can release occupancy. */
+    public boolean hasCpuFault(BladeExecutionSnapshot saved, Instant recoveryStarted) {
+        for (String raw : jdbc.queryForList("SELECT parameters FROM audit_logs WHERE execution_id=? AND target_id=? "
+                + "AND actor='BLADE_M1_CORE' AND operation='M1_CPU_OBSERVATION' AND result='SUCCESS'",
+                String.class, saved.executionId().toString(), saved.target().targetId().toString())) {
+            try {
+                var data = json().readTree(raw);
+                var subject = evidenceSubject(saved);
+                if (!data.isObject() || data.size() != subject.size()+4) continue;
+                boolean matched = true;
+                for (String key : subject.propertyNames()) if (!subject.path(key).equals(data.path(key))) matched = false;
+                if (!matched || !data.path("cpuPercent").isNumber() || !data.path("baselinePercent").isNumber()
+                        || !data.path("usageUsec").isIntegralNumber() || !data.path("usageUsec").canConvertToLong()) continue;
+                var observed = new BladeProcessChannel.RecoveryObservation(saved.recoveryHandle().orElseThrow(),
+                        Instant.parse(data.path("observedAt").asText()), null, null,
+                        new BladeProcessChannel.CpuEvidence(data.path("cpuPercent").asDouble(),
+                                data.path("baselinePercent").asDouble(), data.path("usageUsec").asLong()));
+                if (!observed.observedAt().isAfter(recoveryStarted) && validCpuFault(saved, observed, observed.observedAt())) return true;
+            } catch (RuntimeException invalid) { /* Missing/corrupt evidence never certifies an effect. */ }
+        }
+        return false;
+    }
+
+    static boolean validCpuFault(BladeExecutionSnapshot saved, BladeProcessChannel.RecoveryObservation observed, Instant now) {
+        return observed != null && saved.recoveryHandle().orElseThrow().equals(observed.subject()) && observed.cpu() != null
+                && observed.observedAt() != null && !observed.observedAt().isBefore(saved.recordedAt())
+                && !observed.observedAt().isAfter(now) && java.time.Duration.between(observed.observedAt(), now).compareTo(java.time.Duration.ofSeconds(10)) <= 0
+                // Fixed count=1; tolerate sampling jitter, never accept an idle or unrelated high-load sample.
+                && observed.cpu().percent() >= saved.cpuPercent()*0.5 && observed.cpu().percent() <= saved.cpuPercent()*1.5
+                && observed.cpu().usageUsec() > 0
+                && observed.cpu().percent() > observed.cpu().baseline()+1;
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordPhysicalRecovery(BladeExecutionSnapshot saved, Instant recoveryStarted, Instant engineObservedAt,
+            BladeProcessChannel.RecoveryObservation observed) {
+        var handle = saved.recoveryHandle().orElseThrow();
+        if (observed == null || !hasCpuFault(saved, recoveryStarted) || BladeRecoveryEvidenceValidator.assess(handle,
+                recoveryStarted, Instant.now(), java.time.Duration.ofSeconds(10),
+                new BladeRecoveryEvidenceValidator.Observation<>(handle, engineObservedAt, BladeRecoveryContract.Decision.CONFIRMED_RECOVERED),
+                new BladeRecoveryEvidenceValidator.Observation<>(observed.subject(), observed.observedAt(), observed.residual()),
+                new BladeRecoveryEvidenceValidator.Observation<>(observed.subject(), observed.observedAt(), observed.health()))
+                != BladeRecoveryEvidenceGate.Outcome.VERIFIED) throw new IllegalStateException("recovery audit evidence rejected");
+        var data = evidenceSubject(saved);
+        data.put("physicalRecovery", "VERIFIED");
+        data.put("activeDestroyRequest", "ACKNOWLEDGED");
+        data.put("recoveryCause", "UNKNOWN");
+        data.put("nativeStatus", "Destroyed"); data.put("residual", observed.residual().name()); data.put("health", observed.health().name());
+        data.put("recoveryAttemptStartedAt", recoveryStarted.toString()); data.put("engineObservedAt", engineObservedAt.toString());
+        data.put("observedAt", observed.observedAt().toString());
+        // This is the adapter assessment, not a claim that the later SUCCESS transaction committed.
+        appendObservation(saved, "M1_PHYSICAL_RECOVERY", "DESTROYING", data);
+    }
+
+    private void appendObservation(BladeExecutionSnapshot saved, String operation, String requiredStatus,
+            tools.jackson.databind.node.ObjectNode data) {
+        var owners = jdbc.queryForList("""
+                SELECT x.experiment_id
+                FROM experiment_executions x JOIN experiments e ON e.id=x.experiment_id
+                WHERE x.id=? AND x.status=? AND e.target_id=?
+                """, String.class, saved.executionId().toString(), requiredStatus, saved.target().targetId().toString());
+        if (owners.size() != 1 || audits == null) throw new IllegalStateException("observation requires matching committed execution");
+        audits.append(new com.chaoslab.audit.domain.AuditLog(UUID.randomUUID(), "BLADE_M1_CORE",
+                com.chaoslab.audit.domain.AuditOperation.valueOf(operation), UUID.fromString(owners.getFirst()),
+                saved.executionId(), saved.target().targetId(), "CPU_LOAD", data.toString(), null,
+                com.chaoslab.audit.domain.AuditResult.SUCCESS, null, Instant.now()));
+    }
+
+    private static tools.jackson.databind.node.ObjectNode evidenceSubject(BladeExecutionSnapshot saved) {
+        var data = json().createObjectNode();
+        data.put("version", 1); data.put("nativeUid", saved.uid());
+        data.put("nodeId", saved.executorInstanceId()); data.put("stateId", saved.stateDirectoryId());
+        data.put("toolSha256", saved.toolSha256()); data.put("containerId", saved.target().containerId());
+        data.put("imageId", saved.target().imageId());
+        return data;
+    }
+
+    private static tools.jackson.databind.json.JsonMapper json() {
+        return tools.jackson.databind.json.JsonMapper.builder().enable(tools.jackson.core.StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+                .enable(tools.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS).build();
     }
 
     /** Keyset page over ALL journal rows, including platform-terminal executions. No external calls. */

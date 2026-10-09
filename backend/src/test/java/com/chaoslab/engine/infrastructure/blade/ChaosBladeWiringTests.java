@@ -81,8 +81,13 @@ class ChaosBladeWiringTests {
                     handle.executionId().toString())).isEqualTo("DESTROYING"));
             return ChaosBladeEngineTests.strict("{\"code\":200,\"success\":true,\"result\":\"command: cri cpu fullload --cpu-count=1, destroy time: now\"}");
         });
-        // Synthetic trusted-provenance port only; current api3 always reports NOT_CONFIRMED.
-        when(channel.activeRecoveryProvenance(any(), any())).thenReturn(BladeProcessChannel.ActiveRecoveryProvenance.CONFIRMED);
+        when(channel.recoveryCause(any(), any())).thenReturn(BladeProcessChannel.RecoveryCause.UNKNOWN);
+        when(channel.observe(any())).thenAnswer(call -> {
+            BladeRecoveryHandle h = call.getArgument(0);
+            if (h == null) return null; // Mockito restubbing invocation, never a production request.
+            String status = jdbc.queryForObject("SELECT status FROM experiment_executions WHERE id=?", String.class, h.executionId().toString());
+            return "PREPARING".equals(status) ? ChaosBladeEngineTests.during(h) : null;
+        });
     }
     private Experiment ready(UUID target) {
         return experiments.insert(Experiment.create(UUID.randomUUID(), "stub CRI", "available", target,
@@ -184,6 +189,8 @@ class ChaosBladeWiringTests {
     }
     @Test void completeFreshEvidenceReleasesOccupancyOnlyAfterGate() throws Exception {
         var started = service.start(ready.getId(), "evidence-success");
+        var saved = journal.findByExecutionId(started.execution().id()).orElseThrow();
+        committed(() -> assertThat(journal.hasCpuFault(saved, java.time.Instant.now())).isTrue());
         when(channel.observe(any())).thenAnswer(call -> new BladeProcessChannel.RecoveryObservation(call.getArgument(0),
                 java.time.Instant.now(), BladeRecoveryEvidenceGate.ResidualObservation.CLEAR, BladeRecoveryEvidenceGate.HealthObservation.HEALTHY));
         var result = service.destroy(ready.getId(), started.execution().id());
@@ -202,22 +209,39 @@ class ChaosBladeWiringTests {
                 && x.getStatus() == ExperimentExecutionStatus.ROLLBACK_FAILED));
     }
 
-    @Test void gateVerifiedWithoutActiveProvenanceNeverCommitsSuccessOrReleasesOccupancy() throws Exception {
+    @Test void completeCoreEvidenceWithUnknownCauseCommitsSuccessWithoutInventingActiveProvenance() throws Exception {
         var started = service.start(ready.getId(), "unattributed-recovery");
-        when(channel.activeRecoveryProvenance(any(), any())).thenReturn(BladeProcessChannel.ActiveRecoveryProvenance.NOT_CONFIRMED);
+        when(channel.observe(any())).thenAnswer(call -> new BladeProcessChannel.RecoveryObservation(call.getArgument(0),
+                java.time.Instant.now(), BladeRecoveryEvidenceGate.ResidualObservation.CLEAR, BladeRecoveryEvidenceGate.HealthObservation.HEALTHY));
+        var result = service.destroy(ready.getId(), started.execution().id());
+        assertThat(result.status()).isEqualTo(ExperimentExecutionStatus.SUCCESS);
+        assertThat(result.errorMessage()).isNull();
+        assertThat(result.finishedAt()).isNotNull();
+        committed(() -> assertThat(jdbc.queryForObject("SELECT status FROM experiment_executions WHERE id=?", String.class,
+                result.id().toString())).isEqualTo("SUCCESS"));
+        String audit = jdbc.queryForObject("SELECT parameters FROM audit_logs WHERE execution_id=? AND operation='M1_PHYSICAL_RECOVERY'",
+                String.class, result.id().toString());
+        assertThat(audit).contains("UNKNOWN", "ACKNOWLEDGED", "VERIFIED").doesNotContain("ACTIVE_RECOVERY_CONFIRMED");
+        assertThat(executions.existsByTargetIdAndStatuses(identity.targetId(), List.of(ExperimentExecutionStatus.ROLLBACK_FAILED,
+                ExperimentExecutionStatus.DESTROYING, ExperimentExecutionStatus.RUNNING))).isFalse();
+        verify(channel, times(1)).destroy(any(), any());
+        verify(channel, times(1)).create(any(), anyString(), any()); // Initial STUB only.
+    }
+
+    @Test void missingOrCorruptCommittedDuringEvidenceNeverReleasesOccupancy() {
+        var started = service.start(ready.getId(), "missing-during-proof");
+        jdbc.update("UPDATE audit_logs SET parameters=? WHERE execution_id=? AND operation='M1_CPU_OBSERVATION'",
+                "{}", started.execution().id().toString()); // Synthetic test DB only; not a production mutation path.
         when(channel.observe(any())).thenAnswer(call -> new BladeProcessChannel.RecoveryObservation(call.getArgument(0),
                 java.time.Instant.now(), BladeRecoveryEvidenceGate.ResidualObservation.CLEAR, BladeRecoveryEvidenceGate.HealthObservation.HEALTHY));
         var result = service.destroy(ready.getId(), started.execution().id());
         assertThat(result.status()).isEqualTo(ExperimentExecutionStatus.ROLLBACK_FAILED);
-        assertThat(result.errorMessage()).isEqualTo("ACTIVE_RECOVERY_NOT_CONFIRMED");
+        assertThat(result.errorMessage()).isEqualTo("M1_CPU_FAULT_NOT_OBSERVED");
         assertThat(result.finishedAt()).isNull();
-        committed(() -> assertThat(jdbc.queryForObject("SELECT status FROM experiment_executions WHERE id=?", String.class,
-                result.id().toString())).isEqualTo("ROLLBACK_FAILED"));
-        assertThatThrownBy(() -> service.start(ready(identity.targetId()).getId(), "blocked-after-timeout"))
+        assertThatThrownBy(() -> service.start(ready(identity.targetId()).getId(), "no-second-create"))
                 .isInstanceOf(ExperimentExecutionStartRejectedException.class);
-        verify(executions, never()).update(argThat(x -> x.getId().equals(result.id()) && x.getStatus() == ExperimentExecutionStatus.SUCCESS));
+        verify(channel, times(1)).create(any(), anyString(), any());
         verify(channel, times(1)).destroy(any(), any());
-        verify(channel, times(1)).create(any(), anyString(), any()); // Initial STUB only.
     }
 
     @Test void transientResidualRemainsDestroyingUntilFreshVerifiedEvidenceAndPersistsNoFailure() {
@@ -235,7 +259,7 @@ class ChaosBladeWiringTests {
         assertThat(service.destroy(ready.getId(), started.execution().id()).status()).isEqualTo(ExperimentExecutionStatus.SUCCESS);
         verify(channel, times(1)).destroy(any(), any());
         verify(channel, times(2)).status(any(), any());
-        verify(channel, times(2)).observe(any());
+        verify(channel, times(3)).observe(any()); // One during sample, then two recovery rounds.
         verify(channel, times(1)).create(any(), anyString(), any()); // initial STUB only
         verify(executions, never()).update(argThat(x -> x.getId().equals(started.execution().id())
                 && x.getStatus() == ExperimentExecutionStatus.ROLLBACK_FAILED));
@@ -243,6 +267,7 @@ class ChaosBladeWiringTests {
 
     @Test void unknownPresentStaleOrWrongSubjectEvidenceNeverReleasesOccupancy() {
         for (String mode : List.of("residual-unknown", "residual-present", "health-unknown", "stale", "wrong-execution")) {
+            when(channel.observe(any())).thenAnswer(call -> ChaosBladeEngineTests.during(call.getArgument(0)));
             var second = ready(identity.targetId());
             var started = service.start(second.getId(), "evidence-"+mode);
             when(channel.observe(any())).thenAnswer(call -> {
@@ -275,7 +300,10 @@ class ChaosBladeWiringTests {
         assertThat(started.execution().engineExperimentId()).isEqualTo("blade-"+started.execution().id());
         when(channel.observe(any())).thenAnswer(call -> new BladeProcessChannel.RecoveryObservation(call.getArgument(0),
                 java.time.Instant.now(), BladeRecoveryEvidenceGate.ResidualObservation.CLEAR, BladeRecoveryEvidenceGate.HealthObservation.HEALTHY));
-        assertThat(service.destroy(ready.getId(), started.execution().id()).status()).isEqualTo(ExperimentExecutionStatus.SUCCESS);
+        var recovered = service.destroy(ready.getId(), started.execution().id());
+        assertThat(recovered.status()).isEqualTo(ExperimentExecutionStatus.ROLLBACK_FAILED);
+        assertThat(recovered.errorMessage()).isEqualTo("M1_CPU_FAULT_NOT_OBSERVED");
+        assertThat(recovered.finishedAt()).isNull();
         verify(channel).destroy(argThat(h -> saved.uid().equals(h.uid()) && saved.executionId().equals(h.executionId())), any());
         verify(channel,times(1)).create(any(),anyString(),any());
     }

@@ -50,8 +50,8 @@ class BladeWrapperTransportTests {
         for (String result : java.util.List.of(
                 "{\"code\":200,\"success\":true,\"result\":{\"target\":\"cpu\",\"action\":\"fullload\",\"flags\":{\"uid\":\""+UID+"\"},\"ActionProcessHang\":false}}",
                 "{\"code\":200,\"success\":true,\"result\":\"command: cri cpu fullload --uid="+UID+", destroy time: 2026-10-09T00:00:01Z\"}")) {
-            assertThat(channel.activeRecoveryProvenance(null, ChaosBladeEngineTests.strict(result)))
-                    .isEqualTo(BladeProcessChannel.ActiveRecoveryProvenance.NOT_CONFIRMED);
+            assertThat(channel.recoveryCause(null, ChaosBladeEngineTests.strict(result)))
+                    .isEqualTo(BladeProcessChannel.RecoveryCause.UNKNOWN);
         }
     }
 

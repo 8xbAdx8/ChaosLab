@@ -730,3 +730,24 @@ native destroy 四项 fake source proof 均 PASS。未执行 VM 命令、REAL au
 **SUCCESS CONTRACT FIXED；POST-SUCCESS ACCEPTANCE GAP CLOSED**
 
 **M1 BLOCKED；THIRD M1 NOT AUTHORIZED**
+
+### M1 Core 范围调整（2026-10-09，仅代码；不部署）
+
+用户将“物理恢复闭环”与“主动/timeout 因果归属”分为 M1 Core / M1+。
+此前主动来源阻塞结论属于旧验收范围，不再作为未来 Core 的 SUCCESS 门槛。
+R1/R2 仍保持原有 INCOMPLETE；R2 后端 SUCCESS/占用已释放的历史事实不变。
+
+Java create 后现在直接读取现有 root cgroup sampler，验证同主体、正常 baseline
+和真实 CPU 偏离，并在现有 audit 表提交 M1_CPU_OBSERVATION。不能观察故障时进入
+CREATE_UNCERTAIN、不重新 create。主动 destroy 仍仅一次；原生 Destroyed + 新鲜
+CLEAR/HEALTHY 通过原 Validator/Gate，并有已提交 during 证明，才允许最终 SUCCESS。
+M1_PHYSICAL_RECOVERY 是 pre-SUCCESS 的物理评估审计，不冒充 SUCCESS 事务结果。
+恢复因果单独为 UNKNOWN，不从 UpdateTime 推断，不声明 ACTIVE_RECOVERY_CONFIRMED。
+
+15 秒 settling、身份钉选、普通 chaoslab 用户、sudo wrapper、所有探针和权限边界
+未放宽。未修改任何 Go wrapper、候选、migration 或 VM 配置；未操作原现场、数据库、
+binding/state、authorization。老实验脚本仍禁用，本轮没有可运行的第三次实验脚本。
+正式 report 仍不因 lifecycle SUCCESS 而自动认证三阶段指标/实际恢复来源。
+
+未来现场仅可在另行批准、部署和 fresh preflight 后进行，具体方案见
+`11-m1-core-field-acceptance.md`；当前 Git/CI 完成不是 REAL authorization。

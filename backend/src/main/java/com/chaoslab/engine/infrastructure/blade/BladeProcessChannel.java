@@ -74,15 +74,15 @@ public final class BladeProcessChannel {
         return run(handle.destroyArguments(deployment), cancelled, BoundedProcessRunner.Lifecycle.STRICT_FOREGROUND);
     }
 
-    enum ActiveRecoveryProvenance { CONFIRMED, NOT_CONFIRMED }
+    enum RecoveryCause { UNKNOWN }
 
     /** Locked api3 has no caller/causal receipt. Invocation, exit=0, ExpModel,
      * monotonic duration and native timestamps are NOT provenance. No request,
-     * environment or wrapper JSON field can enable this check. CONFIRMED is only
-     * a hypothetical trusted-receipt fixture seam until a new protocol is reviewed.
+     * environment or wrapper JSON field can fabricate causality. M1 Core needs
+     * an acknowledged active request and physical recovery, not an M1+ winner.
      */
-    ActiveRecoveryProvenance activeRecoveryProvenance(BladeRecoveryHandle handle, ProcessRunResult acknowledgement) {
-        return ActiveRecoveryProvenance.NOT_CONFIRMED;
+    RecoveryCause recoveryCause(BladeRecoveryHandle handle, ProcessRunResult acknowledgement) {
+        return RecoveryCause.UNKNOWN;
     }
 
     /** No request identity or caller paths. Root verifies its fixed deployment and live sandbox. */
@@ -130,7 +130,21 @@ public final class BladeProcessChannel {
     }
 
     public record RecoveryObservation(BladeRecoveryHandle subject, java.time.Instant observedAt,
-            BladeRecoveryEvidenceGate.ResidualObservation residual, BladeRecoveryEvidenceGate.HealthObservation health) { }
+            BladeRecoveryEvidenceGate.ResidualObservation residual, BladeRecoveryEvidenceGate.HealthObservation health,
+            CpuEvidence cpu) {
+        public RecoveryObservation(BladeRecoveryHandle subject, java.time.Instant observedAt,
+                BladeRecoveryEvidenceGate.ResidualObservation residual, BladeRecoveryEvidenceGate.HealthObservation health) {
+            this(subject, observedAt, residual, health, null);
+        }
+    }
+
+    /** Projection of the existing trusted wrapper cgroup sampler, never an HTTP input. */
+    public record CpuEvidence(double percent, double baseline, long usageUsec) {
+        public CpuEvidence {
+            if (!Double.isFinite(percent) || !Double.isFinite(baseline) || percent < 0 || percent > 1000
+                    || baseline < 0 || baseline > 1 || usageUsec < 0) throw new IllegalArgumentException("invalid CPU evidence");
+        }
+    }
 
     public RecoveryObservation observe(BladeRecoveryHandle handle) {
         if (!wrapperTransport) return null; // Historical/direct fixtures cannot attest root probes.
@@ -160,7 +174,16 @@ public final class BladeProcessChannel {
                     || !Double.isFinite(baseline) || baseline < 0 || baseline > 1 || cpu < 0 || cpu > baseline+1)
                 throw new IllegalStateException("healthy observation lacks valid CPU recovery evidence");
         }
-        return new RecoveryObservation(expected, java.time.Instant.parse(o.path("observedAt").asText()), residual, health);
+        CpuEvidence cpu = null;
+        var sample = o.path("sample");
+        if (o.path("probeReady").isBoolean() && o.path("probeReady").asBoolean()
+                && o.path("cpuPercent").isNumber() && o.path("baselinePercent").isNumber()
+                && sample.path("usageUsec").isIntegralNumber() && sample.path("usageUsec").canConvertToLong()
+                && sample.path("pid").isIntegralNumber() && sample.path("pid").asLong() > 0
+                && sample.path("startTime").isTextual() && sample.path("startTime").asText().matches("[0-9]{1,20}")
+                && sample.path("cgroup").isTextual() && sample.path("cgroup").asText().startsWith("/sys/fs/cgroup/"))
+            cpu = new CpuEvidence(o.path("cpuPercent").asDouble(), o.path("baselinePercent").asDouble(), sample.path("usageUsec").asLong());
+        return new RecoveryObservation(expected, java.time.Instant.parse(o.path("observedAt").asText()), residual, health, cpu);
     }
 
     private static tools.jackson.databind.json.JsonMapper strictJson() {

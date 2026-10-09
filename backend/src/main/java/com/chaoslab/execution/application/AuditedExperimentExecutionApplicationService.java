@@ -167,6 +167,8 @@ public class AuditedExperimentExecutionApplicationService {
             ExperimentExecutionDetails execution
     ) {
         if (execution.status() == ExperimentExecutionStatus.SUCCESS) {
+            // Success means the engine's Core conditions passed. Native caller provenance
+            // stays UNKNOWN in the separate append-only M1_PHYSICAL_RECOVERY event.
             auditor.complete(intent, AuditResult.SUCCESS, null);
             return;
         }

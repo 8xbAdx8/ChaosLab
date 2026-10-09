@@ -1,0 +1,2 @@
+# Historical acceptance artifacts must retain their exact archived bytes on every OS.
+docs/evidence/*.json -text

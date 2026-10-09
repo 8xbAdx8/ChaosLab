@@ -6,7 +6,8 @@ import java.util.Objects;
 public final class EngineRecoveryException extends IllegalStateException {
     public enum Reason {
         ENGINE_RECOVERY_NOT_CONFIRMED,
-        ACTIVE_RECOVERY_NOT_CONFIRMED,
+        ACTIVE_RECOVERY_NOT_CONFIRMED, // Historical M1+ diagnosis; no longer a M1 Core veto.
+        M1_CPU_FAULT_NOT_OBSERVED,
         RECOVERY_RESIDUAL_PRESENT,
         RECOVERY_EVIDENCE_INCOMPLETE,
         RECOVERY_IDENTITY_REJECTED

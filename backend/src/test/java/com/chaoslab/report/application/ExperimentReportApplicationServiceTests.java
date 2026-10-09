@@ -12,6 +12,7 @@ import com.chaoslab.experiment.domain.Experiment;
 import com.chaoslab.report.application.port.ExperimentReportRepository;
 import com.chaoslab.report.application.port.ReportObservationCollector;
 import com.chaoslab.report.domain.ExperimentReport;
+import com.chaoslab.report.domain.ReportExecutionMode;
 import com.chaoslab.report.domain.ReportBindingStatus;
 import com.chaoslab.report.domain.ReportConclusionStatus;
 import com.chaoslab.report.domain.ReportMetricsStatus;
@@ -193,6 +194,20 @@ class ExperimentReportApplicationServiceTests {
                 TargetType.JAVA_APPLICATION, TargetEnvironment.CHAOS_LAB);
         given(targets.findById(TARGET_ID)).willReturn(Optional.of(target));
         return execution;
+    }
+
+    @Test void bladeCoreSuccessDoesNotVerifyCauseOrAbsentReportMetrics() {
+        var execution = givenCompleteExecution();
+        given(execution.getEngineExperimentId()).willReturn("blade-"+EXECUTION_ID);
+        given(audits.findByExecution(EXPERIMENT_ID, EXECUTION_ID)).willReturn(List.of(
+                audit(AuditOperation.START_EXPERIMENT, TARGET_ID, START),
+                audit(AuditOperation.DESTROY_EXPERIMENT, TARGET_ID, START.plusSeconds(30))));
+        when(reports.insert(any())).thenAnswer(call -> call.getArgument(0));
+        var report = service.create(EXPERIMENT_ID, EXECUTION_ID, "core-not-cause").report();
+        assertThat(report.executionMode()).isEqualTo(ReportExecutionMode.UNVERIFIED);
+        assertThat(report.metricsStatus()).isEqualTo(ReportMetricsStatus.NOT_COLLECTED);
+        assertThat(report.conclusionStatus()).isEqualTo(ReportConclusionStatus.INSUFFICIENT_DATA);
+        assertThat(report.reason()).contains("does not verify recovery cause");
     }
 
     private AuditLogDetails audit(

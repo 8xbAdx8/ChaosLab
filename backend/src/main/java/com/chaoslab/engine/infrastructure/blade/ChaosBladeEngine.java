@@ -79,6 +79,12 @@ public final class ChaosBladeEngine implements ChaosEngine {
             var response = channel.create(plan, nativeUid, () -> Thread.currentThread().isInterrupted());
             var uid = decoder.decodeCreate(response).uid();
             if (!nativeUid.equals(uid)) throw new IllegalStateException("create UID mismatch");
+            // A successful create acknowledgement is not proof of a CPU fault.
+            // The fixed wrapper already samples direct cgroup usage with a root-pinned baseline.
+            var during = channel.observe(intent.recoveryHandle().orElseThrow());
+            if (!JdbcBladeExecutionJournal.validCpuFault(intent, during, clock.instant()))
+                throw new IllegalStateException("CPU fault not observed");
+            journal.recordCpuFault(intent, during); // Commit before RUNNING and before any later SUCCESS.
             return new EngineCreateResult(reference(request.executionId()), EngineStatus.RUNNING);
         } catch (RuntimeException uncertain) {
             // Do not expose raw stdout, paths or native UID in API/log exception messages.
@@ -115,8 +121,8 @@ public final class ChaosBladeEngine implements ChaosEngine {
         var acknowledgement = channel.destroy(handle, () -> false);
         decoder.decodeDestroy(acknowledgement);
         // Do not infer causality from an invocation or its native wall-clock fields.
-        var active = channel.activeRecoveryProvenance(handle, acknowledgement);
-        boolean activeProven = active == BladeProcessChannel.ActiveRecoveryProvenance.CONFIRMED;
+        // Strict acknowledgement proves this active request was dispatched, not who caused recovery.
+        var cause = channel.recoveryCause(handle, acknowledgement);
         // Reverify and query the same persisted UID; acknowledgement alone proves nothing.
         var fresh = verifyRecovery(saved);
         var observation = decoder.decodeStatus(channel.status(handle, () -> false));
@@ -126,6 +132,7 @@ public final class ChaosBladeEngine implements ChaosEngine {
         // One active destroy only. The window starts after same-UID Destroyed is confirmed.
         // nanoTime bounds retries even if the evidence Clock is fixed or moves backwards.
         long deadline = System.nanoTime() + settlingWindow.toNanos();
+        boolean faultObserved = journal.hasCpuFault(saved, recoveryStarted);
         int round = 0;
         while (true) {
             if (Thread.currentThread().isInterrupted())
@@ -141,12 +148,12 @@ public final class ChaosBladeEngine implements ChaosEngine {
                     evidence == null ? null : new BladeRecoveryEvidenceValidator.Observation<>(evidence.subject(), evidence.observedAt(), evidence.health()));
             long remaining = deadline - System.nanoTime();
             boolean sameSubject = evidence == null || handle.equals(evidence.subject());
-            boolean eligible = sameSubject && assessment == BladeRecoveryEvidenceGate.Outcome.VERIFIED && remaining > 0 && activeProven;
-            recoverySummary(handle, recoveryStarted, observation, evidence, assessment, ++round, activeProven, eligible);
+            boolean eligible = sameSubject && assessment == BladeRecoveryEvidenceGate.Outcome.VERIFIED && remaining > 0 && faultObserved;
+            recoverySummary(handle, recoveryStarted, observation, evidence, assessment, ++round, cause, faultObserved, eligible);
             // Subject mismatch is not settling and must never be retried into a success.
             if (!sameSubject) throw new EngineRecoveryException(RECOVERY_IDENTITY_REJECTED);
-            if (assessment == BladeRecoveryEvidenceGate.Outcome.VERIFIED && remaining > 0 && !activeProven)
-                throw new EngineRecoveryException(ACTIVE_RECOVERY_NOT_CONFIRMED);
+            if (assessment == BladeRecoveryEvidenceGate.Outcome.VERIFIED && remaining > 0 && !faultObserved)
+                throw new EngineRecoveryException(M1_CPU_FAULT_NOT_OBSERVED);
             // Logging is not a timing authority. Recheck admission and freshness
             // after the diagnostic sink before returning a SUCCESS-eligible result.
             remaining = deadline - System.nanoTime();
@@ -155,8 +162,18 @@ public final class ChaosBladeEngine implements ChaosEngine {
                         new BladeRecoveryEvidenceValidator.Observation<>(handle, confirmedAt, BladeRecoveryContract.Decision.CONFIRMED_RECOVERED),
                         new BladeRecoveryEvidenceValidator.Observation<>(evidence.subject(), evidence.observedAt(), evidence.residual()),
                         new BladeRecoveryEvidenceValidator.Observation<>(evidence.subject(), evidence.observedAt(), evidence.health()));
-                if (assessment == BladeRecoveryEvidenceGate.Outcome.VERIFIED)
-                    return new EngineDestroyResult(reference, EngineStatus.DESTROYED);
+                if (assessment == BladeRecoveryEvidenceGate.Outcome.VERIFIED) {
+                    journal.recordPhysicalRecovery(saved, recoveryStarted, confirmedAt, evidence);
+                    // A slow durable audit cannot extend the acceptance deadline or freshness.
+                    if (System.nanoTime() >= deadline || BladeRecoveryEvidenceValidator.assess(handle, recoveryStarted,
+                            clock.instant(), Duration.ofSeconds(10),
+                            new BladeRecoveryEvidenceValidator.Observation<>(handle, confirmedAt, BladeRecoveryContract.Decision.CONFIRMED_RECOVERED),
+                            new BladeRecoveryEvidenceValidator.Observation<>(evidence.subject(), evidence.observedAt(), evidence.residual()),
+                            new BladeRecoveryEvidenceValidator.Observation<>(evidence.subject(), evidence.observedAt(), evidence.health()))
+                            != BladeRecoveryEvidenceGate.Outcome.VERIFIED)
+                        throw new EngineRecoveryException(RECOVERY_EVIDENCE_INCOMPLETE);
+                    return new EngineDestroyResult(reference, EngineStatus.DESTROYED, EngineDestroyResult.RecoveryCause.UNKNOWN);
+                }
             }
             if (remaining <= 0)
                 throw new EngineRecoveryException(assessment == BladeRecoveryEvidenceGate.Outcome.MANUAL_INTERVENTION
@@ -182,12 +199,13 @@ public final class ChaosBladeEngine implements ChaosEngine {
     }
 
     /** Fixed allowlist only. No UID, tool paths, raw stdout/stderr or exception text.
-     * safe physical recovery evidence may be logged even when provenance blocks SUCCESS.
+     * Physical recovery, Core eligibility and causal attribution are separate facts.
      * These are diagnostic summaries, never a second Gate or a post-terminal veto.
      */
     private static void recoverySummary(BladeRecoveryHandle handle, java.time.Instant started,
             BladeResponseDecoder.StatusObservation status, BladeProcessChannel.RecoveryObservation evidence,
-            BladeRecoveryEvidenceGate.Outcome gate, int round, boolean activeProven, boolean eligible) {
+            BladeRecoveryEvidenceGate.Outcome gate, int round, BladeProcessChannel.RecoveryCause cause,
+            boolean faultObserved, boolean eligible) {
         var summary = SUMMARY_JSON.createObjectNode();
         summary.put("executionId", handle.executionId().toString());
         summary.put("recoveryAttemptStartedAt", started.toString());
@@ -197,10 +215,12 @@ public final class ChaosBladeEngine implements ChaosEngine {
         summary.put("gateOutcome", gate.name());
         summary.put("round", round);
         summary.put("observedAt", evidence == null || evidence.observedAt() == null ? null : evidence.observedAt().toString());
-        summary.put("activeRecovery", activeProven ? "CONFIRMED" : "NOT_CONFIRMED");
+        summary.put("activeDestroyRequest", "ACKNOWLEDGED");
+        summary.put("recoveryCause", cause == null ? "UNKNOWN" : cause.name());
+        summary.put("cpuFaultObserved", faultObserved);
         summary.put("successEligible", eligible); // At observation time; final monotonic/freshness check still applies.
-        summary.put("reason", gate == BladeRecoveryEvidenceGate.Outcome.VERIFIED && !activeProven
-                ? ACTIVE_RECOVERY_NOT_CONFIRMED.name() : null);
+        summary.put("reason", gate == BladeRecoveryEvidenceGate.Outcome.VERIFIED && !faultObserved
+                ? M1_CPU_FAULT_NOT_OBSERVED.name() : null);
         LOG.info("M1_RECOVERY_SUMMARY {}", summary);
     }
 

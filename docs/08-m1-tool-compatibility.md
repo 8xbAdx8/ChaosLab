@@ -720,3 +720,91 @@ Original evidence SHA-256 remains:
 **SUCCESS CONTRACT FIXED (fail-closed, not a new provenance implementation)**
 
 **POST-SUCCESS ACCEPTANCE GAP CLOSED — M1 BLOCKED — THIRD M1 NOT AUTHORIZED**
+
+### M1 Core scope decision (2026-10-09): physical recovery is not causal attribution
+
+This user-approved scope replaces the preceding **future** active-provenance veto.
+It does not reclassify R1 or R2. Their raw artifacts, archived state and terminal
+rows remain untouched; the old ACTIVE_RECOVERY_NOT_CONFIRMED reason is retained
+for historical interpretation, but is not thrown as a new M1 Core veto.
+
+| Fact | Production representation | What it does not imply |
+| --- | --- | --- |
+| Native status is Destroyed | ENGINE_RECOVERED on status-only reads | No full physical recovery or release permission |
+| Physical recovery is confirmed | Fresh same-UID engine status + CLEAR + HEALTHY through the unchanged Validator/Gate | No winner identity, no report metrics attribution |
+| M1 Core is eligible for SUCCESS | Committed UID/intent, committed direct-cgroup during evidence, one strict acknowledged active request, complete physical recovery before final transaction | No ACTIVE_RECOVERY_CONFIRMED |
+| Recovery cause | RecoveryCause.UNKNOWN; structured summary and append-only audit | No timestamp-based ACTIVE/TIMEOUT inference |
+
+The previous implementation also left fault observation in an external harness.
+Simply removing the causality veto would have retained a post-SUCCESS gap for
+"CPU fault was not observed". Java now immediately invokes the existing fixed
+root `observe` after the matching create acknowledgement. It requires a fresh
+same-subject direct cgroup sample with the wrapper's pre-dispatch baseline.
+For fixed count=1, baseline must be 0–1%, sampled CPU within 0.5–1.5 times the
+requested percent and more than baseline+1%, and cumulative usage positive.
+For the proposed 10% experiment this is 5–15% with approximately-idle baseline.
+This is sampling tolerance, not a change in the requested load or scope. There
+is one observation, no repeat create and no load adjustment to obtain evidence.
+Missing, stale, wrong-subject, idle or implausible samples yield CREATE_UNCERTAIN,
+retain the already committed UID/occupancy, and never redispatch.
+
+The existing JdbcBladeExecutionJournal reuses the existing immutable audit store
+via AuditLogRepository, without a new table/migration. Two typed operations are
+added to the existing enum:
+
+- M1_CPU_OBSERVATION: committed before RUNNING; subject includes native UID,
+  container/image, node/state and tool hash plus numeric baseline/during usage
+  and observation time. No PID, cgroup/root path, raw output, password or command
+  is stored. It is not the report module's three-window metrics conclusion.
+- M1_PHYSICAL_RECOVERY: committed only after one strict active request, a matching
+  durable CPU observation and the existing fresh physical Gate=VERIFIED. Includes
+  native Destroyed, CLEAR, HEALTHY, request ACKNOWLEDGED and recoveryCause UNKNOWN.
+  This is an adapter assessment, **not** an assertion that the subsequent SUCCESS
+  transaction committed. A later transaction failure must not be hidden by it.
+
+Recovery still happens even if the during proof is missing; only Core SUCCESS is
+withheld (M1_CPU_FAULT_NOT_OBSERVED). Thus a malformed create response can still
+be recovered by its preallocated UID without creating again, but absent during
+proof is not fabricated afterwards to release occupancy. The same identity,
+15-second monotonic settling deadline, 10-second freshness check, residual/health
+probes and strict status/destroy transport remain intact. Diagnostic logging and
+durable auditing are followed by deadline/freshness rechecks. Persistence failure
+does not produce SUCCESS. Destroyed alone, helper cleanup alone and timeout
+expiration alone remain insufficient.
+
+The result carries a separate cause enum; no current candidate path returns a
+confirmed ACTIVE or TIMEOUT winner. With complete Core/physical evidence, UNKNOWN
+does not block SUCCESS. The ordinary application final transaction still owns
+SUCCESS/finishedAt/occupancy release. The report module remains conservative:
+Blade lifecycle success does not promote executionMode UNVERIFIED, uncollected
+metrics or fault-effect conclusions to VERIFIED. No existing report is rewritten.
+
+Round JSON retains safe enum/identity-free diagnostics and explicitly separates
+activeDestroyRequest=ACKNOWLEDGED, recoveryCause=UNKNOWN, cpuFaultObserved,
+physical gateOutcome and successEligible. Native CreateTime/UpdateTime remain
+informational only. The old post-terminal R2/strace harness remains disabled;
+there is no new runnable REAL experiment harness in this revision.
+
+Tests preserve all existing physical rejection cases and add Core success with
+UNKNOWN cause, direct-cgroup projection, committed observation readback, missing/
+corrupt CPU proof, audit failure and conservative report interpretation. Historical
+artifact SHA tests run on both CI OSes; .gitattributes pins their raw bytes without
+newline conversion. All external engine operations in Java tests are stubs;
+wrapper/root tests use only harmless fixtures with no Docker socket/network.
+
+M1+ shared arbitration, reliable winner identity, native causal receipts and crash
+consistency remain backlog, not implemented and not M1 Core blockers. See
+`11-m1-core-field-acceptance.md` for the separate, **not authorized** field plan.
+
+**M1 CORE CONTRACT IMPLEMENTED — PHYSICAL RECOVERY GATE PRESERVED**
+
+**RECOVERY CAUSE UNKNOWN (M1+) — NO NEW REAL CREATE AUTHORIZED**
+
+Local verification for this Core revision: Windows JDK24/release21 and isolated
+nonroot Linux Corretto21 backend full verify each ran **374 tests, zero failures/
+errors** (one existing Windows symlink skip, zero Linux skips). Wrapper Windows
+14 portable tests PASS, Linux full suite/vet PASS, opt-in root FAKE settling PASS;
+the four locked-source fake destroy scenarios also PASS. Python demo 15, R2
+preparation 7, historical disabled harness 8 (one Windows platform skip), and new
+historical SHA/Core boundary 2 PASS. These are harmless code tests, not VM field
+acceptance or a claim that current VM runs this revision.
