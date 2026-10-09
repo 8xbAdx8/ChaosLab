@@ -1,6 +1,7 @@
 package com.chaoslab.engine.infrastructure.blade;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -27,6 +28,11 @@ class BoundedProcessRunnerTests {
 
     private final Path java = Path.of(System.getProperty("java.home"), "bin",
             System.getProperty("os.name").startsWith("Windows") ? "java.exe" : "java");
+
+    @AfterEach
+    void awaitWindowsTemporaryDirectoryRelease() throws Exception {
+        ProcessFixture.releaseWindowsWorkingDirectory(directory);
+    }
 
     @Test
     void passesLiteralArgumentsAndCapturesSeparateStreams() throws Exception {

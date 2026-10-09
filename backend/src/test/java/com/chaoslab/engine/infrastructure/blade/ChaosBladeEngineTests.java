@@ -46,6 +46,13 @@ class ChaosBladeEngineTests {
                 handoff("{\"code\":200,\"success\":true,\"result\":\"" + invocation.getArgument(1) + "\"}"));
         when(channel.status(any(), any())).thenReturn(status(uid, "Destroyed"));
         when(channel.destroy(any(), any())).thenReturn(strict("{\"code\":200,\"success\":true,\"result\":\"command: cri cpu fullload --cpu-count=1, destroy time: now\"}"));
+        when(channel.recoveryCause(any(), any())).thenReturn(BladeProcessChannel.RecoveryCause.UNKNOWN);
+        when(journal.hasCpuFault(any(), any())).thenReturn(true);
+    }
+    static BladeProcessChannel.RecoveryObservation during(BladeRecoveryHandle handle) {
+        return new BladeProcessChannel.RecoveryObservation(handle, Instant.now(),
+                BladeRecoveryEvidenceGate.ResidualObservation.PRESENT, BladeRecoveryEvidenceGate.HealthObservation.UNHEALTHY,
+                new BladeProcessChannel.CpuEvidence(10.66, 0, 700645));
     }
     static ProcessRunResult handoff(String text) { return new ProcessRunResult(ProcessRunResult.Outcome.HANDOFF, 0, text, "", false); }
     static ProcessRunResult strict(String text) { return new ProcessRunResult(ProcessRunResult.Outcome.EXITED, 0, text, "", true); }
@@ -54,6 +61,7 @@ class ChaosBladeEngineTests {
                 + "\"Flag\":\"\",\"Status\":\""+state+"\",\"Error\":\"\",\"CreateTime\":\"\",\"UpdateTime\":\"\"}}");
     }
     @Test void createOrdersFreshIntentIdentityHandoffAndUidPersistence() {
+        when(channel.observe(any())).thenAnswer(call -> during(call.getArgument(0)));
         assertThat(engine.create(request).status()).isEqualTo(EngineStatus.RUNNING);
         var order = inOrder(verifier, journal, local, channel);
         order.verify(verifier).verify(target);
@@ -63,6 +71,8 @@ class ChaosBladeEngineTests {
         order.verify(verifier).verify(target);
         order.verify(local).verifyBeforeCreate(any(), any());
         order.verify(channel).create(any(), eq(persisted.getValue().uid()), any());
+        order.verify(channel).observe(argThat(h -> persisted.getValue().uid().equals(h.uid())));
+        order.verify(journal).recordCpuFault(eq(persisted.getValue()), any());
         verify(journal, never()).recordUid(any(), anyString());
     }
     @Test void intentFailureNeverDispatches() {
@@ -94,7 +104,7 @@ class ChaosBladeEngineTests {
         assertThatThrownBy(() -> engine.create(request)).isInstanceOf(EngineCreateUncertainException.class);
     }
     @Test void statusUsesPersistedUidAndRejectsMismatch() {
-        assertThat(engine.status(reference).status()).isEqualTo(EngineStatus.DESTROYED);
+        assertThat(engine.status(reference).status()).isEqualTo(EngineStatus.ENGINE_RECOVERED);
         verify(channel).status(argThat(h -> h.uid().equals(uid)), any());
         when(channel.status(any(), any())).thenReturn(status("fedcba9876543210", "Destroyed"));
         assertThatThrownBy(() -> engine.status(reference)).isInstanceOf(IllegalStateException.class);
@@ -220,5 +230,86 @@ class ChaosBladeEngineTests {
             assertReason(EngineRecoveryException.Reason.RECOVERY_EVIDENCE_INCOMPLETE);
             assertThat(Thread.currentThread().isInterrupted()).isTrue();
         } finally { Thread.interrupted(); }
+    }
+
+    @Test void recoveredByTimeoutOrUnattributedDestroyCanVerifyPhysicalRecoveryWithoutFabricatingCause() {
+        observe(BladeRecoveryEvidenceGate.ResidualObservation.CLEAR, BladeRecoveryEvidenceGate.HealthObservation.HEALTHY, Duration.ZERO);
+        var result = engine.destroy(reference);
+        assertThat(result.status()).isEqualTo(EngineStatus.DESTROYED);
+        assertThat(result.recoveryCause()).isEqualTo(EngineDestroyResult.RecoveryCause.UNKNOWN);
+        verify(channel, times(1)).destroy(any(), any());
+        verify(channel, times(1)).observe(any()); // Physical recovery evidence retained in safe summary.
+        verify(channel, never()).create(any(), anyString(), any());
+    }
+
+    @Test void missingCauseStillCannotInventActiveWinnerOrSkipPhysicalEvidence() {
+        when(channel.recoveryCause(any(), any())).thenReturn(null);
+        observe(BladeRecoveryEvidenceGate.ResidualObservation.CLEAR, BladeRecoveryEvidenceGate.HealthObservation.HEALTHY, Duration.ZERO);
+        assertThat(engine.destroy(reference).recoveryCause()).isEqualTo(EngineDestroyResult.RecoveryCause.UNKNOWN);
+    }
+
+    @Test void structuredRoundsContainOnlyAllowlistedSafeFieldsAndNoStraceDependency() {
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(ChaosBladeEngine.class);
+        var appender = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        appender.start(); logger.addAppender(appender);
+        try {
+            observe(BladeRecoveryEvidenceGate.ResidualObservation.CLEAR, BladeRecoveryEvidenceGate.HealthObservation.HEALTHY, Duration.ZERO);
+            assertThat(engine.destroy(reference).status()).isEqualTo(EngineStatus.DESTROYED);
+            assertThat(appender.list).hasSize(1);
+            String message = appender.list.getFirst().getFormattedMessage();
+            var root = tools.jackson.databind.json.JsonMapper.builder().build().readTree(message.substring("M1_RECOVERY_SUMMARY ".length()));
+            assertThat(root.propertyNames()).containsExactlyInAnyOrder("executionId", "recoveryAttemptStartedAt", "nativeStatus", "residual", "health",
+                    "gateOutcome", "round", "observedAt", "activeDestroyRequest", "recoveryCause", "cpuFaultObserved", "successEligible", "reason");
+            assertThat(root.path("gateOutcome").asString()).isEqualTo("VERIFIED");
+            assertThat(root.path("successEligible").asBoolean()).isTrue();
+            assertThat(root.path("recoveryCause").asString()).isEqualTo("UNKNOWN");
+            assertThat(root.path("activeDestroyRequest").asString()).isEqualTo("ACKNOWLEDGED");
+            assertThat(message).doesNotContain(uid, deployment.executable().toString(), "stderr", "stdout", "secret", "strace");
+        } finally { logger.detachAppender(appender); appender.stop(); }
+    }
+
+    @Test void delayedDiagnosticSinkCannotExtendRecoveryAdmissionWindow() {
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(ChaosBladeEngine.class);
+        var appender = new ch.qos.logback.core.AppenderBase<ch.qos.logback.classic.spi.ILoggingEvent>() {
+            @Override protected void append(ch.qos.logback.classic.spi.ILoggingEvent event) {
+                try { Thread.sleep(80); } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+            }
+        };
+        var shortWindow = new ChaosBladeEngine(deployment, "node-1", "state-1", "api3", "c".repeat(64),
+                targets, verifier, local, journal, channel, Clock.systemUTC(), Duration.ofMillis(50));
+        observe(BladeRecoveryEvidenceGate.ResidualObservation.CLEAR, BladeRecoveryEvidenceGate.HealthObservation.HEALTHY, Duration.ZERO);
+        appender.start(); logger.addAppender(appender);
+        try {
+            assertThatThrownBy(() -> shortWindow.destroy(reference)).isInstanceOf(EngineRecoveryException.class)
+                    .hasMessage("RECOVERY_EVIDENCE_INCOMPLETE");
+        } finally { logger.detachAppender(appender); appender.stop(); }
+    }
+
+    @Test void missingDurableFaultEvidenceCannotCommitCoreSuccessButStillDestroysOnce() {
+        when(journal.hasCpuFault(any(), any())).thenReturn(false);
+        observe(BladeRecoveryEvidenceGate.ResidualObservation.CLEAR, BladeRecoveryEvidenceGate.HealthObservation.HEALTHY, Duration.ZERO);
+        assertReason(EngineRecoveryException.Reason.M1_CPU_FAULT_NOT_OBSERVED);
+        verify(channel, times(1)).destroy(any(), any());
+        verify(journal, never()).recordPhysicalRecovery(any(), any(), any(), any());
+    }
+
+    @Test void idleStaleWrongSubjectOrMissingDuringCpuMakesCreateUncertainWithoutRetry() {
+        for (var observed : List.of(
+                new BladeProcessChannel.RecoveryObservation(saved.recoveryHandle().orElseThrow(), Instant.now(), null, null),
+                new BladeProcessChannel.RecoveryObservation(saved.recoveryHandle().orElseThrow(), Instant.now().minusSeconds(60), null, null,
+                        new BladeProcessChannel.CpuEvidence(10,0,42)))) {
+            when(channel.observe(any())).thenReturn(observed);
+            assertThatThrownBy(() -> engine.create(request)).isInstanceOf(EngineCreateUncertainException.class);
+        }
+        when(channel.observe(any())).thenAnswer(call -> new BladeProcessChannel.RecoveryObservation(call.getArgument(0), Instant.now(), null, null,
+                new BladeProcessChannel.CpuEvidence(0,0,42)));
+        assertThatThrownBy(() -> engine.create(request)).isInstanceOf(EngineCreateUncertainException.class);
+        verify(journal, never()).recordCpuFault(any(), any());
+    }
+
+    @Test void durableRecoveryAuditFailureNeverReturnsSuccess() {
+        observe(BladeRecoveryEvidenceGate.ResidualObservation.CLEAR, BladeRecoveryEvidenceGate.HealthObservation.HEALTHY, Duration.ZERO);
+        doThrow(new IllegalStateException("secret root data")).when(journal).recordPhysicalRecovery(any(), any(), any(), any());
+        assertReason(EngineRecoveryException.Reason.ENGINE_RECOVERY_NOT_CONFIRMED);
     }
 }

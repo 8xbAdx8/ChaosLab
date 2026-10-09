@@ -97,6 +97,9 @@ public class ExperimentReportApplicationService {
         ExperimentExecution execution = executions.findById(executionId)
                 .filter(found -> found.getExperimentId().equals(experimentId))
                 .orElseThrow(() -> new ExperimentExecutionNotFoundException(executionId));
+        // Future SUCCESS is committed only after the adapter's entire production
+        // M1 Core physical recovery contract, NOT causal provenance. Do not reinterpret/backfill
+        // historical R2 rows here; report generation does not certify native cause.
         if (execution.getStatus() != ExperimentExecutionStatus.SUCCESS
                 || execution.getStartedAt() == null
                 || execution.getFinishedAt() == null) {
@@ -221,6 +224,9 @@ public class ExperimentReportApplicationService {
                         ? ReportConclusionStatus.SIMULATED_ONLY
                         : ReportConclusionStatus.EXECUTION_UNVERIFIED
                 : ReportConclusionStatus.INSUFFICIENT_DATA;
+        if (mode == ReportExecutionMode.UNVERIFIED && execution.getEngineExperimentId() != null
+                && execution.getEngineExperimentId().startsWith("blade-"))
+            reason += "; lifecycle SUCCESS does not verify recovery cause or three-window fault metrics";
         ExperimentReport report = new ExperimentReport(
                 UUID.randomUUID(), experimentId, executionId, generationKey,
                 start.targetId(), scenarioCode, start.id(), recovery.id(),

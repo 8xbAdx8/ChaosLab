@@ -691,3 +691,63 @@ FIRST M1是否具体由timeout helper触发仍未确认。
 **EXPERIMENT REPORT recoveryVerified=false；BACKEND SUCCESS / OCCUPANCY RELEASED**
 
 **STOPPED — MANUAL REVIEW REQUIRED；NO FURTHER CREATE AUTHORIZED**
+
+### 2026-10-09 FINAL CONTRACT FIX：仅代码/无害测试，未部署 VM
+
+R1/R2 历史及原始 evidence 永久不变。R2 仍为外部 INCOMPLETE、后端 SUCCESS、
+occupancyReleased=true、external recoveryVerified=false；不回写、不重新占用。
+具体恢复者、14.4 秒时序和 strace 影响仍 NOT CONFIRMED。
+
+锁定候选源码和实际 root 无害 fake executor 竞态证明：timeout 与主动调用走同一
+native destroy 路径；timeout 可以先恢复，主动调用仍返回对象成功并覆写 UpdateTime。
+UpdateTime 是 executor 返回后、SQL 更新完成前生成的记录值，不是恢复因果证明。
+详细 A–D 源码位置与四项 root 证明见 `08-m1-tool-compatibility.md` 本日期章节。
+
+未来代码已在返回 DESTROYED / 最终 SUCCESS transaction 之前增加主动来源约束。
+当前候选没有可信来源协议，生产 predicate 恒为 NOT_CONFIRMED；即使已有新鲜
+Destroyed/CLEAR/HEALTHY、物理 Gate VERIFIED，也抛出安全 reason
+ACTIVE_RECOVERY_NOT_CONFIRMED，finishedAt=null、保留占用。不会先 SUCCESS 再由外部
+否决。测试中的 CONFIRMED 仅是未来可信回执的模拟 seam，不能冒充当前实际能力。
+
+生产恢复轮次输出固定白名单结构化摘要，不读取原始 stdout/stderr，不包含 root
+路径或 secret，不依赖 strace。日志后重新验证窗口/新鲜度，观察器不能延长成功
+窗口。历史 second-real-m1.py 当前工作版本已在任何副作用前禁用；原可运行源码
+保存在 b31086f 历史提交，VM 原文件和 R2 trace 未动，不作为未来执行工具。
+
+Windows/Linux backend full verify 各 369 测试均 PASS；demo 各 10 测试 PASS。
+Windows wrapper portable、Linux wrapper full/vet、隔离 root FAKE settling 和锁定
+native destroy 四项 fake source proof 均 PASS。未执行 VM 命令、REAL authorization、
+真实 Blade、create/destroy 或故障；未改候选、权限、sandbox、数据库和 state。
+
+唯一剩余因果阻塞：需另行审核能覆盖主动和 timeout 两条路径的最小 native
+单 UID 仲裁/可信来源/实际恢复效果回执；wrapper 调用回执本身不足。未实现新协议，
+未降低标准，未启动第三次准备/实验。
+
+**TIMESTAMP CANNOT PROVE RECOVERY CAUSALITY**
+
+**ACTIVE RECOVERY PROVENANCE MODEL = NOT POSSIBLE WITH CURRENT CANDIDATE**
+
+**SUCCESS CONTRACT FIXED；POST-SUCCESS ACCEPTANCE GAP CLOSED**
+
+**M1 BLOCKED；THIRD M1 NOT AUTHORIZED**
+
+### M1 Core 范围调整（2026-10-09，仅代码；不部署）
+
+用户将“物理恢复闭环”与“主动/timeout 因果归属”分为 M1 Core / M1+。
+此前主动来源阻塞结论属于旧验收范围，不再作为未来 Core 的 SUCCESS 门槛。
+R1/R2 仍保持原有 INCOMPLETE；R2 后端 SUCCESS/占用已释放的历史事实不变。
+
+Java create 后现在直接读取现有 root cgroup sampler，验证同主体、正常 baseline
+和真实 CPU 偏离，并在现有 audit 表提交 M1_CPU_OBSERVATION。不能观察故障时进入
+CREATE_UNCERTAIN、不重新 create。主动 destroy 仍仅一次；原生 Destroyed + 新鲜
+CLEAR/HEALTHY 通过原 Validator/Gate，并有已提交 during 证明，才允许最终 SUCCESS。
+M1_PHYSICAL_RECOVERY 是 pre-SUCCESS 的物理评估审计，不冒充 SUCCESS 事务结果。
+恢复因果单独为 UNKNOWN，不从 UpdateTime 推断，不声明 ACTIVE_RECOVERY_CONFIRMED。
+
+15 秒 settling、身份钉选、普通 chaoslab 用户、sudo wrapper、所有探针和权限边界
+未放宽。未修改任何 Go wrapper、候选、migration 或 VM 配置；未操作原现场、数据库、
+binding/state、authorization。老实验脚本仍禁用，本轮没有可运行的第三次实验脚本。
+正式 report 仍不因 lifecycle SUCCESS 而自动认证三阶段指标/实际恢复来源。
+
+未来现场仅可在另行批准、部署和 fresh preflight 后进行，具体方案见
+`11-m1-core-field-acceptance.md`；当前 Git/CI 完成不是 REAL authorization。

@@ -181,6 +181,29 @@ class AuditedExperimentExecutionApplicationServiceTests {
         return new AuditIntent(CONTEXT, operation, SUBJECT);
     }
 
+    @Test void activeRecoveryFailureIsAuditedAsSafeReasonNotSuccess() {
+        var intent = intent(AuditOperation.DESTROY_EXPERIMENT);
+        var base = details(ExperimentExecutionStatus.ROLLBACK_FAILED);
+        var result = new ExperimentExecutionDetails(base.id(), base.experimentId(), base.attempt(), base.idempotencyKey(), base.status(),
+                base.engineExperimentId(), "ACTIVE_RECOVERY_NOT_CONFIRMED", base.createdAt(), base.startedAt(), null, base.version());
+        given(auditor.prepare(AuditOperation.DESTROY_EXPERIMENT, EXPERIMENT_ID, EXECUTION_ID)).willReturn(intent);
+        given(delegate.destroy(EXPERIMENT_ID, EXECUTION_ID)).willReturn(result);
+        assertThat(service.destroy(EXPERIMENT_ID, EXECUTION_ID)).isSameAs(result);
+        verify(auditor).complete(intent, AuditResult.FAILED, "ACTIVE_RECOVERY_NOT_CONFIRMED");
+        verify(metrics).record(AuditOperation.DESTROY_EXPERIMENT, ExecutionOperationMetrics.Result.FAILED);
+    }
+
+    @Test void arbitraryRecoveryDiagnosticIsNotCopiedToAudit() {
+        var intent = intent(AuditOperation.DESTROY_EXPERIMENT);
+        var base = details(ExperimentExecutionStatus.ROLLBACK_FAILED);
+        var result = new ExperimentExecutionDetails(base.id(), base.experimentId(), base.attempt(), base.idempotencyKey(), base.status(),
+                base.engineExperimentId(), "SECRET /root/path raw stderr", base.createdAt(), base.startedAt(), null, base.version());
+        given(auditor.prepare(AuditOperation.DESTROY_EXPERIMENT, EXPERIMENT_ID, EXECUTION_ID)).willReturn(intent);
+        given(delegate.destroy(EXPERIMENT_ID, EXECUTION_ID)).willReturn(result);
+        service.destroy(EXPERIMENT_ID, EXECUTION_ID);
+        verify(auditor).complete(intent, AuditResult.FAILED, "EXECUTION_ROLLBACK_FAILED");
+    }
+
     private ExperimentExecutionDetails details(
             ExperimentExecutionStatus status
     ) {

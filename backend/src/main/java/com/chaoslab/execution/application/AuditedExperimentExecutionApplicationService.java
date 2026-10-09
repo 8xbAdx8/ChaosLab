@@ -167,13 +167,21 @@ public class AuditedExperimentExecutionApplicationService {
             ExperimentExecutionDetails execution
     ) {
         if (execution.status() == ExperimentExecutionStatus.SUCCESS) {
+            // Success means the engine's Core conditions passed. Native caller provenance
+            // stays UNKNOWN in the separate append-only M1_PHYSICAL_RECOVERY event.
             auditor.complete(intent, AuditResult.SUCCESS, null);
             return;
+        }
+        String failure = "EXECUTION_" + execution.status().name();
+        if (execution.errorMessage() != null) {
+            try {
+                failure = com.chaoslab.engine.application.EngineRecoveryException.Reason.valueOf(execution.errorMessage()).name();
+            } catch (IllegalArgumentException unknown) { /* Never copy arbitrary diagnostic text into audit. */ }
         }
         auditor.complete(
                 intent,
                 AuditResult.FAILED,
-                "EXECUTION_" + execution.status().name()
+                failure
         );
     }
 

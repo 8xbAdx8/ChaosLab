@@ -41,6 +41,20 @@ class BladeWrapperTransportTests {
         }
     }
 
+    @Test void currentCandidateCannotProveActiveRecoveryFromAnyAcknowledgement() throws Exception {
+        String binary = System.getProperty("os.name").startsWith("Windows") ? "java.exe" : "java";
+        var runner = new BoundedProcessRunner(java.nio.file.Path.of(System.getProperty("java.home"), "bin", binary),
+                java.nio.file.Path.of(".").toRealPath(), java.util.Map.of(), java.time.Duration.ofSeconds(1), 65536);
+        var channel = new BladeProcessChannel(runner);
+        // No run() or root command: this conservative predicate performs no I/O.
+        for (String result : java.util.List.of(
+                "{\"code\":200,\"success\":true,\"result\":{\"target\":\"cpu\",\"action\":\"fullload\",\"flags\":{\"uid\":\""+UID+"\"},\"ActionProcessHang\":false}}",
+                "{\"code\":200,\"success\":true,\"result\":\"command: cri cpu fullload --uid="+UID+", destroy time: 2026-10-09T00:00:01Z\"}")) {
+            assertThat(channel.recoveryCause(null, ChaosBladeEngineTests.strict(result)))
+                    .isEqualTo(BladeProcessChannel.RecoveryCause.UNKNOWN);
+        }
+    }
+
     static tools.jackson.databind.node.ObjectNode policy() {
         var p = tools.jackson.databind.json.JsonMapper.builder().build().createObjectNode();
         p.put("deployment", "REAL");

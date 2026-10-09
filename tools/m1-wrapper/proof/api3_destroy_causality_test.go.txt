@@ -1,0 +1,208 @@
+// Copy only into a disposable copy of LOCKED api3 cli/cmd. Never run blade main.
+// Real DestroyCommand/data paths; every executor is a harmless fake. Temporary
+// SQLite/file markers model a recovery winner, not any VM/native experiment.
+package cmd
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"encoding/json"
+	"flag"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/chaosblade-io/chaosblade-spec-go/spec"
+	"github.com/chaosblade-io/chaosblade/data"
+	"github.com/spf13/cobra"
+)
+
+const proofUID = "0123456789abcdef"
+
+func TestMain(m *testing.M) {
+	if len(os.Args) == 3 && (os.Args[1] == "destroy" || os.Args[1] == "fixture-active") {
+		if os.Args[2] != proofUID {
+			os.Exit(81)
+		}
+		actor := "TIMEOUT"
+		if os.Args[1] == "fixture-active" {
+			actor = "ACTIVE"
+		}
+		dir := os.Getenv("CHAOSBLADE_DATAFILE_PATH")
+		source, e := proofSource(dir)
+		if e != nil {
+			os.Exit(82)
+		}
+		defer source.DB.Close()
+		SetDS(source)
+		raw, e := proofDestroy(dir, actor)
+		if e != nil {
+			os.Exit(83)
+		}
+		receipt, _ := json.Marshal(map[string]any{"actor": actor, "euid": os.Geteuid(), "response": json.RawMessage(raw)})
+		if os.WriteFile(filepath.Join(dir, "receipt-"+actor+".json"), receipt, 0600) != nil {
+			os.Exit(84)
+		}
+		return
+	}
+	// Candidate dependency init parses flags before testing.Init: no argv test flags.
+	flag.Set("test.run", "^TestM1DestroyCausalityProof$")
+	flag.Set("test.v", "true")
+	os.Exit(m.Run())
+}
+
+func proofSource(dir string) (*data.Source, error) {
+	db, e := sql.Open("sqlite", filepath.Join(dir, "state.sqlite"))
+	if e != nil {
+		return nil, e
+	}
+	return &data.Source{DB: db}, nil
+}
+
+type causalFake struct{ dir, actor string }
+
+func (e *causalFake) Name() string            { return "harmless-causality-proof" }
+func (e *causalFake) SetChannel(spec.Channel) {}
+func (e *causalFake) Exec(uid string, ctx context.Context, model *spec.ExpModel) *spec.Response {
+	if uid != proofUID {
+		panic("wrong UID")
+	}
+	destroy, ok := spec.IsDestroy(ctx)
+	if !ok || destroy != uid {
+		panic("not destroy")
+	}
+	os.WriteFile(filepath.Join(e.dir, "entered-"+e.actor), []byte("entered"), 0600)
+	if e.actor == "ACTIVE" {
+		mode, _ := os.ReadFile(filepath.Join(e.dir, "mode"))
+		if string(mode) == "race" {
+			time.Sleep(1800 * time.Millisecond)
+		}
+		if string(mode) == "slow" {
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
+	// Only the first fake executor changes this synthetic recovery state. A later
+	// destroy returns success even though it did not cause the transition.
+	f, err := os.OpenFile(filepath.Join(e.dir, "recovery-winner"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err == nil {
+		f.WriteString(e.actor)
+		f.Close()
+	}
+	return spec.ReturnSuccess(true)
+}
+
+func proofDestroy(dir, actor string) ([]byte, error) {
+	fake := &causalFake{dir, actor}
+	dc := &DestroyCommand{baseExpCommandService: &baseExpCommandService{executors: map[string]spec.Executor{
+		createExecutorKey("cri", "cpu", "fullload"): fake,
+	}}}
+	var out bytes.Buffer
+	dc.command = &cobra.Command{Use: "destroy"}
+	dc.command.SetOut(&out)
+	e := dc.runDestroyWithUid(context.Background(), dc.command, []string{proofUID})
+	return bytes.TrimSpace(out.Bytes()), e
+}
+
+func waitProofFile(t *testing.T, path string) []byte {
+	t.Helper()
+	deadline := time.Now().Add(6 * time.Second)
+	for time.Now().Before(deadline) {
+		if raw, e := os.ReadFile(path); e == nil {
+			return raw
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("bounded fake receipt missing")
+	return nil
+}
+
+func TestM1DestroyCausalityProof(t *testing.T) {
+	for _, mode := range []string{"active", "timeout", "race", "slow"} {
+		t.Run(mode, func(t *testing.T) {
+			dir := t.TempDir()
+			source, e := proofSource(dir)
+			if e != nil {
+				t.Fatal(e)
+			}
+			defer source.DB.Close()
+			if e = source.InitExperimentTable(); e != nil {
+				t.Fatal(e)
+			}
+			created := time.Now().Format(time.RFC3339Nano)
+			if e = source.InsertExperimentModel(&data.ExperimentModel{Uid: proofUID, Command: "cri", SubCommand: "cpu fullload",
+				Flag: " --cpu-count=1 --cpu-percent=10", Status: Success, CreateTime: created, UpdateTime: created}); e != nil {
+				t.Fatal(e)
+			}
+			old := ds
+			SetDS(source)
+			defer SetDS(old)
+			os.WriteFile(filepath.Join(dir, "mode"), []byte(mode), 0600)
+			exe, _ := os.Executable()
+			if mode == "timeout" || mode == "race" {
+				timer, e := recoveryCommandFor(exe, 1, proofUID)
+				if e != nil {
+					t.Fatal(e)
+				}
+				timer.Env = []string{"PATH=/usr/bin:/bin", "CHAOSBLADE_DATAFILE_PATH=" + dir}
+				if e = timer.Run(); e != nil {
+					t.Fatal(e)
+				}
+			}
+			start := time.Now()
+			var active []byte
+			if mode != "timeout" {
+				active, e = proofDestroy(dir, "ACTIVE")
+				if e != nil {
+					t.Fatal(e)
+				}
+			}
+			elapsed := time.Since(start)
+			if mode == "timeout" || mode == "race" {
+				receipt := waitProofFile(t, filepath.Join(dir, "receipt-TIMEOUT.json"))
+				var r struct {
+					Actor    string
+					EUID     int
+					Response json.RawMessage
+				}
+				if json.Unmarshal(receipt, &r) != nil || r.Actor != "TIMEOUT" || r.EUID != os.Geteuid() {
+					t.Fatal("timer identity wrong")
+				}
+			}
+			winner := string(waitProofFile(t, filepath.Join(dir, "recovery-winner")))
+			expected := "ACTIVE"
+			if mode == "timeout" || mode == "race" {
+				expected = "TIMEOUT"
+			}
+			if winner != expected {
+				t.Fatal("unexpected synthetic winner", winner)
+			}
+			row, e := source.QueryExperimentModelByUid(proofUID)
+			if e != nil || row.Status != Destroyed || row.CreateTime != created {
+				t.Fatal("native same UID status mismatch")
+			}
+			if mode == "slow" && elapsed < 200*time.Millisecond {
+				t.Fatal("slow path did not wait")
+			}
+			if mode == "race" {
+				var response struct {
+					Result  map[string]any
+					Success bool
+				}
+				if json.Unmarshal(active, &response) != nil || !response.Success || response.Result["target"] != "cpu" {
+					t.Fatal("active object acknowledgement missing")
+				}
+				// ACTIVE received ExpModel success and then overwrote UpdateTime, but TIMEOUT
+				// already caused synthetic recovery. Receipt + last DB timestamp is NOT cause.
+				if _, e = os.Stat(filepath.Join(dir, "entered-ACTIVE")); e != nil {
+					t.Fatal(e)
+				}
+				if _, e = os.Stat(filepath.Join(dir, "entered-TIMEOUT")); e != nil {
+					t.Fatal(e)
+				}
+			}
+			t.Logf("mode=%s euid=%d native=Destroyed syntheticWinner=%s activeElapsed=%s callerFieldAbsent=true", mode, os.Geteuid(), winner, elapsed)
+		})
+	}
+}
