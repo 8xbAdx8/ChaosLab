@@ -68,4 +68,4 @@ jobs:
           cp tools/m1-wrapper/proof/api3_destroy_causality_test.go.txt fixtures/chaosblade-patched/cli/cmd/m1_causality_proof_test.go
           cd fixtures/chaosblade-patched
           CGO_ENABLED=0 go test -p 2 -c -o /tmp/m1-causality-proof ./cli/cmd
-          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:rw,exec,size=256m -v /tmp/m1-causality-proof:/fixture:ro --entrypoint /fixture golang:1.25
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:rw,exec,size=256m -e CHAOSBLADE_DATAFILE_PATH=/tmp -v /tmp/m1-causality-proof:/fixture:ro --entrypoint /fixture golang:1.25
