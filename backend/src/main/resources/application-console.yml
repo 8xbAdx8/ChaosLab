@@ -1,0 +1,9 @@
+# Existing, already-migrated LOCAL read-only data source; never connect to M1 VMs.
+server:
+  address: 127.0.0.1
+spring:
+  flyway:
+    enabled: false
+chaoslab:
+  console:
+    read-only: true

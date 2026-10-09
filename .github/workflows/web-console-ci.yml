@@ -1,0 +1,46 @@
+name: Web Console CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  console:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - name: Generate actual Spring REST contracts using isolated test database
+        working-directory: backend
+        run: bash ./mvnw --batch-mode -Dtest=ConsoleReadApiTests test
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Strict TypeScript and production build
+        working-directory: frontend
+        run: npm run build
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+      - name: Component, read-only transport and cross-language contract tests
+        working-directory: frontend
+        env:
+          CONSOLE_CONTRACT_DIR: ../backend/target
+        run: npm test
