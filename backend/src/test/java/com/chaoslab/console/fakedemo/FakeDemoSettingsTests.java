@@ -25,8 +25,23 @@ class FakeDemoSettingsTests {
             )
             .withProperty(
                 "spring.datasource.url",
-                "jdbc:h2:file:./target/settings/chaoslab-fake-demo/chaoslab_fake_demo;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE"
+                "jdbc:h2:file:./target/settings/chaoslab-fake-demo/chaoslab_fake_demo;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE;WRITE_DELAY=0"
             );
+    }
+
+    @Test
+    void delayedCommitsAreNotAcceptedByTheLocalDeliveryContract() {
+        String url = valid().getProperty("spring.datasource.url");
+        for (String delayed : new String[] {
+            url.replace(";WRITE_DELAY=0", ""),
+            url.replace(";WRITE_DELAY=0", ";WRITE_DELAY=500"),
+        }) {
+            assertThatThrownBy(() ->
+                FakeDemoConfiguration.validateSettings(
+                    valid().withProperty("spring.datasource.url", delayed)
+                )
+            ).hasMessage("FAKE_DEMO_CONFIGURATION_REJECTED");
+        }
     }
 
     @Test

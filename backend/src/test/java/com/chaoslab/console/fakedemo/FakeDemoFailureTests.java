@@ -34,7 +34,7 @@ class FakeDemoFailureTests {
             () ->
                 "jdbc:h2:file:" +
                 dir +
-                "/chaoslab_fake_demo;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE"
+                "/chaoslab_fake_demo;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE;WRITE_DELAY=0"
         );
     }
 

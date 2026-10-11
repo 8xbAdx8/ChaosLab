@@ -95,6 +95,11 @@ bash scripts/start-fake.sh --backend-port 18080 --frontend-port 15173
 - 停止通过随机 token + session identity 的 loopback 管理端口，请求**还活着的启动会话**停止其直接 Java/Vite child。
   不读取保存的 PID 来 kill，不使用 taskkill/pkill/killall，不影响另一项目。
 - 正常停止等待后端最多 21 秒；超过后仅终止本会话直接 child。日志、数据库保留。
+- Unix 发 SIGTERM；Windows 的 Node child termination 是立即终止，不保证 JVM shutdown hook。
+  因此 Fake 专用 H2 固定 `WRITE_DELAY=0`，提交时刷写，不靠任意 sleep 等待默认 500ms 延迟。
+  已提交的执行/报告在立即停止后可读回；正在进行、尚未提交的请求不保证完成，也不自动重试。
+  依据：[Node child termination](https://nodejs.org/api/child_process.html#subprocesskillsignal)、
+  [H2 WRITE_DELAY](https://h2database.com/html/commands.html#set_write_delay)。没有新增停机业务 API、迁移或现场数据库操作。
 - 部分启动失败或子服务退出会停止已启动的伴随服务，无自动重试。
 - 构建/首次账号阶段尚未创建服务会话，stop-dev 会明确提示回原终端 Ctrl+C，不会谎称取消了启动。
   原子 start.lock 防止并发构建/安装；异常断电留下 stale lock 时，核对原终端后手动归档锁文件。

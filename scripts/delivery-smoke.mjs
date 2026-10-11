@@ -287,6 +287,9 @@ try {
     await new Promise((resolve) => session.once("exit", resolve));
     session = null;
   } else {
+    console.log(
+      "Fake API/RBAC/report PASS; immediately stopping to verify committed records survive restart.",
+    );
     await stop();
     assert.ok(
       fs.existsSync(

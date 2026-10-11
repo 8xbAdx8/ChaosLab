@@ -49,7 +49,7 @@ class FakeDemoApiTests {
             () ->
                 "jdbc:h2:file:" +
                 DIR +
-                "/chaoslab_fake_demo;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE"
+                "/chaoslab_fake_demo;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE;WRITE_DELAY=0"
         );
         String hash = new BCryptPasswordEncoder(10).encode(PASSWORD);
         r.add("chaoslab.security.admin.username", () -> ADMIN);
