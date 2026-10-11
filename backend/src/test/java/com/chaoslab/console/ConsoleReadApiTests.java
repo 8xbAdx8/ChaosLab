@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -220,6 +221,133 @@ class ConsoleReadApiTests {
                 com.chaoslab.execution.infrastructure.scheduling.AutomaticExperimentRecoveryJob.class
             )
         ).isEmpty();
+    }
+
+    @Test
+    void directBackendRejectsOtherReadsAndNonCanonicalPaths() throws Exception {
+        var ids = seed();
+        for (String path : new String[] {
+            "/api/v1/audit-logs",
+            "/api/v1/audit-logs/by-execution/" + ids[1] + "/" + ids[2],
+            "/api/v1/experiments",
+            "/api/v1/experiments/" + ids[1],
+            "/api/v1/blade/recovery-inventory",
+            "/api/v1/targets/" + ids[0],
+            "/api/v1/scenarios/00000000-0000-0000-0000-000000000101",
+            "/actuator/prometheus",
+            "/actuator/info",
+            "/actuator/health/liveness",
+            "/api/v1/console/future-api",
+            "/api/v1/console/overview/" + ids[2],
+            "/api/v1/console/experiments/" + ids[1] + "/evidence",
+            "/api/v1/console/overview/",
+            "/api/v1/console//overview",
+            "/api/v1/console/overview;ignored=x",
+            "/api/v1/console/%6fverview",
+            "/api/v1/console/overview/../audit-logs",
+            "/error",
+            "/",
+        }) {
+            for (var method : new org.springframework.http.HttpMethod[] {
+                org.springframework.http.HttpMethod.GET,
+                org.springframework.http.HttpMethod.HEAD,
+                org.springframework.http.HttpMethod.OPTIONS,
+            }) {
+                mvc.perform(request(method, URI.create(path)))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.code").value("CONSOLE_READ_ONLY"));
+            }
+        }
+        assertThat(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM experiment_executions",
+                Long.class
+            )
+        ).isEqualTo(1);
+    }
+
+    @Test
+    void exactConsoleReadsAndHeadsRemainAvailableIncludingContextPath()
+        throws Exception {
+        var ids = seed();
+        for (String path : new String[] {
+            "/api/v1/console/overview",
+            "/api/v1/console/experiments",
+            "/api/v1/console/executions",
+            "/api/v1/console/audit-logs",
+            "/api/v1/console/reports",
+            "/api/v1/console/experiments/" + ids[1],
+            "/api/v1/console/executions/" + ids[2],
+            "/api/v1/console/executions/" + ids[2] + "/evidence",
+            "/api/v1/targets",
+            "/api/v1/scenarios",
+            "/actuator/health",
+        }) {
+            mvc.perform(get(path)).andExpect(status().isOk());
+            // MockMvc does not model the container's HEAD body suppression.
+            // Verify authorization and dispatch; denial tests also cover HEAD.
+            mvc.perform(head(path)).andExpect(status().isOk());
+        }
+        mvc.perform(
+            get("/api/v1/console/reports/" + UUID.randomUUID())
+        ).andExpect(status().isNotFound());
+        mvc.perform(
+            get("/local/api/v1/console/overview").contextPath("/local")
+        ).andExpect(status().isOk());
+        mvc.perform(
+            get("/local/api/v1/audit-logs").contextPath("/local")
+        ).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void optionsOnlyDescribesWhitelistedReadMethodsAndDoesNotEnableCors()
+        throws Exception {
+        for (String path : new String[] {
+            "/api/v1/targets",
+            "/api/v1/console/overview",
+            "/actuator/health",
+        }) {
+            mvc.perform(options(path))
+                .andExpect(status().isNoContent())
+                .andExpect(header().string("Allow", "GET, HEAD, OPTIONS"))
+                .andExpect(header().doesNotExist("Access-Control-Allow-Origin"))
+                .andExpect(content().string(""));
+            for (String method : new String[] {
+                "GET",
+                "HEAD",
+                "POST",
+                "DELETE",
+            }) {
+                mvc.perform(
+                    options(path)
+                        .header("Origin", "https://untrusted.example")
+                        .header("Access-Control-Request-Method", method)
+                )
+                    .andExpect(status().isForbidden())
+                    .andExpect(
+                        header().doesNotExist("Access-Control-Allow-Origin")
+                    );
+            }
+            mvc.perform(
+                options(path).header("Access-Control-Request-Method", "GET")
+            ).andExpect(status().isForbidden());
+            mvc.perform(
+                options(path).header(
+                    "Access-Control-Request-Headers",
+                    "Authorization"
+                )
+            ).andExpect(status().isForbidden());
+            for (var method : new org.springframework.http.HttpMethod[] {
+                org.springframework.http.HttpMethod.POST,
+                org.springframework.http.HttpMethod.PUT,
+                org.springframework.http.HttpMethod.PATCH,
+                org.springframework.http.HttpMethod.DELETE,
+                org.springframework.http.HttpMethod.TRACE,
+            })
+                mvc.perform(request(method, path)).andExpect(
+                    status().isForbidden()
+                );
+        }
     }
 
     @Test

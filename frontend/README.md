@@ -75,6 +75,11 @@ URL 保留筛选、分页。TanStack Query 缓存15秒，可通过右上角刷�
 
 当前项目**没有登录鉴权**。菜单隐藏、GET-only 客户端、开发代理白名单都不是认证/RBAC。
 开发与 preview 代理拒绝写方法和非白名单路由，但直连后端还要启用 console profile；不要公网暴露。
+console 模式的服务端过滤器默认拒绝所有其他路径，GET/HEAD 仅放行上表中页面实际使用的精确接口。
+原始审计、恢复清单及其他 Actuator 路径不会因使用 GET 就被放行。
+OPTIONS 仅对白名单路径返回 `204` 和 `Allow: GET, HEAD, OPTIONS`，不交给 MVC 宣告写方法；
+带 Origin / Access-Control-Request-Method / Access-Control-Request-Headers 的跨域预检拒绝，不自动启用 CORS。
+非 console 模式保持原有 API 行为。这仍不是认证/RBAC；SELECT-only 数据库权限建议保持不变。
 生产建议静态资源与后端放在同源、仅允许上表 GET 路由的受限网关后，使用 SELECT-only DB 用户。
 Vite preview 只是本机预览，不是生产服务器。
 
