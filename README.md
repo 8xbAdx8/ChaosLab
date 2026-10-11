@@ -1,10 +1,14 @@
 # ChaosLab
 
-ChaosLab 是一个教学型混沌工程平台，提供 Spring Boot 后端与 [React 只读 Web 控制台](frontend/README.md)。默认执行器仍是无真实故障的 `FakeChaosEngine`；受控 M1 Core 已通过真实 CPU 验收，但真实执行需要独立审批和固定特权边界。本仓库适合学习与本地演示，没有登录鉴权，不应对公网开放。
+ChaosLab 是一个教学型混沌工程平台，提供 Spring Boot 后端与 [React 只读 Web 控制台](frontend/README.md)。Web 已加入 [服务端会话登录与 VIEWER/ADMIN 只读权限](docs/15-m3-console-auth.md)，没有默认密码；两种角色都不开放故障执行。受控 M1 Core 已通过真实 CPU 验收，但真实执行仍需要独立审批和固定特权边界。M2 本地历史演示明确为非登录身份，不应对公网开放。
 
 最新进展：M1 Core 的生产恢复 Gate 已验证物理恢复，恢复来源仍为 UNKNOWN，见[原始验收证据](docs/evidence/m1-core-real-20261010.json)。R1/R2/R3 历史结论及证据不改写。以下早期后端说明保留作为演进背景；最新 Web 能力与启动方式以 [frontend/README.md](frontend/README.md) 为准，执行器现状以 [M1 Core 验收契约](docs/11-m1-core-field-acceptance.md)为准。
 
 ## Web 管理控制台
+
+普通控制台先按 [M3 启动说明](docs/15-m3-console-auth.md) 配置本机 BCrypt 账号和原 SELECT-only 数据库用户，
+使用 console profile 与同源代理，前端访问 `/login`。非 console 模式也不能通过 HTTP 调用旧写接口。
+以下早期后端 API 示例保留作为学习资料，不表示当前公开这些写操作。
 
 **只想展示已经完成的真实 M1 Core？** 按 [M2 本地历史演示](docs/14-m2-history-demo.md)
 启动独立历史后端和 `npm run dev:history`，打开 `/history/m1-core`。

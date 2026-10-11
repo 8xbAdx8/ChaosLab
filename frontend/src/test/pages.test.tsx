@@ -12,6 +12,23 @@ vi.mock("../components/Chart", () => ({
   ),
 }));
 function app(path: string) {
+  const original = globalThis.fetch;
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
+    String(input) === "/api/v1/auth/me"
+      ? Promise.resolve(
+          new Response(
+            JSON.stringify({
+              mode: "SESSION",
+              authenticated: true,
+              username: "test-viewer",
+              roles: ["VIEWER"],
+              readOnly: true,
+              realExecutionAllowed: false,
+            }),
+          ),
+        )
+      : original(input, init),
+  );
   window.matchMedia = vi.fn().mockReturnValue({ matches: false });
   return render(
     <QueryClientProvider

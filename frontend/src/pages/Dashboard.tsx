@@ -54,8 +54,10 @@ export function Dashboard() {
               <p>
                 {data.readOnlyMode
                   ? "后端只读模式已开启。"
-                  : "后端尚未开启 console 只读模式；本界面不提供写操作，但直接 API 仍可能允许写入。"}{" "}
-                当前未配置登录鉴权，请仅在本机或受限可信网络使用，不得公网暴露。
+                  : "当前未使用 console 部署配置；服务端认证仍拒绝业务写操作。"}{" "}
+                {data.authenticationConfigured
+                  ? "已启用服务端会话登录与只读角色权限。远程部署仍须 HTTPS 与受限网络。"
+                  : "未配置登录账号，服务端默认拒绝登录与业务数据读取。"}
               </p>
             </div>
             <div className="kpi-grid">
@@ -185,7 +187,13 @@ export function Dashboard() {
                 </div>
                 <div className="system-line">
                   <span>接口鉴权</span>
-                  <Badge value="NOT_CONFIGURED" />
+                  <Badge
+                    value={
+                      data.authenticationConfigured
+                        ? "SESSION_RBAC"
+                        : "NO_ACCOUNTS"
+                    }
+                  />
                 </div>
                 <p className="muted small system-note">
                   读取时间：

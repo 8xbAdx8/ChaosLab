@@ -916,6 +916,61 @@ pre {
   font-size: 11px;
   white-space: nowrap;
 }
+.login-layout {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.login-card {
+  width: min(440px, 100%);
+  padding: 32px;
+}
+.login-card .brand {
+  padding: 0;
+  margin-bottom: 32px;
+}
+.login-card form {
+  display: grid;
+  gap: 20px;
+  margin: 28px 0;
+}
+.login-card label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.login-card input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  width: 100%;
+}
+.login-submit {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 9px;
+  color: var(--accent);
+  padding: 12px;
+}
+.session-user {
+  color: var(--muted);
+  font-size: 11px;
+  max-width: 220px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 760px) {
+  .session-user {
+    max-width: 105px;
+    font-size: 9px;
+  }
+  .topbar-actions {
+    gap: 6px;
+  }
+}
 .history-kpi-value {
   margin: 16px 0 10px;
 }

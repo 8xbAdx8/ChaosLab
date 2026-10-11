@@ -3,6 +3,11 @@
 第一版只读控制台。React + TypeScript（strict）+ Vite + Tailwind CSS + React Router + TanStack Query + ECharts。
 没有 create/destroy、授权生成、命令执行、实验修改或报告生成入口。不连接 VM，不自动导入历史证据。
 
+普通控制台已接入 [M3 会话登录与只读 RBAC](../docs/15-m3-console-auth.md)。访问 `/login`，
+VIEWER 读取固定工作区公开数据，ADMIN 额外读取权限摘要，二者均不能执行故障。
+启动前按 M3 说明配置受信 BCrypt 账号；没有默认账号或密码。M2 历史演示仍无需账号/数据库，
+明确显示“本地历史演示 · 非登录身份”。
+
 ## 直接查看真实 M1 Core 历史（无需数据库）
 
 使用独立 SHA 校验只读证据投影，不导入/伪造业务表。
@@ -61,6 +66,8 @@ bash backend/mvnw -f backend/pom.xml spring-boot:run -Dspring-boot.run.profiles=
 | 已存报告 | `/api/v1/console/reports`, `/api/v1/console/reports/{id}` |
 | 目标/场景名称 | 既有 `/api/v1/targets`, `/api/v1/scenarios` |
 | 独立 M1 Core 归档 | `/api/v1/console/history/m1-core`（固定 SHA 只读投影，不查业务 DB） |
+| 当前身份 / CSRF | `/api/v1/auth/me`, `/api/v1/auth/csrf` |
+| ADMIN 权限摘要 | `/api/v1/console/access`（VIEWER 服务端403） |
 
 业务数据库接口只是有界 SELECT 投影；独立历史接口读取已校验打包资源。
 二者均没有调用 ChaosEngine、wrapper 或采样进程。
@@ -83,19 +90,20 @@ URL 保留筛选、分页。TanStack Query 缓存15秒，可通过右上角刷�
 
 ## 安全边界与以后接入点
 
-当前项目**没有登录鉴权**。菜单隐藏、GET-only 客户端、开发代理白名单都不是认证/RBAC。
-开发与 preview 代理拒绝写方法和非白名单路由，但直连后端还要启用 console profile；不要公网暴露。
+当前普通控制台已有 Spring Security Session + 服务端 VIEWER/ADMIN 权限。菜单隐藏、客户端和代理仍不是最终授权边界。
+开发与 preview 代理拒绝业务写方法和非白名单路由；服务端身份与只读授权始终生效。推荐 console profile 的受限部署，不要直接公网暴露。
 console 模式的服务端过滤器默认拒绝所有其他路径，GET/HEAD 仅放行上表中页面实际使用的精确接口。
 原始审计、恢复清单及其他 Actuator 路径不会因使用 GET 就被放行。
 OPTIONS 仅对白名单路径返回 `204` 和 `Allow: GET, HEAD, OPTIONS`，不交给 MVC 宣告写方法；
 带 Origin / Access-Control-Request-Method / Access-Control-Request-Headers 的跨域预检拒绝，不自动启用 CORS。
-非 console 模式保持原有 API 行为。这仍不是认证/RBAC；SELECT-only 数据库权限建议保持不变。
-生产建议静态资源与后端放在同源、仅允许上表 GET 路由的受限网关后，使用 SELECT-only DB 用户。
+M3 在非 console 模式也缺省拒绝未授权读取及全部旧业务写操作；SELECT-only 数据库权限建议保持不变。
+生产建议静态资源与后端放在同源 HTTPS 受限网关后，仅允许上表读取及精确 login/logout POST，使用 SELECT-only DB 用户。
 Vite preview 只是本机预览，不是生产服务器。
 
-未来鉴权：Spring Security filter chain → 读权限授权 → ConsoleReadController；在网关限制来源和速率。
-前端会话接在 `src/api/client.ts`，路由权限展示接在 `App.tsx`；服务端才是最终授权边界。
-未来 RBAC 与任何执行入口必须单独设计/审核，不应通过开启本页面的隐藏按钮实现。
+认证已接入 Spring Security filter chain → 固定角色/精确路径 → ConsoleReadController。
+前端会话由 SessionBoundary 与 api/auth 管理；服务端才是最终授权边界。
+后续账号管理、细粒度 RBAC 和任何执行入口必须单独审核，不能开启隐藏按钮来实现。
+代理与服务端仅增加两个受 CSRF 保护的精确 POST：auth/login、auth/logout。其他写操作仍全部拒绝。
 
 公开审计采用固定字段白名单；不返回任意 parameters、sourceIp、原始 stderr 或工具路径。
 前端错误只显示安全 HTTP 信息或契约错误，不渲染原始异常正文。React 文本转义，不注入 raw HTML。
