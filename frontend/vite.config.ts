@@ -3,10 +3,19 @@ import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { fakeMutationPath } from "./src/api/fakePaths.ts";
 
-export function allowedProxyRequest(method: string, path: string): boolean {
-  if (method === "POST")
-    return ["/api/v1/auth/login", "/api/v1/auth/logout"].includes(path);
+export function allowedProxyRequest(
+  method: string,
+  path: string,
+  fake = false,
+): boolean {
+  if (
+    method === "POST" &&
+    ["/api/v1/auth/login", "/api/v1/auth/logout"].includes(path)
+  )
+    return true;
+  if (fake && fakeMutationPath(method, path)) return true; // Proxy is NOT authorization; production rejects outside FAKE_DEMO.
   return (
     ["GET", "HEAD"].includes(method) &&
     (/^\/api\/v1\/console\/(overview|experiments|executions|audit-logs|reports)(\/[0-9a-f-]{36})?(\/evidence)?$/.test(
@@ -23,7 +32,7 @@ export function allowedProxyRequest(method: string, path: string): boolean {
       ].includes(path))
   );
 }
-function readOnlyProxy(): Plugin {
+function readOnlyProxy(fake = false): Plugin {
   const guard = (
     req: IncomingMessage,
     res: ServerResponse,
@@ -32,7 +41,7 @@ function readOnlyProxy(): Plugin {
     const path = (req.url ?? "").split("?")[0] ?? "";
     if (
       (path.startsWith("/api/") || path.startsWith("/actuator/")) &&
-      !allowedProxyRequest(req.method ?? "", path)
+      !allowedProxyRequest(req.method ?? "", path, fake)
     ) {
       res.writeHead(403, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ code: "CONSOLE_PROXY_READ_ONLY" }));
@@ -53,7 +62,7 @@ export default defineConfig(({ mode }) => {
   const target = env.API_PROXY_TARGET || "http://127.0.0.1:8080";
   const proxy = { "/api": { target }, "/actuator/health": { target } };
   return {
-    plugins: [readOnlyProxy(), react(), tailwindcss()],
+    plugins: [readOnlyProxy(mode === "fake"), react(), tailwindcss()],
     server: { proxy },
     preview: { proxy },
     test: {

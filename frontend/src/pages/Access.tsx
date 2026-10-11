@@ -25,8 +25,10 @@ export function AccessPage() {
                 <Badge
                   value={data.realExecutionAllowed ? "ENABLED" : "DISABLED"}
                 />
-                。VIEWER 与 ADMIN 都不能 create/destroy、生成授权或执行 root
-                命令。
+                。VIEWER 与 ADMIN 都不能真实 create/destroy、生成 REAL
+                授权或执行 root 命令。
+                {data.capabilities.includes("FAKE_EXPERIMENT_WRITE") &&
+                  " 本地 FAKE_DEMO 仅开放 ADMIN 的模拟操作。"}
               </p>
             </div>
           </Panel>

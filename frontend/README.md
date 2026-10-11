@@ -1,7 +1,16 @@
 # ChaosLab Web Console
 
-第一版只读控制台。React + TypeScript（strict）+ Vite + Tailwind CSS + React Router + TanStack Query + ECharts。
-没有 create/destroy、授权生成、命令执行、实验修改或报告生成入口。不连接 VM，不自动导入历史证据。
+React + TypeScript（strict）+ Vite + Tailwind CSS + React Router + TanStack Query + ECharts。
+普通 console 只读；[M4 fake-demo](../docs/16-m4-fake-demo.md) 增加 ADMIN 本地模拟创建/编辑/校验/启动/停止/报告。
+没有真实 create/destroy、授权生成或 root 命令入口。不连接 VM，不自动导入历史证据。
+
+## 操作本地 Fake 实验
+
+按 [M4 启动说明](../docs/16-m4-fake-demo.md) 配置自己的 BCrypt 账号并启动 `fake-demo` 后端，
+然后 `npm ci`、`npm run dev:fake`，访问 `/login`。无需数据库安装，使用独立可写 H2 文件数据库。
+ADMIN 完成创建→校验→预检→启动→主动停止或自动恢复→SIMULATED 报告；VIEWER 仅查看。
+操作必须经过服务端实际模式、引擎、角色与 CSRF 校验；前端 mode 本身不是授权。
+报告缺失的指标保持 NOT_COLLECTED/INSUFFICIENT_DATA，不生成物理恢复或 CPU 曲线。
 
 普通控制台已接入 [M3 会话登录与只读 RBAC](../docs/15-m3-console-auth.md)。访问 `/login`，
 VIEWER 读取固定工作区公开数据，ADMIN 额外读取权限摘要，二者均不能执行故障。
@@ -103,7 +112,8 @@ Vite preview 只是本机预览，不是生产服务器。
 认证已接入 Spring Security filter chain → 固定角色/精确路径 → ConsoleReadController。
 前端会话由 SessionBoundary 与 api/auth 管理；服务端才是最终授权边界。
 后续账号管理、细粒度 RBAC 和任何执行入口必须单独审核，不能开启隐藏按钮来实现。
-代理与服务端仅增加两个受 CSRF 保护的精确 POST：auth/login、auth/logout。其他写操作仍全部拒绝。
+普通 console 代理与服务端仅增加两个受 CSRF 保护的精确 POST：auth/login、auth/logout。其他写操作仍全部拒绝。
+仅 `dev:fake` 增加 M4 列出的精确业务写路径；服务端必须是真实 FAKE_DEMO + Fake 引擎，ADMIN + Session + CSRF 才可写。
 
 公开审计采用固定字段白名单；不返回任意 parameters、sourceIp、原始 stderr 或工具路径。
 前端错误只显示安全 HTTP 信息或契约错误，不渲染原始异常正文。React 文本转义，不注入 raw HTML。
@@ -134,5 +144,5 @@ CI 必须运行此联测；普通 frontend-only 测试会明确跳过该项，�
 
 ## 本版暂未提供
 
-认证/RBAC、写操作、报告生成、实时 root 探针、未持久化的 after CPU 数值、占用锁查询、跨 R1/R2/R3 数据库聚合。
+账号管理/多租户、真实写操作、物理报告生成、实时 root 探针、未持久化的 after CPU 数值、占用锁查询、跨 R1/R2/R3 数据库聚合。
 本页只显示所连接数据库已有记录，不会读取 VM 文件、导入 Git evidence 或初始化历史数据库。

@@ -13,7 +13,7 @@ import { QueryState } from "./ui";
 
 function returnPath(value: unknown) {
   return typeof value === "string" &&
-    /^\/(?:experiments(?:\/[0-9a-f-]{36})?|executions(?:\/[0-9a-f-]{36})?|audit|reports(?:\/[0-9a-f-]{36})?|access|history\/m1-core)?(?:\?[^\\]*)?$/.test(
+    /^\/(?:experiments(?:\/(?:new|[0-9a-f-]{36}(?:\/edit)?))?|executions(?:\/[0-9a-f-]{36})?|audit|reports(?:\/[0-9a-f-]{36})?|access|history\/m1-core)?(?:\?[^\\]*)?$/.test(
       value,
     )
     ? value
@@ -129,12 +129,14 @@ function LoginPage({ onLoggedIn }: { onLoggedIn: () => Promise<void> }) {
             <Activity size={22} />
           </span>
           <span>
-            ChaosLab<small>READ-ONLY CONSOLE</small>
+            ChaosLab<small>ENGINEERING CONSOLE</small>
           </span>
         </div>
         <p className="eyebrow">SESSION AUTHENTICATION</p>
         <h1>登录控制台</h1>
-        <p className="muted">安全服务端会话 · 只读权限 · 不开放故障执行</p>
+        <p className="muted">
+          安全服务端会话 · 权限由后端决定 · 真实故障入口关闭
+        </p>
         <form onSubmit={(event) => void submit(event)}>
           <label>
             用户名

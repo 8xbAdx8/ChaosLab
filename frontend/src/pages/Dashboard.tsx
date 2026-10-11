@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { type Identity, anonymous } from "../api/auth";
 import { Link } from "react-router-dom";
 import {
   FlaskConical,
@@ -22,7 +23,7 @@ import {
 } from "../components/ui";
 import { Chart } from "../components/Chart";
 
-export function Dashboard() {
+export function Dashboard({ identity = anonymous }: { identity?: Identity }) {
   const overview = useQuery({
     queryKey: ["overview"],
     queryFn: ({ signal }) =>
@@ -54,7 +55,9 @@ export function Dashboard() {
               <p>
                 {data.readOnlyMode
                   ? "后端只读模式已开启。"
-                  : "当前未使用 console 部署配置；服务端认证仍拒绝业务写操作。"}{" "}
+                  : identity.executionMode === "FAKE_DEMO"
+                    ? "仅本地 Fake 演示允许 ADMIN 模拟操作，真实执行始终关闭。"
+                    : "当前未使用 console 部署配置；服务端认证仍拒绝业务写操作。"}{" "}
                 {data.authenticationConfigured
                   ? "已启用服务端会话登录与只读角色权限。远程部署仍须 HTTPS 与受限网络。"
                   : "未配置登录账号，服务端默认拒绝登录与业务数据读取。"}
@@ -84,7 +87,7 @@ export function Dashboard() {
                   label: "已存报告",
                   value: data.reportCount.toLocaleString(),
                   icon: FileBarChart,
-                  note: "仅展示已有报告，不生成或改写",
+                  note: "展示已持久化报告，不凭执行成功补造指标",
                 },
               ].map((k) => (
                 <div className="kpi" key={k.label}>

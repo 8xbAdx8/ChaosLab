@@ -1068,3 +1068,55 @@ pre {
     font-size: 12px;
   }
 }
+.simulation {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.fake-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.fake-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.fake-form input,
+.fake-form select,
+.fake-form textarea {
+  width: 100%;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+.fake-form textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+.fake-form p,
+.fake-form .fake-actions {
+  grid-column: 1/-1;
+}
+.fake-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+}
+.checks-list {
+  display: grid;
+  gap: 10px;
+  padding-left: 18px;
+}
+@media (max-width: 640px) {
+  .fake-form {
+    grid-template-columns: 1fr;
+  }
+}
