@@ -6,6 +6,10 @@ ChaosLab 是一个教学型混沌工程平台，提供 Spring Boot 后端与 [Re
 
 ## Web 管理控制台
 
+**M5 可追溯报告**：见 [指标来源、质量规则与启动说明](docs/17-m5-traceable-reports.md)。
+报告详情关联真实持久化执行、启动审计参数和恢复证据；只有受信且充分的三阶段 HTTP 观测才展示可比柱状图。
+缺失指标不填零，Fake SUCCESS 不证明物理恢复，旧报告不重新认证，M1 历史归档保持独立。
+
 普通控制台先按 [M3 启动说明](docs/15-m3-console-auth.md) 配置本机 BCrypt 账号和原 SELECT-only 数据库用户，
 使用 console profile 与同源代理，前端访问 `/login`。除精确受控的本地 fake-demo 外，非 console 模式也不能通过 HTTP 调用旧写接口。
 以下早期后端 API 示例保留作为学习资料，不表示当前公开这些写操作。

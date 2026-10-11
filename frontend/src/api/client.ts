@@ -9,6 +9,7 @@ export class ApiError extends Error {
 }
 export function isReadPath(path: string): boolean {
   return (
+    /^\/api\/v1\/console\/reports\/[0-9a-f-]{36}\/analysis$/.test(path) ||
     /^\/api\/v1\/console\/(overview|experiments|executions|audit-logs|reports)(\/[0-9a-f-]{36})?(\/evidence)?$/.test(
       path,
     ) ||

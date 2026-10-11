@@ -18,9 +18,10 @@ export function allowedProxyRequest(
   if (fake && fakeMutationPath(method, path)) return true; // Proxy is NOT authorization; production rejects outside FAKE_DEMO.
   return (
     ["GET", "HEAD"].includes(method) &&
-    (/^\/api\/v1\/console\/(overview|experiments|executions|audit-logs|reports)(\/[0-9a-f-]{36})?(\/evidence)?$/.test(
-      path,
-    ) ||
+    (/^\/api\/v1\/console\/reports\/[0-9a-f-]{36}\/analysis$/.test(path) ||
+      /^\/api\/v1\/console\/(overview|experiments|executions|audit-logs|reports)(\/[0-9a-f-]{36})?(\/evidence)?$/.test(
+        path,
+      ) ||
       [
         "/api/v1/targets",
         "/api/v1/scenarios",

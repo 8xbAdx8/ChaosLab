@@ -8,6 +8,7 @@ import {
   evidenceSchema,
   overviewSchema,
   reportSchema,
+  reportAnalysisSchema,
   pageOf,
   targetSchema,
   scenarioSchema,
@@ -18,6 +19,24 @@ import { identitySchema } from "../api/auth";
 describe.runIf(process.env.CONSOLE_CONTRACT_DIR)(
   "Spring REST -> TypeScript runtime contracts",
   () => {
+    it("parses actual M5 analysis and keeps rejected legacy correlation untrusted", () => {
+      const raw = JSON.parse(
+        readFileSync(
+          resolve(
+            process.env.CONSOLE_CONTRACT_DIR!,
+            "report-analysis-contract.json",
+          ),
+          "utf8",
+        ),
+      );
+      const data = reportAnalysisSchema.parse(raw);
+      expect(data.traceability).toBe("REJECTED");
+      expect(data.comparisonStatus).toBe("NOT_COMPARABLE");
+      expect(data.recovery.physicalRecovery).toBe("UNKNOWN");
+      expect(data.report.windows.every((w) => w.p95Seconds === null)).toBe(
+        true,
+      );
+    });
     it("parses actual session identities without password or token fields", () => {
       const raw = JSON.parse(
         readFileSync(

@@ -21,6 +21,13 @@ describe("read-only transport and server proxy guard", () => {
       false,
     );
     expect(isReadPath("/api/v1/console/overview")).toBe(true);
+    const analysis =
+      "/api/v1/console/reports/11111111-1111-4111-8111-111111111111/analysis";
+    expect(isReadPath(analysis)).toBe(true);
+    expect(allowedProxyRequest("GET", analysis)).toBe(true);
+    expect(allowedProxyRequest("POST", analysis, true)).toBe(false);
+    expect(isReadPath(analysis + "/raw")).toBe(false);
+    expect(isReadPath(analysis.replace("reports", "executions"))).toBe(false);
   });
   it("encodes filters, omits empty values", () =>
     expect(params({ search: "a&status=SUCCESS", page: 0, status: "" })).toBe(
