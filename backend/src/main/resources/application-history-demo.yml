@@ -1,0 +1,14 @@
+server:
+  address: 127.0.0.1
+  port: 8080
+chaoslab:
+  console:
+    read-only: true
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never

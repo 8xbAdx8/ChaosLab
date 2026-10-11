@@ -91,6 +91,18 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource><directory>src/main/resources</directory></resource>
+            <!-- Exact sealed Git artifacts, never an import into business/field databases. -->
+            <resource>
+                <directory>../docs/evidence</directory><targetPath>history</targetPath><filtering>false</filtering>
+                <includes><include>m1-core-real-20261010.json</include></includes>
+            </resource>
+            <resource>
+                <directory>../docs</directory><targetPath>history</targetPath><filtering>false</filtering>
+                <includes><include>12-m1-core-field-result.md</include></includes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
