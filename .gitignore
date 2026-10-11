@@ -25,3 +25,11 @@ replay_pid*
 # Operating system files
 .DS_Store
 Thumbs.db
+
+# Web console generated output
+/frontend/node_modules/
+/frontend/dist/
+/frontend/coverage/
+/frontend/playwright-report/
+/frontend/test-results/
+/frontend/*.tsbuildinfo

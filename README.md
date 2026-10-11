@@ -1,6 +1,21 @@
 # ChaosLab
 
-ChaosLab 是一个教学型混沌工程平台，目前提供可运行的 Java 后端控制面。当前执行器是 `FakeChaosEngine`：它模拟故障的创建与销毁，不会对真实进程、容器或网络注入故障。本仓库处于开发中，适合学习与本地演示，不应作为可对外暴露的生产服务。
+ChaosLab 是一个教学型混沌工程平台，提供 Spring Boot 后端与 [React 只读 Web 控制台](frontend/README.md)。默认执行器仍是无真实故障的 `FakeChaosEngine`；受控 M1 Core 已通过真实 CPU 验收，但真实执行需要独立审批和固定特权边界。本仓库适合学习与本地演示，没有登录鉴权，不应对公网开放。
+
+最新进展：M1 Core 的生产恢复 Gate 已验证物理恢复，恢复来源仍为 UNKNOWN，见[原始验收证据](docs/evidence/m1-core-real-20261010.json)。R1/R2/R3 历史结论及证据不改写。以下早期后端说明保留作为演进背景；最新 Web 能力与启动方式以 [frontend/README.md](frontend/README.md) 为准，执行器现状以 [M1 Core 验收契约](docs/11-m1-core-field-acceptance.md)为准。
+
+## Web 管理控制台
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+访问 `http://127.0.0.1:5173`，Vite GET-only proxy 默认连接本机后端8080。
+后端使用 `console` profile 和已迁移的本机专用数据库，关闭迁移与自动恢复扫描、拦截写方法。
+仪表盘、实验与执行详情、历史 CPU/恢复证据、公开审计、已存报告均读取真实 API，无运行时 mock 数据。
+不提供 create/destroy/授权/root 操作；认证/RBAC 留待单独实现。没有保存的指标显示「未采集」，不伪造0%。
 
 ## 当前实现
 
