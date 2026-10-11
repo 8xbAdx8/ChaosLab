@@ -6,8 +6,11 @@ import com.chaoslab.execution.interfaces.rest.ExperimentExecutionResponse;
 import com.chaoslab.experiment.domain.ExperimentStatus;
 import com.chaoslab.experiment.interfaces.rest.ExperimentResponse;
 import com.chaoslab.report.application.ExperimentReportApplicationService;
+import com.chaoslab.report.domain.ReportMetricsStatus;
+import com.chaoslab.report.infrastructure.prometheus.PrometheusReportObservationCollector;
 import com.chaoslab.report.interfaces.rest.ExperimentReportResponse;
 import java.sql.*;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import org.springframework.core.env.Environment;
@@ -91,6 +94,165 @@ public class ConsoleReadService {
         String note
     ) {}
 
+    /** Composition of existing persisted records. Reading never samples a target or creates a report. */
+    public record ReportAnalysis(
+        ExperimentReportResponse report,
+        ExperimentExecutionResponse execution,
+        String experimentName,
+        String targetName,
+        String targetType,
+        JsonNode parameters,
+        String parameterSource,
+        String traceability,
+        String comparisonStatus,
+        String metricSource,
+        String metricSubject,
+        String metricInstance,
+        Long durationMillis,
+        Evidence recovery,
+        List<PublicAudit> audits,
+        boolean auditsTruncated,
+        List<String> limitations
+    ) {}
+
+    public ReportAnalysis analysis(UUID reportId) {
+        var report = report(reportId);
+        var execution = execution(report.executionId());
+        var definition = experiment(report.experimentId());
+        var target = jdbc.queryForMap(
+            "SELECT name,target_type FROM targets WHERE id=?",
+            report.targetId().toString()
+        );
+        var events = jdbc.query(
+            "SELECT * FROM audit_logs WHERE experiment_id=? AND execution_id=? ORDER BY occurred_at,id LIMIT 101",
+            publicAudit,
+            report.experimentId().toString(),
+            report.executionId().toString()
+        );
+        var linked = jdbc.query(
+            "SELECT * FROM audit_logs WHERE id IN (?,?)",
+            publicAudit,
+            report.startAuditId().toString(),
+            report.recoveryAuditId().toString()
+        );
+        var start = linked
+            .stream()
+            .filter(a -> a.id().equals(report.startAuditId()))
+            .findFirst()
+            .orElse(null);
+        var recovery = linked
+            .stream()
+            .filter(a -> a.id().equals(report.recoveryAuditId()))
+            .findFirst()
+            .orElse(null);
+        boolean matches =
+            matchesReport(start, report) &&
+            matchesReport(recovery, report) &&
+            "START_EXPERIMENT".equals(start.operation()) &&
+            Set.of(
+                "DESTROY_EXPERIMENT",
+                "AUTOMATIC_RECOVERY",
+                "EMERGENCY_RECOVERY"
+            ).contains(recovery.operation()) &&
+            !start.occurredAt().isAfter(recovery.occurredAt()) &&
+            execution.experimentId().equals(report.experimentId()) &&
+            Objects.equals(
+                execution.startedAt(),
+                report.windows().get(1).start()
+            ) &&
+            Objects.equals(
+                execution.finishedAt(),
+                report.windows().get(1).end()
+            );
+        // Legacy reports retain their original conclusions. Missing version is not silently
+        // upgraded to M5 quality, even if a historical row says OBSERVED/SUCCESS.
+        boolean v2 = report
+            .windows()
+            .stream()
+            .allMatch(w ->
+                PrometheusReportObservationCollector.COLLECTION_VERSION.equals(
+                    w.collectionVersion()
+                )
+            );
+        boolean complete = report
+            .windows()
+            .stream()
+            .allMatch(w -> w.metricsStatus() == ReportMetricsStatus.OBSERVED);
+        boolean comparable =
+            matches &&
+            v2 &&
+            complete &&
+            "VERIFIED_LOCAL_DEMO".equals(report.bindingStatus().name());
+        var limitations = new ArrayList<String>();
+        limitations.add(
+            "CPU/memory are NOT_COLLECTED unless separate same-subject persisted cgroup evidence exists; JVM metrics are not container metrics."
+        );
+        limitations.add(
+            "HTTP metrics describe the bound order-service route, not proof that a fault occurred or active destroy caused recovery."
+        );
+        if (!matches) limitations.add(
+            "Report audit/execution identity or persisted time window is missing/mismatched; comparison rejected."
+        );
+        if (!v2) limitations.add(
+            "No M5 collector version recorded: legacy/NOT_COLLECTED values are preserved, not recertified."
+        );
+        if (!complete) limitations.add(
+            "Missing or insufficient phase data is not zero. P95 and error comparison are unavailable."
+        );
+        if ("SIMULATED".equals(report.executionMode().name())) limitations.add(
+            "SIMULATED lifecycle SUCCESS is NOT_VERIFIED physical recovery; percent is an input, not a measurement."
+        );
+        boolean truncated = events.size() > 100;
+        if (truncated) limitations.add(
+            "Audit display is limited to the first 100 events; use audit filters for remaining events."
+        );
+        return new ReportAnalysis(
+            report,
+            execution,
+            definition.name(),
+            (String) target.get("name"),
+            (String) target.get("target_type"),
+            matches ? start.parameters() : json.createObjectNode(),
+            matches ? "START_AUDIT" : "UNKNOWN",
+            matches ? "MATCHED" : "REJECTED",
+            comparable ? "AVAILABLE" : "NOT_COMPARABLE",
+            v2 ? "PROMETHEUS_HTTP_V2" : "UNKNOWN",
+            report.metricsJob() == null
+                ? "UNKNOWN"
+                : "BOUND_ORDER_SERVICE_HTTP_NOT_CONTAINER_CPU",
+            v2 && report.metricsJob() != null ? "order-service:8080" : null,
+            execution.startedAt() != null && execution.finishedAt() != null
+                ? Duration.between(
+                      execution.startedAt(),
+                      execution.finishedAt()
+                  ).toMillis()
+                : null,
+            matches && !"SIMULATED".equals(report.executionMode().name())
+                ? evidence(report.executionId(), report)
+                : unknownEvidence(
+                      report.executionId(),
+                      "No physical recovery certification for simulated or mismatched report subjects."
+                  ),
+            events.stream().limit(100).toList(),
+            truncated,
+            List.copyOf(limitations)
+        );
+    }
+
+    private static boolean matchesReport(
+        PublicAudit audit,
+        ExperimentReportResponse report
+    ) {
+        return (
+            audit != null &&
+            "SUCCESS".equals(audit.result()) &&
+            report.experimentId().equals(audit.experimentId()) &&
+            report.executionId().equals(audit.executionId()) &&
+            report.targetId().equals(audit.targetId()) &&
+            report.scenarioCode().equals(audit.scenarioCode())
+        );
+    }
+
     private static Instant at(ResultSet r, String column) throws SQLException {
         var t = r.getTimestamp(column);
         return t == null ? null : t.toInstant();
@@ -148,6 +310,21 @@ public class ConsoleReadService {
             at(r, "started_at"),
             at(r, "finished_at"),
             r.getLong("version")
+        );
+
+    private final RowMapper<PublicAudit> publicAudit = (r, n) ->
+        new PublicAudit(
+            id(r, "id"),
+            r.getString("actor"),
+            r.getString("operation"),
+            id(r, "experiment_id"),
+            id(r, "execution_id"),
+            id(r, "target_id"),
+            r.getString("scenario_code"),
+            publicParameters(tree(r.getString("parameters"))),
+            r.getString("result"),
+            safeReason(r.getString("failure_code")),
+            at(r, "occurred_at")
         );
 
     private static void bounds(int page, int size) {
@@ -418,20 +595,7 @@ public class ConsoleReadService {
             " ORDER BY occurred_at DESC,id DESC",
             page,
             size,
-            (r, n) ->
-                new PublicAudit(
-                    id(r, "id"),
-                    r.getString("actor"),
-                    r.getString("operation"),
-                    id(r, "experiment_id"),
-                    id(r, "execution_id"),
-                    id(r, "target_id"),
-                    r.getString("scenario_code"),
-                    publicParameters(tree(r.getString("parameters"))),
-                    r.getString("result"),
-                    safeReason(r.getString("failure_code")),
-                    at(r, "occurred_at")
-                )
+            publicAudit
         );
     }
 
@@ -443,6 +607,9 @@ public class ConsoleReadService {
             "cpuPercent",
             "baselinePercent",
             "usageUsec",
+            "durationSeconds",
+            "delayMs",
+            "jitterMs",
             "version"
         ))
             if (
@@ -571,33 +738,41 @@ public class ConsoleReadService {
     }
 
     public Evidence evidence(UUID executionId) {
+        return evidence(executionId, null);
+    }
+
+    private Evidence evidence(
+        UUID executionId,
+        ExperimentReportResponse expectedReport
+    ) {
         execution(executionId);
         var rows = jdbc.queryForList(
             "SELECT * FROM blade_execution_snapshots WHERE execution_id=?",
             executionId.toString()
         );
-        if (rows.isEmpty()) return new Evidence(
+        if (rows.isEmpty()) return unknownEvidence(
             executionId,
-            null,
-            null,
-            null,
-            null,
-            null,
-            "UNKNOWN",
-            "UNKNOWN",
-            "UNKNOWN",
-            "UNKNOWN",
-            "UNKNOWN",
-            "UNKNOWN",
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
             "No persisted native evidence; execution SUCCESS alone is not recovery proof."
         );
         var snapshot = rows.getFirst();
+        if (
+            expectedReport != null &&
+            (!expectedReport
+                .targetId()
+                .toString()
+                .equals(snapshot.get("target_id")) ||
+                (expectedReport.containerId() != null &&
+                    !expectedReport
+                        .containerId()
+                        .equals(snapshot.get("container_id"))) ||
+                (expectedReport.imageId() != null &&
+                    !expectedReport.imageId().equals(snapshot.get("image_id"))))
+        ) {
+            return unknownEvidence(
+                executionId,
+                "Native snapshot target does not match this report; recovery correlation rejected."
+            );
+        }
         var cpu = matchingEvidence(executionId, snapshot, "M1_CPU_OBSERVATION");
         var recovered = matchingEvidence(
             executionId,
@@ -633,6 +808,30 @@ public class ConsoleReadService {
             cpu == null ? null : cpu.id,
             recovered == null ? null : recovered.id,
             "Stored same-subject assessment, not a live probe. After CPU was not persisted in recovery audit; HEALTHY is not a numerical sample. Causality remains UNKNOWN."
+        );
+    }
+
+    private static Evidence unknownEvidence(UUID executionId, String note) {
+        return new Evidence(
+            executionId,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "UNKNOWN",
+            "UNKNOWN",
+            "UNKNOWN",
+            "UNKNOWN",
+            "UNKNOWN",
+            "UNKNOWN",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            note
         );
     }
 }

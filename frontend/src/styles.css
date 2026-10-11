@@ -1115,6 +1115,24 @@ pre {
   gap: 10px;
   padding-left: 18px;
 }
+.report-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.report-metrics-grid .panel {
+  min-width: 0;
+}
+.code-block {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+@media (max-width: 760px) {
+  .report-metrics-grid {
+    grid-template-columns: 1fr;
+  }
+}
 @media (max-width: 640px) {
   .fake-form {
     grid-template-columns: 1fr;

@@ -63,6 +63,11 @@ public class ConsoleReadController {
         return reads.evidence(id);
     }
 
+    @GetMapping("/reports/{id}/analysis")
+    public ConsoleReadService.ReportAnalysis analysis(@PathVariable UUID id) {
+        return reads.analysis(id);
+    }
+
     @GetMapping("/audit-logs")
     public ConsoleReadService.Page<ConsoleReadService.PublicAudit> audits(
         @RequestParam(defaultValue = "0") int page,

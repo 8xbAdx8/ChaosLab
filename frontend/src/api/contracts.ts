@@ -132,9 +132,33 @@ export const reportSchema = z.object({
       errorRate: nullableNumber,
       p95Seconds: nullableNumber,
       reason: nullableString,
+      collectionVersion: nullableString.optional(),
     }),
   ),
 });
+export const reportAnalysisSchema = z.object({
+  report: reportSchema,
+  execution: executionSchema,
+  experimentName: z.string(),
+  targetName: z.string(),
+  targetType: z.string(),
+  parameters: z.record(z.string(), z.unknown()),
+  parameterSource: z.enum(["START_AUDIT", "UNKNOWN"]),
+  traceability: z.enum(["MATCHED", "REJECTED"]),
+  comparisonStatus: z.enum(["AVAILABLE", "NOT_COMPARABLE"]),
+  metricSource: z.enum(["PROMETHEUS_HTTP_V2", "UNKNOWN"]),
+  metricSubject: z.enum([
+    "BOUND_ORDER_SERVICE_HTTP_NOT_CONTAINER_CPU",
+    "UNKNOWN",
+  ]),
+  metricInstance: nullableString,
+  durationMillis: nullableNumber,
+  recovery: evidenceSchema,
+  audits: z.array(auditSchema),
+  auditsTruncated: z.boolean(),
+  limitations: z.array(z.string()),
+});
+export type ReportAnalysis = z.infer<typeof reportAnalysisSchema>;
 export const overviewSchema = z.object({
   experimentCount: z.number().int(),
   executionCount: z.number().int(),

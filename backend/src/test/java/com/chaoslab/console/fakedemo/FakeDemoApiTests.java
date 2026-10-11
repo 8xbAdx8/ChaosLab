@@ -282,6 +282,16 @@ class FakeDemoApiTests {
             )
         ).isEqualTo(ADMIN);
         var viewer = login(VIEWER);
+        String analysisPath = "/api/v1/console/reports/" + report.path("id").asText() + "/analysis";
+        for (var session : new org.springframework.mock.web.MockHttpSession[]{viewer, admin})
+            mvc.perform(get(analysisPath).session(session)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.traceability").value("MATCHED"))
+                .andExpect(jsonPath("$.report.executionMode").value("SIMULATED"))
+                .andExpect(jsonPath("$.comparisonStatus").value("NOT_COMPARABLE"))
+                .andExpect(jsonPath("$.recovery.physicalRecovery").value("UNKNOWN"))
+                .andExpect(jsonPath("$.recovery.duringCpuPercent").isEmpty());
+        mvc.perform(get(analysisPath)).andExpect(status().isUnauthorized());
+        mvc.perform(post(analysisPath).session(admin).with(csrf())).andExpect(status().isForbidden());
         mvc.perform(
             get("/api/v1/console/experiments/" + id).session(viewer)
         ).andExpect(status().isOk());

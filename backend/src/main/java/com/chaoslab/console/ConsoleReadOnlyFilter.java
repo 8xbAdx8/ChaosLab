@@ -40,12 +40,15 @@ public class ConsoleReadOnlyFilter extends OncePerRequestFilter {
     private static final Pattern EVIDENCE_PATH = Pattern.compile(
         "/api/v1/console/executions/" + UUID_PATH + "/evidence"
     );
+    private static final Pattern ANALYSIS_PATH = Pattern.compile(
+        "/api/v1/console/reports/" + UUID_PATH + "/analysis"
+    );
 
     public static boolean isReadPath(String path) {
         return (
             READ_PATHS.contains(path) ||
             DETAIL_PATH.matcher(path).matches() ||
-            EVIDENCE_PATH.matcher(path).matches()
+            EVIDENCE_PATH.matcher(path).matches() || ANALYSIS_PATH.matcher(path).matches()
         );
     }
 

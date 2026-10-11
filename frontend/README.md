@@ -120,6 +120,10 @@ Vite preview 只是本机预览，不是生产服务器。
 
 ## 验证
 
+M5 报告详情改用 GET `/api/v1/console/reports/{uuid}/analysis`，复用已存报告及公开审计/恢复证据。
+客户端、开发代理与服务端精确白名单同步；无实时 PromQL/探针 API。
+启动与数据质量含义见 [M5 说明](../docs/17-m5-traceable-reports.md)。Fake 无监控服务也可显示持久化流程与缺失说明。
+
 ```bash
 npm run build
 npm run lint
