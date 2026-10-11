@@ -47,6 +47,7 @@ class FakeDemoSettingsTests {
                 "jdbc:mysql://127.0.0.1/chaoslab_m1",
             },
             { "spring.datasource.jndi-name", "java:comp/env/jdbc/production" },
+            { "spring.datasource.hikari.data-source-jndi", "java:comp/env/jdbc/production" },
             {
                 "spring.datasource.hikari.data-source-class-name",
                 "com.mysql.cj.jdbc.MysqlDataSource",

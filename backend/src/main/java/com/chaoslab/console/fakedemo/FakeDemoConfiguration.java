@@ -85,6 +85,7 @@ public class FakeDemoConfiguration {
             env.getProperty("spring.flyway.url") != null ||
             env.getProperty("spring.datasource.jndi-name") != null ||
             env.getProperty("spring.datasource.hikari.jdbc-url") != null ||
+            env.getProperty("spring.datasource.hikari.data-source-jndi") != null ||
             env.getProperty(
                 "spring.datasource.hikari.data-source-class-name"
             ) != null
