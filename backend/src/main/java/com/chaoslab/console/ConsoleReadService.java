@@ -217,7 +217,9 @@ public class ConsoleReadService {
             matches ? "MATCHED" : "REJECTED",
             comparable ? "AVAILABLE" : "NOT_COMPARABLE",
             v2 ? "PROMETHEUS_HTTP_V2" : "UNKNOWN",
-            report.metricsJob() == null ? "UNKNOWN" : "BOUND_ORDER_SERVICE_HTTP_NOT_CONTAINER_CPU",
+            report.metricsJob() == null
+                ? "UNKNOWN"
+                : "BOUND_ORDER_SERVICE_HTTP_NOT_CONTAINER_CPU",
             v2 && report.metricsJob() != null ? "order-service:8080" : null,
             execution.startedAt() != null && execution.finishedAt() != null
                 ? Duration.between(
@@ -226,8 +228,11 @@ public class ConsoleReadService {
                   ).toMillis()
                 : null,
             matches && !"SIMULATED".equals(report.executionMode().name())
-                ? evidence(report.executionId())
-                : unknownEvidence(report.executionId(), "No physical recovery certification for simulated or mismatched report subjects."),
+                ? evidence(report.executionId(), report)
+                : unknownEvidence(
+                      report.executionId(),
+                      "No physical recovery certification for simulated or mismatched report subjects."
+                  ),
             events.stream().limit(100).toList(),
             truncated,
             List.copyOf(limitations)
@@ -733,14 +738,41 @@ public class ConsoleReadService {
     }
 
     public Evidence evidence(UUID executionId) {
+        return evidence(executionId, null);
+    }
+
+    private Evidence evidence(
+        UUID executionId,
+        ExperimentReportResponse expectedReport
+    ) {
         execution(executionId);
         var rows = jdbc.queryForList(
             "SELECT * FROM blade_execution_snapshots WHERE execution_id=?",
             executionId.toString()
         );
-        if (rows.isEmpty()) return unknownEvidence(executionId,
-            "No persisted native evidence; execution SUCCESS alone is not recovery proof.");
+        if (rows.isEmpty()) return unknownEvidence(
+            executionId,
+            "No persisted native evidence; execution SUCCESS alone is not recovery proof."
+        );
         var snapshot = rows.getFirst();
+        if (
+            expectedReport != null &&
+            (!expectedReport
+                .targetId()
+                .toString()
+                .equals(snapshot.get("target_id")) ||
+                (expectedReport.containerId() != null &&
+                    !expectedReport
+                        .containerId()
+                        .equals(snapshot.get("container_id"))) ||
+                (expectedReport.imageId() != null &&
+                    !expectedReport.imageId().equals(snapshot.get("image_id"))))
+        ) {
+            return unknownEvidence(
+                executionId,
+                "Native snapshot target does not match this report; recovery correlation rejected."
+            );
+        }
         var cpu = matchingEvidence(executionId, snapshot, "M1_CPU_OBSERVATION");
         var recovered = matchingEvidence(
             executionId,
@@ -778,9 +810,28 @@ public class ConsoleReadService {
             "Stored same-subject assessment, not a live probe. After CPU was not persisted in recovery audit; HEALTHY is not a numerical sample. Causality remains UNKNOWN."
         );
     }
+
     private static Evidence unknownEvidence(UUID executionId, String note) {
-        return new Evidence(executionId, null, null, null, null, null,
-            "UNKNOWN", "UNKNOWN", "UNKNOWN", "UNKNOWN", "UNKNOWN", "UNKNOWN",
-            null, null, null, null, null, null, note);
+        return new Evidence(
+            executionId,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "UNKNOWN",
+            "UNKNOWN",
+            "UNKNOWN",
+            "UNKNOWN",
+            "UNKNOWN",
+            "UNKNOWN",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            note
+        );
     }
 }

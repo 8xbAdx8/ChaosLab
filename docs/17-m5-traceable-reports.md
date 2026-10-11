@@ -52,6 +52,8 @@ V2 的受信标签固定为 job=order-service、instance=order-service:8080、ur
 - Prometheus increase 可能因边界外推得到非整数估计计数，UI 不伪称精确逐请求日志。
 
 旧版会将不存在的 5xx 系列当零，M5 修正未来采集，不修改旧报告。
+已有 Demo Python 报告脚本也同步缺失值、固定标签和样本/直方图规则，未增加新的报告入口；
+它仍是独立手工教学工具，不作为控制台运行时数据源，也不升级其 manual_unverified 执行结论。
 新增可选 `ReportWindow.collectionVersion=PROMETHEUS_HTTP_V2`，复用 observations JSON，无 migration。
 旧 JSON 缺少版本时按 null 读取，原值和结论保留，但不会被重新认证为 M5 可比结果。
 

@@ -13,16 +13,20 @@ class ReportTests(unittest.TestCase):
         self.end = datetime(2026, 9, 27, 10, 0, 30, tzinfo=timezone.utc)
 
     def query(self, expression, at):
+        if expression.startswith("count("):
+            return 1.0
         if "count_over_time(up" in expression:
             return 6.0
         if "min_over_time(up" in expression:
             return 1.0
         if "_bucket" in expression:
+            if 'le="+Inf"' in expression:
+                return 100.0
             return 0.2 if at == self.start else 0.4
         if 'status=~"5.."' in expression:
-            return 2.0 if at == self.end else None
+            return 20.0 if at == self.end else 0.0  # Measured zero, not missing series.
         if "_count" in expression:
-            return 10.0
+            return 100.0
         self.fail(expression)
 
     def test_three_nonoverlapping_windows_and_comparison(self):
@@ -43,6 +47,18 @@ class ReportTests(unittest.TestCase):
         report = build_report(missing, self.start, self.end, "/orders/{orderId}", "exp", "exec")
         self.assertIsNone(report["comparison"])
         self.assertEqual(report["phases"]["during"]["status"], "insufficient_data")
+
+    def test_missing_errors_low_traffic_and_wrong_subject_are_not_healthy_zeros(self):
+        for predicate, value in ((lambda e: 'status=~"5.."' in e, None),
+                                 (lambda e: e.startswith("count("), 2.0),
+                                 (lambda e: "_count" in e, 1.0),
+                                 (lambda e: 'le="+Inf"' in e, 1.0)):
+            def insufficient(expression, at):
+                return value if predicate(expression) else self.query(expression, at)
+            report = build_report(insufficient, self.start, self.end, "/orders/{orderId}", "exp", "exec")
+            self.assertIsNone(report["comparison"])
+            self.assertIsNone(report["phases"]["during"]["error_rate"])
+            self.assertIsNone(report["phases"]["during"]["p95_seconds"])
 
     def test_no_requests_is_not_zero_error_rate(self):
         def empty(expression, at):

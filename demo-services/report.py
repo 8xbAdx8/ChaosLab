@@ -122,9 +122,11 @@ def observe_window(query, start, end, uri):
         raise ValueError("每个观察窗口必须是 20–3600 秒")
     duration = f"{round(seconds * 1000)}ms"
     route = json.dumps(uri)
-    selector = f'job="order-service",uri={route}'
-    samples = query(f'sum(count_over_time(up{{job="order-service"}}[{duration}]))', end)
-    availability = query(f'min(min_over_time(up{{job="order-service"}}[{duration}]))', end)
+    subject = 'job="order-service",instance="order-service:8080"'
+    selector = f'{subject},uri={route}'
+    series = query(f'count(count_over_time(up{{{subject}}}[{duration}]))', end)
+    samples = query(f'sum(count_over_time(up{{{subject}}}[{duration}]))', end)
+    availability = query(f'min(min_over_time(up{{{subject}}}[{duration}]))', end)
     total = query(
         f'sum(increase(http_server_requests_seconds_count{{{selector}}}[{duration}]))', end
     )
@@ -138,13 +140,17 @@ def observe_window(query, start, end, uri):
         "p95_seconds": None,
         "status": "insufficient_data",
         "reason": None,
+        "collection_version": "DEMO_CLI_HTTP_QUALITY_V2",
     }
     minimum_samples = max(3, math.floor(seconds / SCRAPE_INTERVAL_SECONDS * 0.8))
-    if samples is None or samples < minimum_samples or availability != 1:
+    valid = lambda value: value is not None and math.isfinite(value) and value >= 0
+    result["scrape_samples"] = samples if valid(samples) else None
+    result["estimated_requests"] = total if valid(total) else None
+    if series != 1 or not valid(samples) or samples < minimum_samples or availability != 1:
         result["reason"] = "抓取样本不足或目标曾不可用"
         return result
-    if total is None or total <= 0:
-        result["reason"] = "该窗口内没有可计算的订单请求"
+    if not valid(total) or total < 20:
+        result["reason"] = "至少需要 20 次实际请求；缺失或过少时不可比较"
         return result
     errors = query(
         f'sum(increase(http_server_requests_seconds_count{{{selector},status=~"5.."}}[{duration}]))', end
@@ -153,12 +159,17 @@ def observe_window(query, start, end, uri):
         "histogram_quantile(0.95, sum by (le) "
         f'(increase(http_server_requests_seconds_bucket{{{selector}}}[{duration}])))', end
     )
-    if p95 is None:
-        result["reason"] = "缺少延迟直方图，无法计算 P95"
+    histogram_count = query(f'sum(increase(http_server_requests_seconds_bucket{{{selector},le="+Inf"}}[{duration}]))', end)
+    if (not valid(p95) or not valid(histogram_count)
+            or abs(histogram_count - total) > max(.001, total * .01)):
+        result["reason"] = "延迟直方图缺失或与请求计数不一致，无法计算可信 P95"
+        return result
+    if not valid(errors) or errors > total:
+        result["reason"] = "5xx 计数缺失或不一致；不能将缺失解释为零"
         return result
     result.update({
-        "estimated_5xx": errors if errors is not None else 0.0,
-        "error_rate": min(1.0, max(0.0, (errors or 0.0) / total)),
+        "estimated_5xx": errors,
+        "error_rate": errors / total,
         "p95_seconds": p95,
         "status": "observed",
     })

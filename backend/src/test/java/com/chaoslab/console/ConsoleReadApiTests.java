@@ -583,8 +583,13 @@ class ConsoleReadApiTests {
         var windows =
             new java.util.ArrayList<com.chaoslab.report.domain.ReportWindow>();
         // SQL literals use the JVM zone: generate windows from the actual persisted instant.
-        var beginning = jdbc.queryForObject("SELECT started_at FROM experiment_executions WHERE id=?",
-                (r, n) -> r.getTimestamp(1).toInstant(), ids[2]).minusSeconds(30);
+        var beginning = jdbc
+            .queryForObject(
+                "SELECT started_at FROM experiment_executions WHERE id=?",
+                (r, n) -> r.getTimestamp(1).toInstant(),
+                ids[2]
+            )
+            .minusSeconds(30);
         for (int i = 0; i < 3; i++) windows.add(
             new com.chaoslab.report.domain.ReportWindow(
                 new String[] { "before", "during", "after" }[i],
@@ -624,6 +629,48 @@ class ConsoleReadApiTests {
                 jsonPath("$.recovery.physicalRecovery").value("UNKNOWN")
             );
         // Test-only migration fixture: a legacy JSON record has no version. Read does not rewrite it.
+        String differentTarget = UUID.randomUUID().toString();
+        jdbc.update(
+            "INSERT INTO targets(id,name,target_type,environment,enabled) VALUES(?,'other test-only target','DOCKER_CONTAINER','CHAOS_LAB',true)",
+            differentTarget
+        );
+        jdbc.update(
+            "INSERT INTO blade_execution_snapshots VALUES(?,'CRI_CPU_V1',?,?,?,'order-service','console-node','console-state','api3',?,10,10,TIMESTAMP '2026-10-10 00:00:00',TIMESTAMP '2026-10-10 00:00:10','0123456789abcdef')",
+            ids[2],
+            differentTarget,
+            "a".repeat(64),
+            "sha256:" + "b".repeat(64),
+            "c".repeat(64)
+        );
+        mvc.perform(get(path))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.recovery.nativeUid").isEmpty())
+            .andExpect(jsonPath("$.recovery.physicalRecovery").value("UNKNOWN"))
+            .andExpect(
+                jsonPath("$.recovery.note").value(
+                    "Native snapshot target does not match this report; recovery correlation rejected."
+                )
+            );
+        jdbc.update(
+            "UPDATE blade_execution_snapshots SET target_id=?,container_id=? WHERE execution_id=?",
+            ids[0],
+            "d".repeat(64),
+            ids[2]
+        );
+        mvc.perform(get(path))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.recovery.nativeUid").isEmpty());
+        jdbc.update(
+            "UPDATE blade_execution_snapshots SET container_id=?,image_id=? WHERE execution_id=?",
+            "a".repeat(64),
+            "sha256:" + "d".repeat(64),
+            ids[2]
+        );
+        mvc.perform(get(path))
+            .andExpect(status().isOk())
+            .andExpect(
+                jsonPath("$.recovery.physicalRecovery").value("UNKNOWN")
+            );
         String legacy = saved.replace(
             ",\"collectionVersion\":\"PROMETHEUS_HTTP_V2\"",
             ""
