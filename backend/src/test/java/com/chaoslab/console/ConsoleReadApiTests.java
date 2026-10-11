@@ -238,6 +238,8 @@ class ConsoleReadApiTests {
             "/actuator/info",
             "/actuator/health/liveness",
             "/api/v1/console/future-api",
+            "/api/v1/console/history/other",
+            "/api/v1/console/history/m1-core/raw",
             "/api/v1/console/overview/" + ids[2],
             "/api/v1/console/experiments/" + ids[1] + "/evidence",
             "/api/v1/console/overview/",
@@ -273,6 +275,7 @@ class ConsoleReadApiTests {
         for (String path : new String[] {
             "/api/v1/console/overview",
             "/api/v1/console/experiments",
+            "/api/v1/console/history/m1-core",
             "/api/v1/console/executions",
             "/api/v1/console/audit-logs",
             "/api/v1/console/reports",

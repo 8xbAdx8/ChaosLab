@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { Link, NavLink, Route, Routes, useLocation } from "react-router-dom";
+import {
+  Link,
+  NavLink,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+} from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
@@ -14,6 +21,7 @@ import {
   LockKeyhole,
   Menu,
   X,
+  Archive,
 } from "lucide-react";
 import { Dashboard } from "./pages/Dashboard";
 import { Experiments, ExperimentDetail, Executions } from "./pages/Experiments";
@@ -21,6 +29,7 @@ import { ExecutionDetail } from "./pages/ExecutionDetail";
 import { Audits } from "./pages/Audits";
 import { Reports, ReportDetail } from "./pages/Reports";
 import { Empty } from "./components/ui";
+import { HistoryPage } from "./pages/History";
 
 const navigation = [
   { to: "/", text: "概览", icon: LayoutDashboard, end: true },
@@ -28,8 +37,14 @@ const navigation = [
   { to: "/executions", text: "执行记录", icon: ListChecks },
   { to: "/audit", text: "审计日志", icon: ScrollText },
   { to: "/reports", text: "实验报告", icon: FileBarChart },
+  { to: "/history/m1-core", text: "真实历史 · M1 Core", icon: Archive },
 ];
 export function App() {
+  // Dedicated local archive launcher has no business DB APIs. Normal console stays unchanged.
+  const historyOnly = import.meta.env.MODE === "history";
+  const visibleNavigation = historyOnly
+    ? navigation.filter((n) => n.to === "/history/m1-core")
+    : navigation;
   const queryClient = useQueryClient();
   const [theme, setTheme] = useState(() => {
     const stored = localStorage.getItem("chaoslab-theme");
@@ -65,7 +80,7 @@ export function App() {
           READ-ONLY WORKSPACE
         </div>
         <nav aria-label="主导航">
-          {navigation.map((item) => (
+          {visibleNavigation.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -137,14 +152,28 @@ export function App() {
         </div>
         <main id="main">
           <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/experiments" element={<Experiments />} />
-            <Route path="/experiments/:id" element={<ExperimentDetail />} />
-            <Route path="/executions" element={<Executions />} />
-            <Route path="/executions/:id" element={<ExecutionDetail />} />
-            <Route path="/audit" element={<Audits />} />
-            <Route path="/reports" element={<Reports />} />
-            <Route path="/reports/:id" element={<ReportDetail />} />
+            <Route
+              path="/"
+              element={
+                historyOnly ? (
+                  <Navigate to="/history/m1-core" replace />
+                ) : (
+                  <Dashboard />
+                )
+              }
+            />
+            <Route path="/history/m1-core" element={<HistoryPage />} />
+            {!historyOnly && (
+              <>
+                <Route path="/experiments" element={<Experiments />} />
+                <Route path="/experiments/:id" element={<ExperimentDetail />} />
+                <Route path="/executions" element={<Executions />} />
+                <Route path="/executions/:id" element={<ExecutionDetail />} />
+                <Route path="/audit" element={<Audits />} />
+                <Route path="/reports" element={<Reports />} />
+                <Route path="/reports/:id" element={<ReportDetail />} />
+              </>
+            )}
             <Route
               path="*"
               element={

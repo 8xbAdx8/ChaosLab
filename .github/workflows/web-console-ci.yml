@@ -24,7 +24,7 @@ jobs:
           cache-dependency-path: backend/pom.xml
       - name: Generate actual Spring REST contracts using isolated test database
         working-directory: backend
-        run: bash ./mvnw --batch-mode -Dtest=ConsoleReadApiTests test
+        run: bash ./mvnw --batch-mode "-Dtest=ConsoleReadApiTests,HistoryEvidenceReaderTests,HistoryEvidenceApiTests" test
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
@@ -36,6 +36,9 @@ jobs:
       - name: Strict TypeScript and production build
         working-directory: frontend
         run: npm run build
+      - name: Standalone archive mode build
+        working-directory: frontend
+        run: npm run build:history
       - name: Lint
         working-directory: frontend
         run: npm run lint

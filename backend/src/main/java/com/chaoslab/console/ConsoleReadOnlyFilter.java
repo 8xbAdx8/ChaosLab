@@ -24,6 +24,7 @@ public class ConsoleReadOnlyFilter extends OncePerRequestFilter {
         "/api/v1/console/executions",
         "/api/v1/console/audit-logs",
         "/api/v1/console/reports",
+        "/api/v1/console/history/m1-core",
         "/api/v1/targets",
         "/api/v1/scenarios",
         "/actuator/health"
