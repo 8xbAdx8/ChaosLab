@@ -39,6 +39,10 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          # A hosted runner may carry a tooling classpath. The launcher must not
+          # accept it; establish the same clean terminal required for developers.
+          if (Test-Path Env:CLASSPATH) { Write-Output 'Clearing hosted tooling CLASSPATH (value withheld).' }
+          Remove-Item Env:CLASSPATH -ErrorAction SilentlyContinue
           Remove-Item Env:MAVEN_ARGS -ErrorAction SilentlyContinue
           node scripts/delivery-smoke.mjs
       - name: Ensure secrets and test bypasses are not delivered

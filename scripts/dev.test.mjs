@@ -50,11 +50,20 @@ test("unsafe inherited configuration is rejected without echoing its value", () 
     "API_PROXY_TARGET",
     "LOADER_MAIN",
     "MAVEN_ARGS",
+    "CLASSPATH",
   ])
     assert.throws(
       () => rejectOverrides({ [key]: "private-secret-value" }),
       (error) => !error.message.includes("private-secret-value"),
     );
+  assert.throws(
+    () =>
+      rejectOverrides({ CHAOSLAB_PRIVATE_TOKEN_NAME: "private-secret-value" }),
+    (error) =>
+      error.message.includes("CHAOSLAB_*") &&
+      !error.message.includes("PRIVATE_TOKEN_NAME") &&
+      !error.message.includes("private-secret-value"),
+  );
 });
 test(
   "private paths reject redirects rather than touching another data source",

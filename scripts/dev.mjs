@@ -89,10 +89,24 @@ export function rejectOverrides(env = process.env) {
       key,
     ),
   );
-  if (blocked.length)
+  if (blocked.length) {
+    // Report fixed key names/families, never their values or arbitrary credential suffixes.
+    const families = [
+      ...new Set(
+        blocked.map((key) => {
+          const normalized = key.toUpperCase();
+          const prefix =
+            /^(SPRING_|CHAOSLAB_|SERVER_|MANAGEMENT_|VITE_|LOADER_)/.exec(
+              normalized,
+            );
+          return prefix ? `${prefix[1]}*` : normalized;
+        }),
+      ),
+    ];
     fail(
-      "Unsafe deployment overrides detected. Open a clean terminal and remove Spring/ChaosLab/Java/Node/proxy overrides. Values are not printed.",
+      `Unsafe deployment overrides detected (${families.join(", ")}). Open a clean terminal and remove these overrides. Values are not printed.`,
     );
+  }
   for (const dir of [root, path.join(root, "frontend")]) {
     if (
       fs
