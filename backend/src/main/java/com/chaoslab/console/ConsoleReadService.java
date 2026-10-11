@@ -236,7 +236,13 @@ public class ConsoleReadService {
             recent,
             env.getProperty("chaoslab.engine", "fake"),
             env.getProperty("chaoslab.console.read-only", Boolean.class, false),
-            false
+            !env.matchesProfiles("history-demo") &&
+                (!env
+                    .getProperty("chaoslab.security.viewer.username", "")
+                    .isEmpty() ||
+                    !env
+                        .getProperty("chaoslab.security.admin.username", "")
+                        .isEmpty())
         );
     }
 

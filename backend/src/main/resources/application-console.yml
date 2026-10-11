@@ -1,6 +1,10 @@
 # Existing, already-migrated LOCAL read-only data source; never connect to M1 VMs.
 server:
   address: 127.0.0.1
+  servlet:
+    session:
+      cookie:
+        secure: ${CHAOSLAB_SESSION_SECURE:false}
 spring:
   flyway:
     enabled: false

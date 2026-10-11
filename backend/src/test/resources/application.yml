@@ -1,4 +1,6 @@
 spring:
+  profiles:
+    active: legacy-api-test
   datasource:
     url: jdbc:h2:mem:chaoslab-test;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
     username: sa

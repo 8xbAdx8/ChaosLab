@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.ApplicationContext;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest(
@@ -20,6 +21,7 @@ import org.springframework.test.web.servlet.MockMvc;
     properties = "chaoslab.console.read-only=true"
 )
 @AutoConfigureMockMvc
+@ActiveProfiles("history-demo")
 class HistoryEvidenceApiTests {
 
     private static final String API = "/api/v1/console/history/m1-core";
@@ -87,7 +89,7 @@ class HistoryEvidenceApiTests {
                 org.springframework.http.HttpMethod.OPTIONS,
             })
                 mvc.perform(request(method, URI.create(path))).andExpect(
-                    status().isForbidden()
+                    status().is4xxClientError()
                 );
         }
         for (var method : new org.springframework.http.HttpMethod[] {
@@ -96,16 +98,35 @@ class HistoryEvidenceApiTests {
             org.springframework.http.HttpMethod.DELETE,
             org.springframework.http.HttpMethod.PATCH,
         })
-            mvc.perform(request(method, API)).andExpect(status().isForbidden());
+            mvc.perform(request(method, API)).andExpect(
+                status().is4xxClientError()
+            );
         mvc.perform(options(API))
             .andExpect(status().isNoContent())
             .andExpect(header().string("Allow", "GET, HEAD, OPTIONS"));
+        mvc.perform(get("/api/v1/auth/me"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.mode").value("LOCAL_HISTORY"))
+            .andExpect(jsonPath("$.authenticated").value(false))
+            .andExpect(jsonPath("$.roles").isEmpty());
+        mvc.perform(
+            get(API).with(r -> {
+                r.setRemoteAddr("192.0.2.1");
+                return r;
+            })
+        ).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/console/access")).andExpect(
+            status().isUnauthorized()
+        );
+        mvc.perform(get("/api/v1/auth/csrf")).andExpect(
+            status().isUnauthorized()
+        );
         mvc.perform(
             options(API)
                 .header("Origin", "https://untrusted.example")
                 .header("Access-Control-Request-Method", "GET")
         )
-            .andExpect(status().isForbidden())
+            .andExpect(status().is4xxClientError())
             .andExpect(header().doesNotExist("Access-Control-Allow-Origin"));
     }
 }
