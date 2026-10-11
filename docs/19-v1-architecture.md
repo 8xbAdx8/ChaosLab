@@ -21,7 +21,7 @@ flowchart TB
   Reports --> Prom[Optional trusted loopback Prometheus queries]
   Micrometer[Backend Micrometer metrics] -. scrape in configured monitoring deployment .-> Prom
   Prom --> Grafana[Optional existing Grafana dashboards]
-  UI --> Hist[history-demo independent launcher<br/>anonymous loopback / no DB / no engine]
+  Proxy --> Hist[history-demo independent launcher<br/>loopback Security / exact read filter<br/>anonymous / no DB / no engine]
   Hist --> Archive[SHA-verified fixed Git archive reader]
   Archive --> JSON[M1 JSON + acceptance Markdown]
   subgraph Closed[Separate reviewed real deployment - NOT enabled by local launchers]

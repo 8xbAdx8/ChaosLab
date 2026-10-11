@@ -28,11 +28,18 @@ jobs:
       - name: Launcher safety unit tests
         run: node --test scripts/dev.test.mjs
       - name: Packaged application through actual PowerShell/Bash entry points
+        if: runner.os != 'Windows'
         shell: bash
         # setup-java injects MAVEN_ARGS=-ntp. Exercise the documented clean terminal,
         # not an exemption in the production launcher's fail-closed override guard.
         run: |
           unset MAVEN_ARGS
+          node scripts/delivery-smoke.mjs
+      - name: Packaged application through native PowerShell entry points
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Remove-Item Env:MAVEN_ARGS -ErrorAction SilentlyContinue
           node scripts/delivery-smoke.mjs
       - name: Ensure secrets and test bypasses are not delivered
         run: |
