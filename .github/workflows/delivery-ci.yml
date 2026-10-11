@@ -28,7 +28,12 @@ jobs:
       - name: Launcher safety unit tests
         run: node --test scripts/dev.test.mjs
       - name: Packaged application through actual PowerShell/Bash entry points
-        run: node scripts/delivery-smoke.mjs
+        shell: bash
+        # setup-java injects MAVEN_ARGS=-ntp. Exercise the documented clean terminal,
+        # not an exemption in the production launcher's fail-closed override guard.
+        run: |
+          unset MAVEN_ARGS
+          node scripts/delivery-smoke.mjs
       - name: Ensure secrets and test bypasses are not delivered
         run: |
           python3 backend/scripts/check_auth_artifact.py
