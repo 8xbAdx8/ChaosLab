@@ -418,6 +418,16 @@ export function controlAuthorized(header, token) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+export function childRunning(child) {
+  // A failed spawn has no PID and may emit error/close, but never exit.
+  // It must not leave shutdown waiting forever for an impossible exit event.
+  return (
+    typeof child.pid === "number" &&
+    child.exitCode === null &&
+    child.signalCode === null
+  );
+}
+
 async function stop() {
   privateDirectory(local);
   const state = privateRead(stateFile);
@@ -508,22 +518,15 @@ export async function supervise(opts, accounts) {
     (shutdownPromise ??= (async () => {
       stopping = true;
       for (const child of children)
-        if (child.exitCode === null && child.signalCode === null)
-          child.kill("SIGTERM");
+        if (childRunning(child)) child.kill("SIGTERM");
       const deadline = Date.now() + 21000;
-      while (
-        children.some(
-          (child) => child.exitCode === null && child.signalCode === null,
-        ) &&
-        Date.now() < deadline
-      )
+      while (children.some(childRunning) && Date.now() < deadline)
         await wait(100);
       for (const child of children)
-        if (child.exitCode === null && child.signalCode === null)
-          child.kill("SIGKILL");
+        if (childRunning(child)) child.kill("SIGKILL");
       await Promise.all(
         children.map((child) =>
-          child.exitCode !== null || child.signalCode !== null
+          !childRunning(child)
             ? Promise.resolve()
             : new Promise((resolve) => child.once("exit", resolve)),
         ),
@@ -540,6 +543,13 @@ export async function supervise(opts, accounts) {
       fail("Refusing symlink log.");
     const log = fs.createWriteStream(logFile, { flags: "a", mode: 0o600 });
     streams.push(log);
+    log.once("error", () => {
+      process.exitCode = 1;
+      console.error(
+        "Private service log unavailable; stopping managed session.",
+      );
+      void shutdown();
+    });
     const child = spawn(exe, args, {
       cwd,
       env,
@@ -550,6 +560,7 @@ export async function supervise(opts, accounts) {
     child.stdout.pipe(log, { end: false });
     child.stderr.pipe(log, { end: false });
     child.once("error", () => {
+      process.exitCode = 1;
       console.error("Service spawn failed.");
       void shutdown();
     });

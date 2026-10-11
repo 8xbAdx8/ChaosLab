@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import net from "node:net";
+import { spawn } from "node:child_process";
 import {
   options,
   validateAccounts,
@@ -13,6 +14,7 @@ import {
   runtimeEnvironment,
   controlAuthorized,
   javaExecutable,
+  childRunning,
 } from "./dev.mjs";
 
 test("fixed modes, unique bounded ports; no argv/root/profile/database overrides", () => {
@@ -118,4 +120,22 @@ test("missing JAVA_HOME fails before service launch", () => {
   } finally {
     if (previous !== undefined) process.env.JAVA_HOME = previous;
   }
+});
+
+test("failed native spawn cannot trap shutdown waiting for an exit event", async () => {
+  const child = spawn(
+    path.join(os.tmpdir(), "chaoslab-nonexistent-executable-" + process.pid),
+    [],
+    {
+      stdio: "ignore",
+      windowsHide: true,
+    },
+  );
+  await new Promise((resolve) => child.once("error", resolve));
+  assert.equal(childRunning(child), false);
+  assert.equal(
+    childRunning({ pid: 1, exitCode: null, signalCode: null }),
+    true,
+  );
+  assert.equal(childRunning({ pid: 1, exitCode: 1, signalCode: null }), false);
 });

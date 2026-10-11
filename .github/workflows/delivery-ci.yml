@@ -39,9 +39,10 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          # A hosted runner may carry a tooling classpath. The launcher must not
-          # accept it; establish the same clean terminal required for developers.
-          if (Test-Path Env:CLASSPATH) { Write-Output 'Clearing hosted tooling CLASSPATH (value withheld).' }
+          # Windows hosted runners carry MAVEN_OPTS (confirmed by the guard).
+          # Keep production rejection intact; CI starts from a clean tooling environment.
+          if (Test-Path Env:MAVEN_OPTS) { Write-Output 'Clearing hosted tooling MAVEN_OPTS (value withheld).' }
+          Remove-Item Env:MAVEN_OPTS -ErrorAction SilentlyContinue
           Remove-Item Env:CLASSPATH -ErrorAction SilentlyContinue
           Remove-Item Env:MAVEN_ARGS -ErrorAction SilentlyContinue
           node scripts/delivery-smoke.mjs
