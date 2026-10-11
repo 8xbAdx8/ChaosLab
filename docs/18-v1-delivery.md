@@ -128,6 +128,14 @@ smoke 调用实际 PS/Bash 启动入口，使用 packaged Spring JAR + Vite：AD
 已有 Java、Web、root harmless、历史 SHA CI 均保留；新增 V1 Delivery CI 在 Windows/Ubuntu、Java 21/Node 24 运行。
 macOS 提供 Bash 入口，但没有 macOS CI，不能宣称已完成该平台验收。
 
+### Windows 测试夹具的边界
+
+Hosted Windows 上，原来承诺“没有后代”的三个短 JVM 夹具偶发得到 DESCENDANTS_REMAINED；同一源码也有通过记录。
+夹具本身未创建业务 child，具体原生后代类别未保存，不能宣称已确认是某个系统进程。
+现在仅这三个测试在 Windows 使用无关联控制台的 javaw（[Java 21 官方契约](https://docs.oracle.com/en/java/javase/21/docs/specs/man/java.html#javaw)），
+仍检查精确 argv、独立 stdout/stderr、工作目录、环境、exit=7 和 EXITED；没有改真实 Runner 或放宽清理断言。
+明确启动 helper/后代的测试继续使用 java.exe，STRICT 清理、timeout、HANDOFF 和失败路径全部保留。
+
 ## 遇到问题
 
 | 提示                   | 处理                                                                  |
