@@ -35,6 +35,9 @@ class ConsoleReadApiTests {
     JdbcTemplate jdbc;
 
     @Autowired
+    jakarta.persistence.EntityManager entityManager;
+
+    @Autowired
     org.springframework.context.ApplicationContext context;
 
     private String[] seed() {
@@ -242,6 +245,8 @@ class ConsoleReadApiTests {
             "/api/v1/console/history/m1-core/raw",
             "/api/v1/console/overview/" + ids[2],
             "/api/v1/console/experiments/" + ids[1] + "/evidence",
+            "/api/v1/console/executions/" + ids[2] + "/analysis",
+            "/api/v1/console/reports/" + ids[2] + "/analysis/raw",
             "/api/v1/console/overview/",
             "/api/v1/console//overview",
             "/api/v1/console/overview;ignored=x",
@@ -301,6 +306,9 @@ class ConsoleReadApiTests {
         }
         mvc.perform(
             get("/api/v1/console/reports/" + UUID.randomUUID())
+        ).andExpect(status().isNotFound());
+        mvc.perform(
+            get("/api/v1/console/reports/" + UUID.randomUUID() + "/analysis")
         ).andExpect(status().isNotFound());
         mvc.perform(
             get("/local/api/v1/console/overview").contextPath("/local")
@@ -389,6 +397,25 @@ class ConsoleReadApiTests {
             .andExpect(
                 jsonPath("$.conclusionStatus").value("INSUFFICIENT_DATA")
             );
+        mvc.perform(get("/api/v1/console/reports/" + report + "/analysis"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.traceability").value("REJECTED"))
+            .andExpect(jsonPath("$.parameterSource").value("UNKNOWN"))
+            .andExpect(jsonPath("$.comparisonStatus").value("NOT_COMPARABLE"))
+            .andExpect(jsonPath("$.recovery.physicalRecovery").value("UNKNOWN"))
+            .andExpect(
+                jsonPath("$.report.windows[0].estimatedRequests").isEmpty()
+            );
+        var analysis = mvc
+            .perform(get("/api/v1/console/reports/" + report + "/analysis"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+        Files.createDirectories(Path.of("target"));
+        Files.writeString(
+            Path.of("target/report-analysis-contract.json"),
+            analysis
+        );
         // Build artifact only: real MockMvc serialization is consumed by TypeScript contract tests.
         // This is test-only H2 data, never historical evidence or demo/runtime data.
         var mapper = JsonMapper.builder().build();
@@ -438,5 +465,190 @@ class ConsoleReadApiTests {
                 Long.class
             )
         ).isEqualTo(1);
+    }
+
+    @Test
+    void analysisAssociatesExactAuditsAndRejectsWrongSubjectWithoutRewritingReport()
+        throws Exception {
+        var ids = seed();
+        String start = UUID.randomUUID().toString(),
+            recovery = UUID.randomUUID().toString(),
+            report = UUID.randomUUID().toString();
+        for (String[] entry : new String[][] {
+            { start, "START_EXPERIMENT", "2026-10-10T00:00:05Z" },
+            { recovery, "DESTROY_EXPERIMENT", "2026-10-10T00:00:20Z" },
+        })
+            jdbc.update(
+                "INSERT INTO audit_logs(id,actor,operation,experiment_id,execution_id,target_id,scenario_code,parameters,result,occurred_at) VALUES(?,'TEST_ONLY',?,?,?,?,'CPU_LOAD',JSON_OBJECT('percent',10,'password','secret'),'SUCCESS',?)",
+                entry[0],
+                entry[1],
+                ids[1],
+                ids[2],
+                ids[0],
+                java.sql.Timestamp.from(java.time.Instant.parse(entry[2]))
+            );
+        jdbc.update(
+            "UPDATE experiment_executions SET engine_experiment_id=? WHERE id=?",
+            "fake-" + ids[2],
+            ids[2]
+        );
+        jdbc.update(
+            "INSERT INTO experiment_reports(id,experiment_id,execution_id,generation_key,target_id,scenario_code,start_audit_id,recovery_audit_id,started_at,finished_at,generated_at,execution_mode,metrics_status,conclusion_status,reason) VALUES(?,?,?,'m5-test',?,'CPU_LOAD',?,?,TIMESTAMP '2026-10-10 00:00:05',TIMESTAMP '2026-10-10 00:00:20',CURRENT_TIMESTAMP,'SIMULATED','NOT_COLLECTED','INSUFFICIENT_DATA','not collected')",
+            report,
+            ids[1],
+            ids[2],
+            ids[0],
+            start,
+            recovery
+        );
+        String path = "/api/v1/console/reports/" + report + "/analysis";
+        mvc.perform(get(path))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.traceability").value("MATCHED"))
+            .andExpect(jsonPath("$.parameters.percent").value(10))
+            .andExpect(jsonPath("$.parameters.password").doesNotExist())
+            .andExpect(jsonPath("$.audits.length()").value(2))
+            .andExpect(jsonPath("$.report.executionMode").value("SIMULATED"))
+            .andExpect(jsonPath("$.recovery.duringCpuPercent").isEmpty())
+            .andExpect(
+                jsonPath("$.recovery.physicalRecovery").value("UNKNOWN")
+            );
+        mvc.perform(head(path)).andExpect(status().isOk());
+        mvc.perform(post(path)).andExpect(status().isForbidden());
+        for (String column : new String[] {
+            "target_id",
+            "execution_id",
+            "experiment_id",
+        }) {
+            String original = column.equals("target_id")
+                ? ids[0]
+                : column.equals("execution_id")
+                  ? ids[2]
+                  : ids[1];
+            jdbc.update(
+                "UPDATE audit_logs SET " + column + "=? WHERE id=?",
+                UUID.randomUUID().toString(),
+                recovery
+            );
+            mvc.perform(get(path))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.traceability").value("REJECTED"));
+            jdbc.update(
+                "UPDATE audit_logs SET " + column + "=? WHERE id=?",
+                original,
+                recovery
+            );
+        }
+        jdbc.update(
+            "UPDATE experiment_executions SET finished_at=TIMESTAMP '2026-10-10 00:00:25' WHERE id=?",
+            ids[2]
+        );
+        mvc.perform(get(path))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.traceability").value("REJECTED"));
+        assertThat(
+            jdbc.queryForObject(
+                "SELECT conclusion_status FROM experiment_reports WHERE id=?",
+                String.class,
+                report
+            )
+        ).isEqualTo("INSUFFICIENT_DATA");
+    }
+
+    @Test
+    void versionedObservedWindowsAreComparableButLegacyValuesAreNotRecertified()
+        throws Exception {
+        var ids = seed();
+        String report = UUID.randomUUID().toString(),
+            start = UUID.randomUUID().toString(),
+            recovery = UUID.randomUUID().toString();
+        jdbc.update(
+            "UPDATE experiment_executions SET finished_at=TIMESTAMP '2026-10-10 00:00:35' WHERE id=?",
+            ids[2]
+        );
+        for (String[] event : new String[][] {
+            { start, "START_EXPERIMENT", "2026-10-10T00:00:05Z" },
+            { recovery, "DESTROY_EXPERIMENT", "2026-10-10T00:00:35Z" },
+        })
+            jdbc.update(
+                "INSERT INTO audit_logs(id,actor,operation,experiment_id,execution_id,target_id,scenario_code,parameters,result,occurred_at) VALUES(?,'TEST_ONLY',?,?,?,?,'CPU_LOAD','{}','SUCCESS',?)",
+                event[0],
+                event[1],
+                ids[1],
+                ids[2],
+                ids[0],
+                java.sql.Timestamp.from(java.time.Instant.parse(event[2]))
+            );
+        var mapper = JsonMapper.builder().build();
+        var windows =
+            new java.util.ArrayList<com.chaoslab.report.domain.ReportWindow>();
+        // SQL literals use the JVM zone: generate windows from the actual persisted instant.
+        var beginning = jdbc.queryForObject("SELECT started_at FROM experiment_executions WHERE id=?",
+                (r, n) -> r.getTimestamp(1).toInstant(), ids[2]).minusSeconds(30);
+        for (int i = 0; i < 3; i++) windows.add(
+            new com.chaoslab.report.domain.ReportWindow(
+                new String[] { "before", "during", "after" }[i],
+                beginning.plusSeconds(i * 30L),
+                beginning.plusSeconds((i + 1) * 30L),
+                com.chaoslab.report.domain.ReportMetricsStatus.OBSERVED,
+                6.0,
+                120.0,
+                12.0,
+                .1,
+                .04,
+                null,
+                "PROMETHEUS_HTTP_V2"
+            )
+        );
+        String saved = mapper.writeValueAsString(windows);
+        jdbc.update(
+            "INSERT INTO experiment_reports(id,experiment_id,execution_id,generation_key,target_id,scenario_code,start_audit_id,recovery_audit_id,started_at,finished_at,generated_at,execution_mode,metrics_status,conclusion_status,reason,binding_status,container_id,image_id,observations) VALUES(?,?,?,'m5-test-observed',?,'CPU_LOAD',?,?,TIMESTAMP '2026-10-10 00:00:05',TIMESTAMP '2026-10-10 00:00:35',CURRENT_TIMESTAMP,'UNVERIFIED','OBSERVED','EXECUTION_UNVERIFIED','test-only observations','VERIFIED_LOCAL_DEMO',?,?,? FORMAT JSON)",
+            report,
+            ids[1],
+            ids[2],
+            ids[0],
+            start,
+            recovery,
+            "a".repeat(64),
+            "sha256:" + "b".repeat(64),
+            saved
+        );
+        String path = "/api/v1/console/reports/" + report + "/analysis";
+        mvc.perform(get(path))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.comparisonStatus").value("AVAILABLE"))
+            .andExpect(jsonPath("$.metricInstance").value("order-service:8080"))
+            .andExpect(jsonPath("$.report.windows[1].errorRate").value(.1))
+            .andExpect(jsonPath("$.report.windows[1].p95Seconds").value(.04))
+            .andExpect(
+                jsonPath("$.recovery.physicalRecovery").value("UNKNOWN")
+            );
+        // Test-only migration fixture: a legacy JSON record has no version. Read does not rewrite it.
+        String legacy = saved.replace(
+            ",\"collectionVersion\":\"PROMETHEUS_HTTP_V2\"",
+            ""
+        );
+        jdbc.update(
+            "UPDATE experiment_reports SET observations=? FORMAT JSON WHERE id=?",
+            legacy,
+            report
+        );
+        entityManager.clear(); // JDBC fixture update bypassed JPA's first-level read cache.
+        mvc.perform(get(path))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.comparisonStatus").value("NOT_COMPARABLE"))
+            .andExpect(jsonPath("$.metricSource").value("UNKNOWN"))
+            .andExpect(
+                jsonPath("$.report.conclusionStatus").value(
+                    "EXECUTION_UNVERIFIED"
+                )
+            );
+        assertThat(
+            jdbc.queryForObject(
+                "SELECT observations FROM experiment_reports WHERE id=?",
+                String.class,
+                report
+            )
+        ).isEqualTo(legacy);
     }
 }

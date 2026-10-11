@@ -15,7 +15,11 @@ public class PrometheusReportObservationCollector implements ReportObservationCo
 
     private static final int SCRAPE_SECONDS = 5;
     private static final String SELECTOR =
-            "job=\"order-service\",uri=\"/orders/{orderId}\"";
+            "job=\"order-service\",instance=\"order-service:8080\",uri=\"/orders/{orderId}\"";
+    public static final String COLLECTION_VERSION = "PROMETHEUS_HTTP_V2";
+    // A teaching minimum, not a statistical confidence guarantee for a quantile.
+    private static final int MINIMUM_REQUESTS = 20;
+    private static final String UP = "job=\"order-service\",instance=\"order-service:8080\"";
 
     private final PrometheusQueryClient queries;
 
@@ -25,6 +29,9 @@ public class PrometheusReportObservationCollector implements ReportObservationCo
 
     @Override
     public List<ReportWindow> collect(List<ReportWindow> windows) {
+        if (windows == null || windows.isEmpty() || windows.size() > 3) {
+            throw new IllegalArgumentException("at most three observation windows are allowed");
+        }
         return windows.stream().map(this::observe).toList();
     }
 
@@ -36,16 +43,20 @@ public class PrometheusReportObservationCollector implements ReportObservationCo
         }
         String range = Duration.between(window.start(), window.end()).toMillis() + "ms";
         try {
+            Double series = queries.query("count(count_over_time(up{" + UP + "}[" + range + "]))", window.end());
+            if (series == null || series != 1.0) {
+                return insufficient(window, null, null, "scrape subject is missing or not unique");
+            }
             Double samples = queries.query(
-                    "sum(count_over_time(up{job=\"order-service\"}[" + range + "]))",
+                    "sum(count_over_time(up{" + UP + "}[" + range + "]))",
                     window.end()
             );
             Double availability = queries.query(
-                    "min(min_over_time(up{job=\"order-service\"}[" + range + "]))",
+                    "min(min_over_time(up{" + UP + "}[" + range + "]))",
                     window.end()
             );
             int minimum = Math.max(3, (int) Math.floor(seconds / SCRAPE_SECONDS * 0.8));
-            if (samples == null || samples < minimum || availability == null
+            if (!valid(samples) || samples < minimum || availability == null
                     || availability != 1.0) {
                 return insufficient(window, samples, null,
                         "scrape samples are insufficient or target was unavailable");
@@ -55,9 +66,9 @@ public class PrometheusReportObservationCollector implements ReportObservationCo
                             + "}[" + range + "]))",
                     window.end()
             );
-            if (total == null || total <= 0) {
+            if (!valid(total) || total < MINIMUM_REQUESTS) {
                 return insufficient(window, samples, total,
-                        "no order requests were observed in this window");
+                        "at least 20 observed requests are required for HTTP comparison");
             }
             Double errors = queries.query(
                     "sum(increase(http_server_requests_seconds_count{" + SELECTOR
@@ -70,17 +81,28 @@ public class PrometheusReportObservationCollector implements ReportObservationCo
                             + SELECTOR + "}[" + range + "])))",
                     window.end()
             );
-            if (p95 == null || p95 < 0) {
+            Double histogramCount = queries.query(
+                    "sum(increase(http_server_requests_seconds_bucket{" + SELECTOR
+                            + ",le=\"+Inf\"}[" + range + "]))", window.end());
+            if (!valid(p95) || !valid(histogramCount)
+                    || Math.abs(histogramCount - total) > Math.max(0.001, total * 0.01)) {
                 return insufficient(window, samples, total,
                         "latency histogram is missing or invalid");
             }
-            double fiveXx = errors == null ? 0.0 : errors;
+            if (!valid(errors) || errors > total) {
+                return insufficient(window, samples, total,
+                        "5xx counter is missing or inconsistent; absence is not zero");
+            }
             return new ReportWindow(window.phase(), window.start(), window.end(),
-                    ReportMetricsStatus.OBSERVED, samples, total, fiveXx,
-                    Math.min(1.0, Math.max(0.0, fiveXx / total)), p95, null);
+                    ReportMetricsStatus.OBSERVED, samples, total, errors,
+                    errors / total, p95, null, COLLECTION_VERSION);
         } catch (RuntimeException exception) {
             return insufficient(window, null, null, "Prometheus query is unavailable");
         }
+    }
+
+    private static boolean valid(Double value) {
+        return value != null && Double.isFinite(value) && value >= 0;
     }
 
     private ReportWindow insufficient(
@@ -88,6 +110,7 @@ public class PrometheusReportObservationCollector implements ReportObservationCo
     ) {
         return new ReportWindow(window.phase(), window.start(), window.end(),
                 ReportMetricsStatus.INSUFFICIENT_DATA,
-                samples, total, null, null, null, reason);
+                valid(samples) ? samples : null, valid(total) ? total : null,
+                null, null, null, reason, COLLECTION_VERSION);
     }
 }

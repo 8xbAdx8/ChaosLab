@@ -12,8 +12,17 @@ public record ReportWindow(
         Double estimated5xx,
         Double errorRate,
         Double p95Seconds,
-        String reason
+        String reason,
+        String collectionVersion
 ) {
+    // Existing persisted JSON has no version. Null means legacy/unknown provenance,
+    // not evidence collected under the stronger M5 rules. No historical row is rewritten.
+    public ReportWindow(String phase, Instant start, Instant end, ReportMetricsStatus metricsStatus,
+                        Double scrapeSamples, Double estimatedRequests, Double estimated5xx,
+                        Double errorRate, Double p95Seconds, String reason) {
+        this(phase, start, end, metricsStatus, scrapeSamples, estimatedRequests,
+                estimated5xx, errorRate, p95Seconds, reason, null);
+    }
     public ReportWindow(String phase, Instant start, Instant end, ReportMetricsStatus metricsStatus) {
         this(phase, start, end, metricsStatus, null, null, null, null, null, null);
     }

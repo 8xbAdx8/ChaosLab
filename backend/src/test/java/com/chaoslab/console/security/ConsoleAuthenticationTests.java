@@ -132,6 +132,11 @@ class ConsoleAuthenticationTests {
             )
         ).andExpect(status().isForbidden());
         String storedHash = users.loadUserByUsername(VIEWER).getPassword();
+        String analysis = "/api/v1/console/reports/" + UUID.randomUUID() + "/analysis";
+        mvc.perform(get(analysis)).andExpect(status().isUnauthorized());
+        for (var session : new MockHttpSession[]{viewer, admin})
+            mvc.perform(get(analysis).session(session)).andExpect(status().isNotFound());
+        mvc.perform(get(analysis).with(user("outsider").roles("OTHER"))).andExpect(status().isForbidden());
         assertThat(
             new BCryptPasswordEncoder().matches(PASSWORD, storedHash)
         ).isTrue();

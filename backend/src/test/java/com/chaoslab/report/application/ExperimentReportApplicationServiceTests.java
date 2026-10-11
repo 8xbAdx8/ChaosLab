@@ -165,6 +165,26 @@ class ExperimentReportApplicationServiceTests {
                 TargetEnvironment.CHAOS_LAB)));
     }
 
+    @Test void collectorCannotSubstituteAnotherTimeWindow() {
+        givenCompleteExecution();
+        givenDockerTarget();
+        given(audits.findByExecution(EXPERIMENT_ID, EXECUTION_ID)).willReturn(List.of(
+                audit(AuditOperation.START_EXPERIMENT, TARGET_ID, START),
+                audit(AuditOperation.DESTROY_EXPERIMENT, TARGET_ID, START.plusSeconds(30))));
+        given(bindingVerifier.verifyForWindow(any(), any())).willReturn(TargetIdentityVerification.verified(
+                new VerifiedDockerTarget(TARGET_ID, "a".repeat(64), "sha256:" + "b".repeat(64), "order-service")));
+        given(observations.collect(any())).willAnswer(call -> ((List<ReportWindow>) call.getArgument(0)).stream()
+                .map(w -> new ReportWindow(w.phase(), w.start().plusSeconds(1), w.end().plusSeconds(1), ReportMetricsStatus.OBSERVED,
+                    6.0, 120.0, 12.0, .1, .2, null, "PROMETHEUS_HTTP_V2")).toList());
+        when(reports.insert(any())).thenAnswer(call -> call.getArgument(0));
+        var report = service.create(EXPERIMENT_ID, EXECUTION_ID, "wrong-window").report();
+        assertThat(report.metricsStatus()).isEqualTo(ReportMetricsStatus.INSUFFICIENT_DATA);
+        assertThat(report.windows()).allSatisfy(w -> {
+            assertThat(w.errorRate()).isNull();
+            assertThat(w.p95Seconds()).isNull();
+        });
+    }
+
     @Test void activeRecoveryUnconfirmedExecutionCannotGenerateRecoveredReport() {
         ExperimentExecution execution = mock(ExperimentExecution.class);
         given(execution.getExperimentId()).willReturn(EXPERIMENT_ID);

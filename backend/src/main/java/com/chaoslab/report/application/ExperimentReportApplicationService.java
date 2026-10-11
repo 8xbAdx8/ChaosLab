@@ -138,6 +138,7 @@ public class ExperimentReportApplicationService {
                 || !start.targetId().equals(experiment.getTargetId())
                 || !start.targetId().equals(recovery.targetId())
                 || !scenarioCode.equals(start.scenarioCode())
+                || !scenarioCode.equals(recovery.scenarioCode())
                 || start.occurredAt().isAfter(recovery.occurredAt())) {
             throw rejected("AUDIT_EVIDENCE_MISMATCH",
                     "start and recovery audit evidence does not match the experiment");
