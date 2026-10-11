@@ -131,6 +131,8 @@ npm run dev
 - `ConsoleAuthenticationTests`、`ConsoleSessionHttpTests` 明确 auth-test profile，走完整生产
   SecurityFilterChain 和真实 BCrypt 登录。后者是真 Tomcat/HttpClient/Cookie，不是 MockMvc Cookie。
 - 测试账号/密码每次随机生成，不硬编码/提交登录凭据。
+- `ConsoleProductionBoundaryTests` 关闭 console servlet filter 后，仍通过真实 ADMIN 登录证明
+  生产 SecurityFilterChain 拒绝原业务写接口和未列入白名单的读取；不能用取消 console profile 绕过。
 - 覆盖匿名/Basic绕过、VIEWER/ADMIN隔离、未知角色、双角色有效CSRF仍不能写、精确路径/OPTIONS/CORS、
   登录/退出CSRF、Token轮换、Session ID更换、登出后的旧Cookie重放、密码/hash脱敏、配置错误拒绝。
 - `LegacyBusinessTestSecurity` **只在 src/test**，legacy-api-test profile 仅为原业务/Fake集成测试
