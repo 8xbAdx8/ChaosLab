@@ -1,0 +1,30 @@
+# Deliberately NOT a MySQL/field deployment. Every override is checked before Flyway creates beans.
+server:
+  address: 127.0.0.1
+  servlet:
+    session:
+      cookie:
+        secure: false
+spring:
+  datasource:
+    url: jdbc:h2:file:${chaoslab.fake-demo.directory}/chaoslab_fake_demo;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password: ${CHAOSLAB_FAKE_DEMO_DB_PASSWORD:}
+    driver-class-name: org.h2.Driver
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+chaoslab:
+  engine: fake
+  console:
+    read-only: false
+  fake-demo:
+    mode: FAKE_DEMO
+    directory: ${CHAOSLAB_FAKE_DEMO_DIRECTORY:./.local/chaoslab-fake-demo}
+  demo:
+    binding-script: ''
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

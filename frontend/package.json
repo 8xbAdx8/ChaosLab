@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "dev:history": "vite --host 127.0.0.1 --mode history",
+    "dev:fake": "vite --host 127.0.0.1 --mode fake",
     "build": "tsc -b && vite build",
     "build:history": "tsc -b && vite build --mode history",
     "lint": "eslint . --max-warnings 0",

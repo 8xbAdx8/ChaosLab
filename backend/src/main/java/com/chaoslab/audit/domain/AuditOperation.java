@@ -1,6 +1,10 @@
 package com.chaoslab.audit.domain;
 
 public enum AuditOperation {
+    CREATE_EXPERIMENT,
+    EDIT_EXPERIMENT,
+    VALIDATE_EXPERIMENT,
+    DRY_RUN_EXPERIMENT,
     START_EXPERIMENT,
     DESTROY_EXPERIMENT,
     AUTOMATIC_RECOVERY,

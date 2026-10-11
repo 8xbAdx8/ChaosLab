@@ -14,9 +14,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class ConsoleIdentityController {
 
     private final Environment env;
+    private final org.springframework.beans.factory.ObjectProvider<com.chaoslab.console.fakedemo.FakeDemoConfiguration> fakeDemo;
 
-    public ConsoleIdentityController(Environment env) {
+    public ConsoleIdentityController(
+        Environment env,
+        org.springframework.beans.factory.ObjectProvider<com.chaoslab.console.fakedemo.FakeDemoConfiguration> fakeDemo
+    ) {
         this.env = env;
+        this.fakeDemo = fakeDemo;
     }
 
     public record Identity(
@@ -25,7 +30,9 @@ public class ConsoleIdentityController {
         String username,
         List<String> roles,
         boolean readOnly,
-        boolean realExecutionAllowed
+        boolean realExecutionAllowed,
+        String executionMode,
+        boolean fakeExecutionAllowed
     ) {}
 
     public record Csrf(String headerName, String token) {}
@@ -55,6 +62,9 @@ public class ConsoleIdentityController {
                   .sorted()
                   .toList()
             : List.of();
+        boolean fake =
+            fakeDemo.getIfAvailable() != null && fakeDemo.getObject().enabled();
+        boolean canManage = fake && authenticated && roles.contains("ADMIN");
         return ResponseEntity.ok()
             .cacheControl(CacheControl.noStore())
             .body(
@@ -63,8 +73,14 @@ public class ConsoleIdentityController {
                     authenticated,
                     authenticated ? auth.getName() : null,
                     roles,
-                    true,
-                    false
+                    !canManage,
+                    false,
+                    history
+                        ? "LOCAL_HISTORY"
+                        : fake
+                          ? "FAKE_DEMO"
+                          : "READ_ONLY",
+                    canManage
                 )
             );
     }
@@ -79,7 +95,9 @@ public class ConsoleIdentityController {
     @GetMapping("/api/v1/console/access")
     public Access access() {
         return new Access(
-            List.of("CONSOLE_READ", "ADMIN_PERMISSION_READ"),
+            fakeDemo.getIfAvailable()!=null && fakeDemo.getObject().enabled()
+                ? List.of("CONSOLE_READ", "ADMIN_PERMISSION_READ", "FAKE_EXPERIMENT_WRITE")
+                : List.of("CONSOLE_READ", "ADMIN_PERMISSION_READ"),
             false
         );
     }

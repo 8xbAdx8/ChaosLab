@@ -5,8 +5,12 @@ export const identitySchema = z.object({
   authenticated: z.boolean(),
   username: z.string().nullable(),
   roles: z.array(z.enum(["VIEWER", "ADMIN"])),
-  readOnly: z.literal(true),
+  readOnly: z.boolean(),
   realExecutionAllowed: z.literal(false),
+  executionMode: z
+    .enum(["READ_ONLY", "FAKE_DEMO", "LOCAL_HISTORY"])
+    .default("READ_ONLY"),
+  fakeExecutionAllowed: z.boolean().default(false),
 });
 export type Identity = z.infer<typeof identitySchema>;
 export const anonymous: Identity = {
@@ -16,7 +20,19 @@ export const anonymous: Identity = {
   roles: [],
   readOnly: true,
   realExecutionAllowed: false,
+  executionMode: "READ_ONLY",
+  fakeExecutionAllowed: false,
 };
+export function canManageFake(identity: Identity): boolean {
+  return (
+    identity.mode === "SESSION" &&
+    identity.authenticated &&
+    identity.roles.includes("ADMIN") &&
+    identity.executionMode === "FAKE_DEMO" &&
+    identity.fakeExecutionAllowed &&
+    !identity.readOnly
+  );
+}
 export const accessSchema = z.object({
   capabilities: z.array(z.string()),
   realExecutionAllowed: z.literal(false),

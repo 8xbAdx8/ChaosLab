@@ -155,6 +155,14 @@ public final class Experiment {
         );
     }
 
+    /** Only drafts are editable. Reuse optimistic versioning; validated intent is immutable. */
+    public Experiment revise(String name, String hypothesis, UUID targetId, UUID scenarioId,
+        int durationSeconds, String parameters) {
+        if (status != ExperimentStatus.CREATED) throw new IllegalStateException("draft required");
+        return new Experiment(id, name, hypothesis, targetId, scenarioId, durationSeconds,
+            parameters, ExperimentStatus.CREATED, version);
+    }
+
     public Experiment ready() {
         if (status == ExperimentStatus.READY) {
             return this;

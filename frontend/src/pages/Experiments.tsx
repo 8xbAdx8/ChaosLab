@@ -1,4 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { type Identity, anonymous, canManageFake } from "../api/auth";
+import { FakeExperimentActions } from "./FakeExperiments";
+import { activeExecution } from "../api/fake";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { z } from "zod";
 import { Search, ArrowUpRight } from "lucide-react";
@@ -90,7 +94,7 @@ export function ExecutionTable({ items }: { items: Execution[] }) {
     </div>
   );
 }
-export function Experiments() {
+export function Experiments({ identity = anonymous }: { identity?: Identity }) {
   const { search, page, update } = useFilters();
   const text = search.get("search") ?? "",
     status = search.get("status") ?? "";
@@ -108,7 +112,18 @@ export function Experiments() {
       <Heading
         eyebrow="EXPERIMENT LIBRARY"
         title="实验管理"
-        description="查看实验设计与执行历史。此工作区不提供创建、编辑或故障派发。"
+        action={
+          canManageFake(identity) ? (
+            <Link className="button" to="/experiments/new">
+              创建 Fake 实验
+            </Link>
+          ) : undefined
+        }
+        description={
+          identity.executionMode === "FAKE_DEMO"
+            ? "浏览持久化模拟实验。ADMIN 可创建与操作 Fake 实验，真实故障始终关闭。"
+            : "查看实验设计与执行历史。此工作区不提供创建、编辑或故障派发。"
+        }
       />
       <Panel>
         <div className="filters">
@@ -254,16 +269,38 @@ export function Executions() {
     </>
   );
 }
-export function ExperimentDetail() {
+export function ExperimentDetail({
+  identity = anonymous,
+}: {
+  identity?: Identity;
+}) {
+  const [openedAt] = useState(Date.now);
   const { id = "" } = useParams();
   const { page, update } = useFilters();
   const query = useQuery({
     queryKey: ["experiment", id],
     queryFn: ({ signal }) =>
       get(`/api/v1/console/experiments/${id}`, experimentSchema, signal),
+    refetchInterval: (q) =>
+      identity.executionMode === "FAKE_DEMO" &&
+      Date.now() - openedAt < 90000 &&
+      ["RUNNING", "DESTROYING"].includes(q.state.data?.status ?? "")
+        ? 2000
+        : false,
   });
-  const executions = useQuery({
+  const executions = useQuery<{
+    items: Execution[];
+    total: number;
+    page: number;
+    size: number;
+  }>({
     queryKey: ["executions", id, page],
+    refetchInterval: (q) =>
+      identity.executionMode === "FAKE_DEMO" &&
+      Date.now() - openedAt < 90000 &&
+      q.state.data?.items.some((e) => activeExecution(e.status))
+        ? 2000
+        : false,
     queryFn: ({ signal }) =>
       get(
         `/api/v1/console/executions${params({ experimentId: id, page, size: 10 })}`,
@@ -326,6 +363,7 @@ export function ExperimentDetail() {
                 查看此实验审计 →
               </Link>
             </Panel>
+            <FakeExperimentActions identity={identity} experiment={e} />
             <Panel title="关联执行" subtitle="按执行创建时间倒序">
               <QueryState query={executions}>
                 {(data) => (

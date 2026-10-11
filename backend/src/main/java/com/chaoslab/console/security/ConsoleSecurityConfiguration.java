@@ -20,7 +20,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
 
-/** Single trusted workspace, two fixed roles, session authentication; no execution permissions. */
+/** Session/RBAC boundary: readonly by default; exact ADMIN mutations only in verified local Fake mode. */
 @Configuration(proxyBeanMethods = false)
 public class ConsoleSecurityConfiguration {
 
@@ -117,8 +117,11 @@ public class ConsoleSecurityConfiguration {
 
     @Bean
     @Order(100)
-    SecurityFilterChain consoleSecurity(HttpSecurity http, Environment env)
-        throws Exception {
+    SecurityFilterChain consoleSecurity(
+        HttpSecurity http,
+        Environment env,
+        org.springframework.beans.factory.ObjectProvider<com.chaoslab.console.fakedemo.FakeDemoConfiguration> fakeDemo
+    ) throws Exception {
         boolean history = localHistory(env);
         http.httpBasic(b -> b.disable())
             .rememberMe(r -> r.disable())
@@ -176,6 +179,17 @@ public class ConsoleSecurityConfiguration {
                     .permitAll()
                     .requestMatchers(
                         r -> read(r) && "/api/v1/console/access".equals(path(r))
+                    )
+                    .hasRole("ADMIN")
+                    .requestMatchers(
+                        r ->
+                            loopback(r) &&
+                            fakeDemo.getIfAvailable() != null &&
+                            fakeDemo.getObject().enabled() &&
+                            com.chaoslab.console.fakedemo.FakeDemoConfiguration.mutation(
+                                r.getMethod(),
+                                path(r)
+                            )
                     )
                     .hasRole("ADMIN")
                     .requestMatchers(

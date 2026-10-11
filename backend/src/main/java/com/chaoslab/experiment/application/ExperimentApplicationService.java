@@ -103,6 +103,21 @@ public class ExperimentApplicationService {
     }
 
     @Transactional
+    public ExperimentDetails update(UUID id, long expectedVersion, CreateExperimentCommand command) {
+        var experiment = experimentRepository.findById(id).orElseThrow(() -> new ExperimentNotFoundException(id));
+        if (experiment.getVersion()!=expectedVersion)
+            throw new org.springframework.dao.OptimisticLockingFailureException("RESOURCE_VERSION_CONFLICT");
+        if (experiment.getStatus()!=ExperimentStatus.CREATED)
+            throw new ExperimentValidationRejectedException("EXPERIMENT_NOT_EDITABLE", "only CREATED drafts may be edited");
+        var target=targetRepository.findById(command.targetId()).orElseThrow(() -> new TargetNotFoundException(command.targetId()));
+        var scenario=faultScenarioRepository.findById(command.scenarioId()).orElseThrow(() -> new FaultScenarioNotFoundException(command.scenarioId()));
+        if (!target.isEnabled() || !scenario.isEnabled())
+            throw new ExperimentValidationRejectedException("DEFINITION_DISABLED", "target/scenario is disabled");
+        return ExperimentDetails.from(experimentRepository.update(experiment.revise(command.name(),command.hypothesis(),
+            command.targetId(),command.scenarioId(),command.durationSeconds(),command.parameters())));
+    }
+
+    @Transactional
     public ExperimentDetails validate(UUID experimentId) {
         Objects.requireNonNull(experimentId, "experimentId must not be null");
         Experiment experiment = experimentRepository.findById(experimentId)
@@ -111,6 +126,8 @@ public class ExperimentApplicationService {
                 || experiment.getStatus() == ExperimentStatus.READY) {
             return ExperimentDetails.from(experiment);
         }
+        if (experiment.getStatus()!=ExperimentStatus.CREATED)
+            throw new ExperimentValidationRejectedException("EXPERIMENT_NOT_VALIDATABLE", "only draft/validated definitions can be validated");
 
         Target target = targetRepository.findById(experiment.getTargetId())
                 .orElseThrow(() -> new TargetNotFoundException(experiment.getTargetId()));

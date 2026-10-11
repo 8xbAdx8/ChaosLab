@@ -34,7 +34,8 @@ import { Empty } from "./components/ui";
 import { HistoryPage } from "./pages/History";
 import { SessionBoundary } from "./components/SessionBoundary";
 import { AccessPage, PermissionDenied } from "./pages/Access";
-import type { Identity } from "./api/auth";
+import { type Identity, canManageFake } from "./api/auth";
+import { FakeExperimentForm, FakeBanner } from "./pages/FakeExperiments";
 
 const navigation = [
   { to: "/", text: "概览", icon: LayoutDashboard, end: true },
@@ -102,7 +103,9 @@ function ConsoleApp({
           <span className="status-dot" />
           {historyOnly
             ? "LOCAL HISTORY / NO LOGIN IDENTITY"
-            : "AUTHENTICATED READ-ONLY"}
+            : identity.executionMode === "FAKE_DEMO"
+              ? "FAKE DEMO / SIMULATED"
+              : "AUTHENTICATED READ-ONLY"}
         </div>
         <nav aria-label="主导航">
           {visibleNavigation.map((item) => (
@@ -123,7 +126,10 @@ function ConsoleApp({
         <div className="sidebar-footer">
           <LockKeyhole size={18} />
           <div>
-            观测，不改变现场<p>不开放故障执行或权限操作</p>
+            {identity.executionMode === "FAKE_DEMO"
+              ? "Fake 教学闭环"
+              : "观测，不改变现场"}
+            <p>真实执行权限始终关闭</p>
           </div>
         </div>
       </aside>
@@ -182,7 +188,7 @@ function ConsoleApp({
             )}
             <span className="read-only">
               <LockKeyhole size={13} />
-              只读控制台
+              {canManageFake(identity) ? "仅 Fake 操作" : "只读控制台"}
             </span>
             <button
               className="icon-button"
@@ -201,6 +207,8 @@ function ConsoleApp({
           </div>
         </div>
         <main id="main">
+          {identity.executionMode === "FAKE_DEMO" &&
+            !location.pathname.startsWith("/history/") && <FakeBanner />}
           {logoutError && (
             <div className="notice warning" role="alert">
               {logoutError}
@@ -213,7 +221,7 @@ function ConsoleApp({
                 historyOnly ? (
                   <Navigate to="/history/m1-core" replace />
                 ) : (
-                  <Dashboard />
+                  <Dashboard identity={identity} />
                 )
               }
             />
@@ -230,10 +238,27 @@ function ConsoleApp({
                     )
                   }
                 />
-                <Route path="/experiments" element={<Experiments />} />
-                <Route path="/experiments/:id" element={<ExperimentDetail />} />
+                <Route
+                  path="/experiments"
+                  element={<Experiments identity={identity} />}
+                />
+                <Route
+                  path="/experiments/new"
+                  element={<FakeExperimentForm identity={identity} />}
+                />
+                <Route
+                  path="/experiments/:id/edit"
+                  element={<FakeExperimentForm identity={identity} />}
+                />
+                <Route
+                  path="/experiments/:id"
+                  element={<ExperimentDetail identity={identity} />}
+                />
                 <Route path="/executions" element={<Executions />} />
-                <Route path="/executions/:id" element={<ExecutionDetail />} />
+                <Route
+                  path="/executions/:id"
+                  element={<ExecutionDetail identity={identity} />}
+                />
                 <Route path="/audit" element={<Audits />} />
                 <Route path="/reports" element={<Reports />} />
                 <Route path="/reports/:id" element={<ReportDetail />} />

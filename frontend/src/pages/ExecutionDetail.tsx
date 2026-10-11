@@ -1,4 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { type Identity, anonymous } from "../api/auth";
+import { activeExecution } from "../api/fake";
+import { FakeExecutionActions } from "./FakeExperiments";
 import { Link, useParams } from "react-router-dom";
 import { ShieldCheck, Info } from "lucide-react";
 import { get, params } from "../api/client";
@@ -7,6 +11,7 @@ import {
   evidenceSchema,
   pageOf,
   reportSchema,
+  auditSchema,
   type Evidence,
 } from "../api/contracts";
 import {
@@ -106,12 +111,23 @@ export function EvidenceView({ evidence: e }: { evidence: Evidence }) {
     </>
   );
 }
-export function ExecutionDetail() {
+export function ExecutionDetail({
+  identity = anonymous,
+}: {
+  identity?: Identity;
+}) {
+  const [openedAt] = useState(Date.now);
   const { id = "" } = useParams();
   const query = useQuery({
     queryKey: ["execution", id],
     queryFn: ({ signal }) =>
       get(`/api/v1/console/executions/${id}`, executionSchema, signal),
+    refetchInterval: (q) =>
+      identity.executionMode === "FAKE_DEMO" &&
+      Date.now() - openedAt < 90000 &&
+      activeExecution(q.state.data?.status ?? "")
+        ? 2000
+        : false,
   });
   const evidence = useQuery({
     queryKey: ["evidence", id],
@@ -124,6 +140,16 @@ export function ExecutionDetail() {
       get(
         `/api/v1/console/reports${params({ executionId: id, size: 20 })}`,
         pageOf(reportSchema),
+        signal,
+      ),
+  });
+  const audits = useQuery({
+    queryKey: ["execution-audits", id, query.data?.status],
+    enabled: !!query.data,
+    queryFn: ({ signal }) =>
+      get(
+        `/api/v1/console/audit-logs${params({ experimentId: query.data?.experimentId, size: 100 })}`,
+        pageOf(auditSchema),
         signal,
       ),
   });
@@ -141,6 +167,37 @@ export function ExecutionDetail() {
               description="执行状态、恢复证据和报告分别呈现。不会仅凭 SUCCESS 宣称恢复因果已经确认。"
               action={<Badge value={exec.status} />}
             />
+            {exec.engineExperimentId === `fake-${exec.id}` && (
+              <div className="notice simulation">
+                <strong>SIMULATED · Fake 执行结果</strong>
+                <p>
+                  SUCCESS 仅表示模拟生命周期完成，不是物理恢复
+                  VERIFIED。自动恢复最多约持续时间 + 扫描间隔。
+                </p>
+              </div>
+            )}
+            <FakeExecutionActions identity={identity} execution={exec} />
+            {exec.engineExperimentId === `fake-${exec.id}` && (
+              <Panel
+                title="模拟执行审计"
+                subtitle="真实持久化审计时间，不伪造状态转换或物理恢复证据"
+              >
+                <QueryState query={audits}>
+                  {(data) => (
+                    <ul className="checks-list">
+                      {data.items
+                        .filter((a) => a.executionId === exec.id)
+                        .map((a) => (
+                          <li key={a.id}>
+                            <Badge value={a.result} />
+                            {a.operation} · {date(a.occurredAt)} · {a.actor}
+                          </li>
+                        ))}
+                    </ul>
+                  )}
+                </QueryState>
+              </Panel>
+            )}
             <Panel title="执行身份">
               <Fields
                 values={[
@@ -204,9 +261,19 @@ export function ExecutionDetail() {
                 ))}
               </ol>
             </Panel>
-            <QueryState query={evidence}>
-              {(e) => <EvidenceView evidence={e} />}
-            </QueryState>
+            {exec.engineExperimentId === `fake-${exec.id}` ? (
+              <Panel title="模拟证据边界">
+                没有真实 CPU、Native UID、Residual/Health 或 Recovery Gate
+                物理证据。所有未采集项保持 UNKNOWN；请查看模拟审计与报告。
+                <Link to={`/audit?experimentId=${exec.experimentId}`}>
+                  查看审计事件
+                </Link>
+              </Panel>
+            ) : (
+              <QueryState query={evidence}>
+                {(e) => <EvidenceView evidence={e} />}
+              </QueryState>
+            )}
             <Panel
               title="关联报告"
               subtitle="报告结论保持原始独立语义，不被执行状态覆盖"

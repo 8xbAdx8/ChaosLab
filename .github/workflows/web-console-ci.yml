@@ -24,7 +24,7 @@ jobs:
           cache-dependency-path: backend/pom.xml
       - name: Generate actual Spring REST contracts using isolated test database
         working-directory: backend
-        run: bash ./mvnw --batch-mode "-Dtest=ConsoleReadApiTests,HistoryEvidenceReaderTests,HistoryEvidenceApiTests,ConsoleAuthenticationTests,ConsoleSecurityConfigurationTests,ConsoleSessionHttpTests" test
+        run: bash ./mvnw --batch-mode "-Dtest=ConsoleReadApiTests,HistoryEvidenceReaderTests,HistoryEvidenceApiTests,ConsoleAuthenticationTests,ConsoleSecurityConfigurationTests,ConsoleSessionHttpTests,FakeDemoApiTests,FakeDemoSettingsTests" test
       - uses: actions/setup-node@v6
         with:
           node-version: '24'

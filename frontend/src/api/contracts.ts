@@ -19,6 +19,10 @@ export const experimentStates = [
   "ROLLBACK_FAILED",
 ] as const;
 export const operations = [
+  "CREATE_EXPERIMENT",
+  "EDIT_EXPERIMENT",
+  "VALIDATE_EXPERIMENT",
+  "DRY_RUN_EXPERIMENT",
   "START_EXPERIMENT",
   "DESTROY_EXPERIMENT",
   "AUTOMATIC_RECOVERY",

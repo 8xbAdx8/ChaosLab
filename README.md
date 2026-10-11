@@ -1,14 +1,18 @@
 # ChaosLab
 
-ChaosLab 是一个教学型混沌工程平台，提供 Spring Boot 后端与 [React 只读 Web 控制台](frontend/README.md)。Web 已加入 [服务端会话登录与 VIEWER/ADMIN 只读权限](docs/15-m3-console-auth.md)，没有默认密码；两种角色都不开放故障执行。受控 M1 Core 已通过真实 CPU 验收，但真实执行仍需要独立审批和固定特权边界。M2 本地历史演示明确为非登录身份，不应对公网开放。
+ChaosLab 是一个教学型混沌工程平台，提供 Spring Boot 后端与 [React Web 控制台](frontend/README.md)。Web 已加入 [服务端会话登录与 VIEWER/ADMIN 权限](docs/15-m3-console-auth.md)，没有默认密码。[M4 独立本地 Fake 演示](docs/16-m4-fake-demo.md) 允许 ADMIN 完成持久化模拟实验闭环；VIEWER 和普通 console 仍只读，两种角色都不能执行真实故障。受控 M1 Core 已通过真实 CPU 验收，但真实执行仍需要独立审批和固定特权边界。M2 本地历史演示明确为非登录身份，不应对公网开放。
 
 最新进展：M1 Core 的生产恢复 Gate 已验证物理恢复，恢复来源仍为 UNKNOWN，见[原始验收证据](docs/evidence/m1-core-real-20261010.json)。R1/R2/R3 历史结论及证据不改写。以下早期后端说明保留作为演进背景；最新 Web 能力与启动方式以 [frontend/README.md](frontend/README.md) 为准，执行器现状以 [M1 Core 验收契约](docs/11-m1-core-field-acceptance.md)为准。
 
 ## Web 管理控制台
 
 普通控制台先按 [M3 启动说明](docs/15-m3-console-auth.md) 配置本机 BCrypt 账号和原 SELECT-only 数据库用户，
-使用 console profile 与同源代理，前端访问 `/login`。非 console 模式也不能通过 HTTP 调用旧写接口。
+使用 console profile 与同源代理，前端访问 `/login`。除精确受控的本地 fake-demo 外，非 console 模式也不能通过 HTTP 调用旧写接口。
 以下早期后端 API 示例保留作为学习资料，不表示当前公开这些写操作。
+
+**想亲自操作一次安全的 Fake 实验？** 按 [M4 两终端启动与操作说明](docs/16-m4-fake-demo.md)：
+普通用户启动 `fake-demo` 后端与 `npm run dev:fake`，ADMIN 登录后创建→校验→启动→停止/自动恢复→报告。
+只使用独立本地 H2 文件数据库，不需要 Docker/VM/root；所有模拟结果标记 SIMULATED。
 
 **只想展示已经完成的真实 M1 Core？** 按 [M2 本地历史演示](docs/14-m2-history-demo.md)
 启动独立历史后端和 `npm run dev:history`，打开 `/history/m1-core`。
