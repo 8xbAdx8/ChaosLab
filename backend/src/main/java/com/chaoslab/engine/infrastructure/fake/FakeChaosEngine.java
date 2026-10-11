@@ -23,6 +23,13 @@ public class FakeChaosEngine implements ChaosEngine {
     private final ConcurrentMap<EngineExperimentId, EngineStatus> experiments =
             new ConcurrentHashMap<>();
 
+    /** FAKE_DEMO startup only: restore volatile memory from a committed RUNNING row.
+     * Not a create request or physical evidence. Never used for uncertain intent. */
+    public void restoreRunningSimulation(java.util.UUID executionId) {
+        Objects.requireNonNull(executionId);
+        experiments.putIfAbsent(new EngineExperimentId(ID_PREFIX+executionId),EngineStatus.RUNNING);
+    }
+
     @Override
     public boolean simulated() {
         return true;

@@ -12,6 +12,7 @@ import java.util.Map;
 
 /** No HTTP configuration, no tool discovery or fallback, no process launched during startup. */
 @Configuration(proxyBeanMethods = false)
+@org.springframework.context.annotation.Profile("!fake-demo")
 @ConditionalOnProperty(name = "chaoslab.engine", havingValue = "blade")
 public class BladeEngineConfiguration {
     @Bean

@@ -21,6 +21,6 @@ public class RequestAuditContextProvider implements AuditContextProvider {
             return new AuditContext(SYSTEM_ACTOR, null);
         }
         HttpServletRequest request = servletAttributes.getRequest();
-        return new AuditContext(ANONYMOUS_ACTOR, request.getRemoteAddr());
+        return new AuditContext(request.getUserPrincipal()==null ? ANONYMOUS_ACTOR : request.getUserPrincipal().getName(), request.getRemoteAddr());
     }
 }
