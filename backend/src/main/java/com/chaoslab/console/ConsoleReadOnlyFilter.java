@@ -25,6 +25,9 @@ public class ConsoleReadOnlyFilter extends OncePerRequestFilter {
         "/api/v1/console/audit-logs",
         "/api/v1/console/reports",
         "/api/v1/console/history/m1-core",
+        "/api/v1/console/access",
+        "/api/v1/auth/me",
+        "/api/v1/auth/csrf",
         "/api/v1/targets",
         "/api/v1/scenarios",
         "/actuator/health"
@@ -38,6 +41,14 @@ public class ConsoleReadOnlyFilter extends OncePerRequestFilter {
         "/api/v1/console/executions/" + UUID_PATH + "/evidence"
     );
 
+    public static boolean isReadPath(String path) {
+        return (
+            READ_PATHS.contains(path) ||
+            DETAIL_PATH.matcher(path).matches() ||
+            EVIDENCE_PATH.matcher(path).matches()
+        );
+    }
+
     @Override
     protected void doFilterInternal(
         HttpServletRequest request,
@@ -49,10 +60,7 @@ public class ConsoleReadOnlyFilter extends OncePerRequestFilter {
         String path = request
             .getRequestURI()
             .substring(request.getContextPath().length());
-        boolean allowedPath =
-            READ_PATHS.contains(path) ||
-            DETAIL_PATH.matcher(path).matches() ||
-            EVIDENCE_PATH.matcher(path).matches();
+        boolean allowedPath = isReadPath(path);
         if (!allowedPath) {
             deny(response);
             return;

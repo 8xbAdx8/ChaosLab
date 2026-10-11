@@ -22,6 +22,8 @@ import {
   Menu,
   X,
   Archive,
+  LogOut,
+  ShieldCheck,
 } from "lucide-react";
 import { Dashboard } from "./pages/Dashboard";
 import { Experiments, ExperimentDetail, Executions } from "./pages/Experiments";
@@ -30,6 +32,9 @@ import { Audits } from "./pages/Audits";
 import { Reports, ReportDetail } from "./pages/Reports";
 import { Empty } from "./components/ui";
 import { HistoryPage } from "./pages/History";
+import { SessionBoundary } from "./components/SessionBoundary";
+import { AccessPage, PermissionDenied } from "./pages/Access";
+import type { Identity } from "./api/auth";
 
 const navigation = [
   { to: "/", text: "概览", icon: LayoutDashboard, end: true },
@@ -38,13 +43,31 @@ const navigation = [
   { to: "/audit", text: "审计日志", icon: ScrollText },
   { to: "/reports", text: "实验报告", icon: FileBarChart },
   { to: "/history/m1-core", text: "真实历史 · M1 Core", icon: Archive },
+  { to: "/access", text: "权限信息", icon: ShieldCheck },
 ];
 export function App() {
+  return (
+    <SessionBoundary>
+      {(identity, logout) => <ConsoleApp identity={identity} logout={logout} />}
+    </SessionBoundary>
+  );
+}
+function ConsoleApp({
+  identity,
+  logout,
+}: {
+  identity: Identity;
+  logout: () => Promise<void>;
+}) {
+  const [logoutPending, setLogoutPending] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
   // Dedicated local archive launcher has no business DB APIs. Normal console stays unchanged.
-  const historyOnly = import.meta.env.MODE === "history";
+  const historyOnly = identity.mode === "LOCAL_HISTORY";
   const visibleNavigation = historyOnly
     ? navigation.filter((n) => n.to === "/history/m1-core")
-    : navigation;
+    : navigation.filter(
+        (n) => n.to !== "/access" || identity.roles.includes("ADMIN"),
+      );
   const queryClient = useQueryClient();
   const [theme, setTheme] = useState(() => {
     const stored = localStorage.getItem("chaoslab-theme");
@@ -77,7 +100,9 @@ export function App() {
         </Link>
         <div className="workspace-label">
           <span className="status-dot" />
-          READ-ONLY WORKSPACE
+          {historyOnly
+            ? "LOCAL HISTORY / NO LOGIN IDENTITY"
+            : "AUTHENTICATED READ-ONLY"}
         </div>
         <nav aria-label="主导航">
           {visibleNavigation.map((item) => (
@@ -130,6 +155,31 @@ export function App() {
             </span>
           </div>
           <div className="topbar-actions">
+            <span className="session-user">
+              {historyOnly
+                ? "本地历史演示 · 非登录身份"
+                : `${identity.username ?? ""} · ${identity.roles.join(" / ")}`}
+            </span>
+            {!historyOnly && (
+              <button
+                className="icon-button"
+                aria-label="退出登录"
+                disabled={logoutPending}
+                onClick={() => {
+                  setLogoutPending(true);
+                  setLogoutError(null);
+                  void logout()
+                    .catch((e) =>
+                      setLogoutError(
+                        e instanceof Error ? e.message : "退出失败",
+                      ),
+                    )
+                    .finally(() => setLogoutPending(false));
+                }}
+              >
+                <LogOut size={17} />
+              </button>
+            )}
             <span className="read-only">
               <LockKeyhole size={13} />
               只读控制台
@@ -151,6 +201,11 @@ export function App() {
           </div>
         </div>
         <main id="main">
+          {logoutError && (
+            <div className="notice warning" role="alert">
+              {logoutError}
+            </div>
+          )}
           <Routes>
             <Route
               path="/"
@@ -165,6 +220,16 @@ export function App() {
             <Route path="/history/m1-core" element={<HistoryPage />} />
             {!historyOnly && (
               <>
+                <Route
+                  path="/access"
+                  element={
+                    identity.roles.includes("ADMIN") ? (
+                      <AccessPage />
+                    ) : (
+                      <PermissionDenied />
+                    )
+                  }
+                />
                 <Route path="/experiments" element={<Experiments />} />
                 <Route path="/experiments/:id" element={<ExperimentDetail />} />
                 <Route path="/executions" element={<Executions />} />

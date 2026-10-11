@@ -26,6 +26,17 @@ spring:
 
 server:
   shutdown: graceful
+  tomcat:
+    max-http-form-post-size: 4KB
+  servlet:
+    session:
+      timeout: 30m
+      tracking-modes: cookie
+      cookie:
+        name: CHAOSLAB_SESSION
+        http-only: true
+        same-site: lax
+        secure: ${CHAOSLAB_SESSION_SECURE:true}
 
 management:
   endpoints:
@@ -37,6 +48,13 @@ management:
       show-details: never
 
 chaoslab:
+  security:
+    viewer:
+      username: ${CHAOSLAB_VIEWER_USERNAME:}
+      password-hash: ${CHAOSLAB_VIEWER_PASSWORD_HASH:}
+    admin:
+      username: ${CHAOSLAB_ADMIN_USERNAME:}
+      password-hash: ${CHAOSLAB_ADMIN_PASSWORD_HASH:}
   demo:
     binding-script: ${CHAOSLAB_DEMO_BINDING_SCRIPT:}
   report:

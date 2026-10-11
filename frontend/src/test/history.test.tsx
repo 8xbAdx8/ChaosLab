@@ -156,6 +156,23 @@ describe.runIf(existsSync(path))(
       expect(screen.getByText("未记录恢复观察回合")).toBeInTheDocument();
     });
     function app() {
+      const original = globalThis.fetch;
+      vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
+        String(input) === "/api/v1/auth/me"
+          ? Promise.resolve(
+              new Response(
+                JSON.stringify({
+                  mode: "LOCAL_HISTORY",
+                  authenticated: false,
+                  username: null,
+                  roles: [],
+                  readOnly: true,
+                  realExecutionAllowed: false,
+                }),
+              ),
+            )
+          : original(input, init),
+      );
       window.matchMedia = vi.fn().mockReturnValue({ matches: false });
       return render(
         <QueryClientProvider

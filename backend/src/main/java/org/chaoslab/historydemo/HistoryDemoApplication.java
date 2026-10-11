@@ -3,6 +3,8 @@ package org.chaoslab.historydemo;
 import com.chaoslab.console.ConsoleReadOnlyFilter;
 import com.chaoslab.console.history.HistoryEvidenceController;
 import com.chaoslab.console.history.HistoryEvidenceReader;
+import com.chaoslab.console.security.ConsoleIdentityController;
+import com.chaoslab.console.security.ConsoleSecurityConfiguration;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.data.jpa.autoconfigure.DataJpaRepositoriesAutoConfiguration;
@@ -26,6 +28,8 @@ import org.springframework.context.annotation.Import;
     HistoryEvidenceController.class,
     HistoryEvidenceReader.class,
     ConsoleReadOnlyFilter.class,
+    ConsoleSecurityConfiguration.class,
+    ConsoleIdentityController.class,
 })
 public class HistoryDemoApplication {
 

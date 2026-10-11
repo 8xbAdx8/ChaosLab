@@ -27,6 +27,8 @@ jobs:
       - name: Test backend
         working-directory: backend
         run: bash ./mvnw --batch-mode verify
+      - name: Production artifact contains authentication but no test bypass
+        run: python3 backend/scripts/check_auth_artifact.py
       - name: Test demo services
         run: bash ./backend/mvnw -f demo-services/pom.xml --batch-mode verify
       - name: Test observation scripts and dashboard

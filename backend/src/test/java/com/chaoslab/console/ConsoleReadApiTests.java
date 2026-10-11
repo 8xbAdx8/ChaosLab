@@ -255,7 +255,15 @@ class ConsoleReadApiTests {
                 org.springframework.http.HttpMethod.HEAD,
                 org.springframework.http.HttpMethod.OPTIONS,
             }) {
-                mvc.perform(request(method, URI.create(path)))
+                var result = mvc.perform(request(method, URI.create(path)));
+                if (
+                    path.contains(";") ||
+                    path.contains("%") ||
+                    path.contains("..") ||
+                    path.contains("//")
+                ) result.andExpect(status().is4xxClientError());
+                // Security firewall may reject before the servlet filter.
+                else result
                     .andExpect(status().isForbidden())
                     .andExpect(jsonPath("$.code").value("CONSOLE_READ_ONLY"));
             }
@@ -348,7 +356,9 @@ class ConsoleReadApiTests {
                 org.springframework.http.HttpMethod.TRACE,
             })
                 mvc.perform(request(method, path)).andExpect(
-                    status().isForbidden()
+                    method == org.springframework.http.HttpMethod.TRACE
+                        ? status().isBadRequest()
+                        : status().isForbidden()
                 );
         }
     }

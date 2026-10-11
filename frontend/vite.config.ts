@@ -5,6 +5,8 @@ import tailwindcss from "@tailwindcss/vite";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 export function allowedProxyRequest(method: string, path: string): boolean {
+  if (method === "POST")
+    return ["/api/v1/auth/login", "/api/v1/auth/logout"].includes(path);
   return (
     ["GET", "HEAD"].includes(method) &&
     (/^\/api\/v1\/console\/(overview|experiments|executions|audit-logs|reports)(\/[0-9a-f-]{36})?(\/evidence)?$/.test(
@@ -15,6 +17,9 @@ export function allowedProxyRequest(method: string, path: string): boolean {
         "/api/v1/scenarios",
         "/actuator/health",
         "/api/v1/console/history/m1-core",
+        "/api/v1/console/access",
+        "/api/v1/auth/me",
+        "/api/v1/auth/csrf",
       ].includes(path))
   );
 }

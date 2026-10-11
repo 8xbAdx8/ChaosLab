@@ -35,6 +35,7 @@ describe("read-only transport and server proxy guard", () => {
     ).toEqual({ status: "UP" });
     expect(fetch).toHaveBeenCalledWith("/actuator/health", {
       method: "GET",
+      credentials: "same-origin",
       signal,
       headers: { Accept: "application/json" },
     });
