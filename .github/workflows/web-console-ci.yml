@@ -36,6 +36,9 @@ jobs:
       - name: Strict TypeScript and production build
         working-directory: frontend
         run: npm run build
+      - name: Standalone archive mode build
+        working-directory: frontend
+        run: npm run build:history
       - name: Lint
         working-directory: frontend
         run: npm run lint

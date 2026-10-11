@@ -12,7 +12,12 @@ export function isReadPath(path: string): boolean {
     /^\/api\/v1\/console\/(overview|experiments|executions|audit-logs|reports)(\/[0-9a-f-]{36})?(\/evidence)?$/.test(
       path,
     ) ||
-    ["/api/v1/targets", "/api/v1/scenarios", "/actuator/health"].includes(path)
+    [
+      "/api/v1/targets",
+      "/api/v1/scenarios",
+      "/actuator/health",
+      "/api/v1/console/history/m1-core",
+    ].includes(path)
   );
 }
 export async function get<T>(

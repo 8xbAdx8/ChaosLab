@@ -6,6 +6,12 @@ ChaosLab 是一个教学型混沌工程平台，提供 Spring Boot 后端与 [Re
 
 ## Web 管理控制台
 
+**只想展示已经完成的真实 M1 Core？** 按 [M2 本地历史演示](docs/14-m2-history-demo.md)
+启动独立历史后端和 `npm run dev:history`，打开 `/history/m1-core`。
+它校验 Git 归档 SHA 后只读展示 0% → 10.91% → 0%、恢复观察、审计与 UNKNOWN 来源；
+不需要数据库、Docker、ChaosBlade 或 VM，不导入/修改 R1/R2/R3。
+以下普通控制台仍使用专用本地数据库。
+
 ```bash
 cd frontend
 npm ci

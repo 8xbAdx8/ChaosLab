@@ -3,6 +3,14 @@
 第一版只读控制台。React + TypeScript（strict）+ Vite + Tailwind CSS + React Router + TanStack Query + ECharts。
 没有 create/destroy、授权生成、命令执行、实验修改或报告生成入口。不连接 VM，不自动导入历史证据。
 
+## 直接查看真实 M1 Core 历史（无需数据库）
+
+使用独立 SHA 校验只读证据投影，不导入/伪造业务表。
+按 [M2 本地启动说明](../docs/14-m2-history-demo.md) 启动历史后端，再运行
+`npm ci`、`npm run dev:history`，打开 `http://127.0.0.1:5173/history/m1-core`。
+页面明确为「历史真实实验 · 已结束 · 非实时监控」，展示真实 CPU 三阶段、恢复回合、
+审计与来源。无需 MySQL、Docker、root wrapper 或 VM；普通数据库控制台的启动方式仍如下。
+
 ## 启动前端
 
 Node.js 22.12+（推荐 24 LTS）。在仓库的 `frontend` 目录：
@@ -52,8 +60,10 @@ bash backend/mvnw -f backend/pom.xml spring-boot:run -Dspring-boot.run.profiles=
 | 公开审计 | `/api/v1/console/audit-logs` |
 | 已存报告 | `/api/v1/console/reports`, `/api/v1/console/reports/{id}` |
 | 目标/场景名称 | 既有 `/api/v1/targets`, `/api/v1/scenarios` |
+| 独立 M1 Core 归档 | `/api/v1/console/history/m1-core`（固定 SHA 只读投影，不查业务 DB） |
 
-新接口只是有界 SELECT 投影；没有调用 ChaosEngine、wrapper 或采样进程。
+业务数据库接口只是有界 SELECT 投影；独立历史接口读取已校验打包资源。
+二者均没有调用 ChaosEngine、wrapper 或采样进程。
 报告读取复用原有 ownership-aware report service，不改写报告结论。
 分页从 0 开始，默认20，最大100。实验支持 name search/status，执行支持 experimentId/status；
 审计支持 experimentId/operation/result/from/to（ISO Instant，UI 将本地时间转 UTC）；报告支持 executionId。

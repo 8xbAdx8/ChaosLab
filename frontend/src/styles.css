@@ -905,3 +905,111 @@ pre {
     transition: none;
   }
 }
+.history-seal {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 9px 12px;
+  color: var(--accent);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.history-kpi-value {
+  margin: 16px 0 10px;
+}
+.history-kpi-value .badge {
+  font-size: 14px;
+}
+.history-trace {
+  margin-top: 16px;
+}
+.history-trace dl {
+  display: grid;
+  gap: 14px;
+  margin: 12px 0;
+}
+.history-trace dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+.history-trace dt code {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.history-trace dd {
+  margin: 4px 0 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.history-trace blockquote {
+  border-left: 2px solid var(--accent);
+  margin: 12px 0;
+  padding: 10px;
+  background: var(--bg);
+  font-size: 12px;
+}
+.history-timeline {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 30px;
+}
+.history-timeline li {
+  display: flex;
+  gap: 14px;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--border);
+}
+.history-timeline li > div {
+  min-width: 0;
+}
+.history-timeline .recorded .timeline-point {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.history-timeline strong {
+  font-size: 12px;
+  font-weight: 550;
+}
+.history-timeline time {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin: 4px 0;
+}
+.history-timeline code {
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.history-source {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px;
+  margin-bottom: 16px;
+  min-width: 0;
+}
+.history-source a {
+  overflow-wrap: anywhere;
+  margin-bottom: 14px;
+}
+.history-source .fields {
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+@media (max-width: 760px) {
+  .history-timeline {
+    grid-template-columns: 1fr;
+  }
+  .history-seal {
+    white-space: normal;
+    max-width: 130px;
+    flex-shrink: 0;
+  }
+  .history-kpi-value .badge {
+    font-size: 12px;
+  }
+}
