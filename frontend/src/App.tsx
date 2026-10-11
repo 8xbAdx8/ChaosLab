@@ -207,7 +207,8 @@ function ConsoleApp({
           </div>
         </div>
         <main id="main">
-          {identity.executionMode === "FAKE_DEMO" && <FakeBanner />}
+          {identity.executionMode === "FAKE_DEMO" &&
+            !location.pathname.startsWith("/history/") && <FakeBanner />}
           {logoutError && (
             <div className="notice warning" role="alert">
               {logoutError}

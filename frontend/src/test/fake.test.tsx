@@ -282,6 +282,32 @@ describe("Fake-only UI and write transport", () => {
 describe.runIf(process.env.CONSOLE_CONTRACT_DIR)(
   "actual Spring Fake lifecycle contracts",
   () => {
+    it("keeps archived real M1 distinct from simulated experiments in Fake mode", async () => {
+      const history = JSON.parse(
+        readFileSync(
+          resolve(process.env.CONSOLE_CONTRACT_DIR!, "history-contract.json"),
+          "utf8",
+        ),
+      );
+      vi.stubGlobal(
+        "fetch",
+        vi
+          .fn()
+          .mockImplementation(
+            async (path: string) =>
+              new Response(
+                JSON.stringify(path === "/api/v1/auth/me" ? admin : history),
+              ),
+          ),
+      );
+      mount(<App />, "/history/m1-core");
+      expect(
+        await screen.findByText("历史真实实验 · 已结束 · 非实时监控"),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText("FAKE 模拟实验 · 不执行真实故障"),
+      ).not.toBeInTheDocument();
+    });
     it("maps durable definition/executions/report without invented physical verification", () => {
       const raw = JSON.parse(
         readFileSync(
