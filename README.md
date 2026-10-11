@@ -25,6 +25,10 @@ $env:PATH="$env:JAVA_HOME/bin;$env:PATH"
 .\scripts\start-fake.ps1
 ```
 
+如果 Windows 提示脚本执行策略阻止，可在已审阅的 Git checkout 使用仅本次进程的入口：
+`powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File .\scripts\start-fake.ps1`。
+不修改系统全局策略；组织策略仍优先，受管机器请遵循管理员要求。
+
 Linux / macOS：
 
 ```bash

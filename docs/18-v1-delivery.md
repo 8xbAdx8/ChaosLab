@@ -32,6 +32,12 @@ bash scripts/start-fake.sh
 ```
 
 第一次会检查环境、用 Maven Wrapper 构建当前源码、`npm ci`，然后引导账号配置。
+
+Windows 若默认脚本执行策略阻止 `.ps1`，在审阅源码后可用：
+`powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File .\scripts\start-fake.ps1`。
+历史、doctor、stop 可替换同一命令中的脚本名。这仅作用于新启动的 PowerShell 进程，
+不写系统策略，不能越过组织 Group Policy；不要使用全局 `Set-ExecutionPolicy Unrestricted`。
+见 [PowerShell 执行策略与 Process scope](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_execution_policies)。
 没有默认 ADMIN、VIEWER 或密码。账号名由你选择：1–64 位字母/数字/点/下划线/横线。
 已有 Java `PasswordHashTool` 会两次读取**不回显**的密码（至少 12 字符，UTF-8 最多 72 字节），
 输出 BCrypt hash。将 hash 粘贴回脚本提示，**不要粘贴明文密码**。可再配置独立 VIEWER。
