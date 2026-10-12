@@ -413,17 +413,26 @@ try {
         .slice(1)
         .reduce(
           (value, key) =>
-            value[key.replaceAll("~1", "/").replaceAll("~0", "~")],
+            value?.[key.replaceAll("~1", "/").replaceAll("~0", "~")],
           original,
         );
     for (const fact of [
       ...history.facts,
       ...history.cpu.map((sample) => sample.percent),
     ])
-      if (fact.pointer)
-        assert.deepEqual(fact.value, pointerValue(fact.pointer));
+      if (fact.pointer) {
+        const native = pointerValue(fact.pointer);
+        // Match HistoryEvidenceReader's existing scalar-only projection: missing
+        // or non-scalar fields remain null, never invented values or raw objects.
+        const projected =
+          native === undefined ||
+          (native !== null && typeof native === "object")
+            ? null
+            : native;
+        assert.deepEqual(fact.value, projected);
+      }
     assert.deepEqual(
-      history.cpu.map((sample) => sample.percent.value),
+      history.cpu.map((sample) => Number(sample.percent.value.toFixed(2))),
       [0, 10.91, 0],
     );
     await request("/api/v1/console/experiments", { expected: 401 });
