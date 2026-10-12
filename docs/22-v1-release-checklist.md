@@ -68,7 +68,7 @@
 - 新 Java sentinel 首次执行发生在增加 fixture 后、重新编译前；它已提前 ClassNotFound，停止存活断言因此正确失败。新增编译前置检查；重新 build 后 sentinel存活断言通过。不是把进程死亡当正常。
 - 新历史字段断言起初将 missing 的JSON projection错认作JS undefined；源码原契约明确 missing/非标量=null。修正新增断言忠实检查原契约，不改 reader或原数据。
 - during原始精度为10.911216516130064，10.91只是显示四舍五入；新增测试先逐字段对照raw pointer，再核对2位显示，不能要求原始值被改为10.91。
-- 候选代码 `aaaca103f16a251bea96672c6bf52a39113f0bef`：[Java](https://github.com/8xbAdx8/ChaosLab/actions/runs/38201544623)、[Web](https://github.com/8xbAdx8/ChaosLab/actions/runs/38201544692)、[Delivery](https://github.com/8xbAdx8/ChaosLab/actions/runs/38201544702) Windows/Ubuntu全PASS，含原root harmless job。Ubuntu backend 421/0失败/0跳过，Node19/0失败/0跳过；Windows backend421/0失败/1跳过，Node19/17通过/2跳过。最终PR HEAD以Checks实时结果为准。
+- 候选代码 `aaaca103f16a251bea96672c6bf52a39113f0bef`：[Java](https://github.com/8xbAdx8/ChaosLab/actions/runs/38201544623)、[Web](https://github.com/8xbAdx8/ChaosLab/actions/runs/38201544692)、[Delivery](https://github.com/8xbAdx8/ChaosLab/actions/runs/38201544702) Windows/Ubuntu全PASS，含原root harmless job。Ubuntu backend 421/0失败/0跳过，Node19/0失败/0跳过；Windows hosted backend421/0失败/0跳过，Node19/17通过/2跳过。本机Windows backend的1个symlink跳过不能混入有该能力的hosted runner统计。最终PR HEAD以Checks实时结果为准。
 - 首个发布代码提交 `3690522` 的 [Delivery CI](https://github.com/8xbAdx8/ChaosLab/actions/runs/38200706464) Windows/Ubuntu均因新增null/undefined预期错误失败，不是随机红灯；修正原reader的scalar/null映射并验证后完整重跑通过。未删除测试、未放宽已有安全断言，没有尚未定位的偶发失败。
 - 既有 M6 夹具/审计时序修订见 docs/18，本轮不再放宽它们。Package启动中的`-DskipTests`仅避免重复verify；以上统计来自独立完整verify，不把package打印的“Tests skipped”算额外漏测。
 
@@ -76,7 +76,7 @@
 
 最终验收 Experiment `4d1d6c70-44c7-4224-9f67-67612aef036d`、Execution `9c5b8016-9a50-4a31-842b-156297998778`、Report `696d4c9b-eccc-4c86-81c5-002630baf79c`；立即停止后原记录可读回。
 JDK24本机产物 `chaoslab-backend-1.0.0-rc1.jar` SHA256 `7d73927b690a2dbdb0cf62bf7285dc983cc1ebc6cc6425471b623d9b1bfdc3b6`。这是本机构建校验，不宣称跨平台字节重现或已发布资产；Java21 CI产物另验。
-本輪只在新clone生成随机测试配置/数据库；它们原位置保留且服务已停，其他M1–M6工作区及个人数据未删除。测试账号不得作为真人默认账号。
+本轮只在新clone生成随机测试配置/数据库；它们原位置保留且服务已停，其他M1–M6工作区及个人数据未删除。测试账号不得作为真人默认账号。
 
 ## 不变的历史证据
 
