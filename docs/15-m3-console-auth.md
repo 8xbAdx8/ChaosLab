@@ -80,7 +80,7 @@ console profile 关闭 Flyway 和自动恢复；不要连接现场数据库。�
 在交互终端生成 BCrypt hash；密码不回显、不能放 argv，要求至少12字符且最多72 UTF8字节：
 
 ```powershell
-java -Dloader.main=com.chaoslab.console.security.PasswordHashTool -cp backend/target/chaoslab-backend-0.0.1-SNAPSHOT.jar org.springframework.boot.loader.launch.PropertiesLauncher
+java -Dloader.main=com.chaoslab.console.security.PasswordHashTool -cp backend/target/chaoslab-backend-1.0.0-rc1.jar org.springframework.boot.loader.launch.PropertiesLauncher
 ```
 
 为 VIEWER 与 ADMIN 分别生成不同密码/hash。管理员在本机受信配置中设置：

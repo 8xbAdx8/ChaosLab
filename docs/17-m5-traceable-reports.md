@@ -87,7 +87,7 @@ Prometheus 只能配置受信 loopback HTTP 根 URL（沿用现有约束）；�
 .\backend\mvnw.cmd -f backend/pom.xml verify
 # 先按 M4 设置 CHAOSLAB_ADMIN_USERNAME / CHAOSLAB_ADMIN_PASSWORD_HASH
 cd backend
-java -jar target/chaoslab-backend-0.0.1-SNAPSHOT.jar --spring.profiles.active=fake-demo
+java -jar target/chaoslab-backend-1.0.0-rc1.jar --spring.profiles.active=fake-demo
 ```
 
 ```powershell
