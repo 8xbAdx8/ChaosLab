@@ -40,7 +40,7 @@ public final class FakeDemoBrowserFixture {
             "--chaoslab.fake-demo.directory=" + dir,
             "--spring.datasource.url=jdbc:h2:file:" +
                 dir +
-                "/chaoslab_fake_demo;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE",
+                "/chaoslab_fake_demo;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE;WRITE_DELAY=0",
             "--chaoslab.security.admin.username=" + FakeDemoApiTests.ADMIN,
             "--chaoslab.security.admin.password-hash=" + hash,
             "--chaoslab.security.viewer.username=" + FakeDemoApiTests.VIEWER,

@@ -1,2 +1,5 @@
 # Historical acceptance artifacts must retain their exact archived bytes on every OS.
 docs/evidence/*.json -text
+# Cross-platform launchers must not acquire CRLF in Windows checkouts.
+scripts/*.sh text eol=lf
+scripts/*.mjs text eol=lf

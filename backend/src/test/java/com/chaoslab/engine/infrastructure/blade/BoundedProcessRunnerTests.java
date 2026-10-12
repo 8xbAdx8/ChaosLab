@@ -36,7 +36,7 @@ class BoundedProcessRunnerTests {
 
     @Test
     void passesLiteralArgumentsAndCapturesSeparateStreams() throws Exception {
-        var result = runner(5, 4096).run(args("echo", "space value", "$(echo injected);&|"), () -> false);
+        var result = foregroundFixtureRunner().run(args("echo", "space value", "$(echo injected);&|"), () -> false);
         assertThat(result.outcome()).isEqualTo(EXITED);
         assertThat(result.exitCode()).isZero();
         assertThat(result.stdout()).contains("space value|$(echo injected);&|");
@@ -46,14 +46,14 @@ class BoundedProcessRunnerTests {
 
     @Test
     void fixesDirectoryClosesStdinAndUsesExplicitEnvironment() throws Exception {
-        var result = runner(5, 4096).run(args("context"), () -> false);
+        var result = foregroundFixtureRunner().run(args("context"), () -> false);
         assertThat(result.outcome()).isEqualTo(EXITED);
         assertThat(result.stdout()).contains("cwd=" + directory.toRealPath(), "lang=C", "javaOptions=null", "stdin=-1");
     }
 
     @Test
     void preservesNonzeroExitRatherThanReportingSuccess() throws Exception {
-        var result = runner(5, 4096).run(args("exit"), () -> false);
+        var result = foregroundFixtureRunner().run(args("exit"), () -> false);
         assertThat(result.outcome()).isEqualTo(EXITED);
         assertThat(result.exitCode()).isEqualTo(7);
     }
@@ -162,6 +162,19 @@ class BoundedProcessRunnerTests {
 
     private BoundedProcessRunner runner(int seconds, int bytes) throws Exception {
         return new BoundedProcessRunner(java, directory, Map.of("LANG", "C"), Duration.ofSeconds(seconds), bytes);
+    }
+
+    /** These three fixtures promise no descendants. Windows console-associated java.exe can
+     * violate that assumption in hosted runners; javaw has no associated console (JDK contract).
+     * Redirected stdout/stderr, literal argv, exit-code and cleanup assertions stay unchanged.
+     * Explicit descendant/timeout/handoff fixtures still use java.exe and the SAME strict runner.
+     * This is not a production exception for any descendant, nor an identified native culprit.
+     */
+    private BoundedProcessRunner foregroundFixtureRunner() throws Exception {
+        Path fixtureJava = System.getProperty("os.name").startsWith("Windows")
+                ? java.resolveSibling("javaw.exe") : java;
+        return new BoundedProcessRunner(fixtureJava, directory, Map.of("LANG", "C"),
+                Duration.ofSeconds(5), 4096);
     }
 
     private static List<String> args(String... args) {

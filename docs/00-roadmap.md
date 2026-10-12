@@ -1,5 +1,9 @@
 # ChaosLab 学习与交付路线图
 
+> V1 现状（M6）：M1 Core 真实物理恢复 PASS，因果 UNKNOWN；M2 历史、M3 认证、M4 Fake Web、M5 报告已完成。
+> 当前交付以 [README](../README.md)、[V1 架构](19-v1-architecture.md)、[交付指南](18-v1-delivery.md) 为准。
+> 以下 2026-08/10 的早期阶段计划保留为演进背景，不是当前能力声明；Kubernetes/Operator 仍未实现。
+
 > 文档状态：持续更新；阶段 0–6 已有教学基础实现，阶段 7 进行中；真实故障闭环未验收
 > 初始调研：2026-08-21；最近更新：2026-10-02
 > 当前实现：Spring Boot 后端、MySQL/Flyway、实验状态机、安全守卫、自动恢复、审计、FakeChaosEngine、隔离 Demo Services、可选 Prometheus 抓取和 Grafana 初始看板、三阶段观察报告脚本、平台内只读三阶段指标报告，以及接入 Dry Run/启动安全门/报告生成的本机 Demo 容器身份核验。尚无真实故障注入或因果结论。

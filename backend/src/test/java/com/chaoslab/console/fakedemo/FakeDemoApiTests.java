@@ -49,7 +49,7 @@ class FakeDemoApiTests {
             () ->
                 "jdbc:h2:file:" +
                 DIR +
-                "/chaoslab_fake_demo;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE"
+                "/chaoslab_fake_demo;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE;WRITE_DELAY=0"
         );
         String hash = new BCryptPasswordEncoder(10).encode(PASSWORD);
         r.add("chaoslab.security.admin.username", () -> ADMIN);
@@ -469,23 +469,25 @@ class FakeDemoApiTests {
             .asText();
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(12);
         String state;
+        int successfulRecoveryAudits;
         do {
             state = jdbc.queryForObject(
                 "SELECT status FROM experiment_executions WHERE id=?",
                 String.class,
                 execution
             );
-            if (state.equals("SUCCESS")) break;
-            Thread.sleep(100);
-        } while (System.nanoTime() < deadline);
-        assertThat(state).isEqualTo("SUCCESS");
-        assertThat(
-            jdbc.queryForObject(
+            // The delegated SUCCESS transaction precedes the audited decorator's append.
+            // Poll both committed facts, not the tiny interval between those commits.
+            successfulRecoveryAudits = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM audit_logs WHERE execution_id=? AND operation='AUTOMATIC_RECOVERY' AND result='SUCCESS'",
                 Integer.class,
                 execution
-            )
-        ).isEqualTo(1);
+            );
+            if (state.equals("SUCCESS") && successfulRecoveryAudits == 1) break;
+            Thread.sleep(100);
+        } while (System.nanoTime() < deadline);
+        assertThat(state).isEqualTo("SUCCESS");
+        assertThat(successfulRecoveryAudits).isEqualTo(1);
     }
 
     @Test

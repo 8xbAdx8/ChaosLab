@@ -1,144 +1,160 @@
 # ChaosLab
 
-ChaosLab 是一个教学型混沌工程平台，提供 Spring Boot 后端与 [React Web 控制台](frontend/README.md)。Web 已加入 [服务端会话登录与 VIEWER/ADMIN 权限](docs/15-m3-console-auth.md)，没有默认密码。[M4 独立本地 Fake 演示](docs/16-m4-fake-demo.md) 允许 ADMIN 完成持久化模拟实验闭环；VIEWER 和普通 console 仍只读，两种角色都不能执行真实故障。受控 M1 Core 已通过真实 CPU 验收，但真实执行仍需要独立审批和固定特权边界。M2 本地历史演示明确为非登录身份，不应对公网开放。
+**教学型混沌工程平台｜Java 后端 + React 全栈｜安全 Fake 演示与可信真实历史**
 
-最新进展：M1 Core 的生产恢复 Gate 已验证物理恢复，恢复来源仍为 UNKNOWN，见[原始验收证据](docs/evidence/m1-core-real-20261010.json)。R1/R2/R3 历史结论及证据不改写。以下早期后端说明保留作为演进背景；最新 Web 能力与启动方式以 [frontend/README.md](frontend/README.md) 为准，执行器现状以 [M1 Core 验收契约](docs/11-m1-core-field-acceptance.md)为准。
+ChaosLab 将“配置、受控执行、恢复确认、审计、报告”连成可学习的工程闭环。
+混沌工程不是随意破坏，而是在明确目标、强度和停止条件下验证系统如何应对故障。
+本项目区分**命令完成、模拟成功、物理恢复、恢复因果**，不把一个 SUCCESS 当作所有证据都 VERIFIED。
 
-## Web 管理控制台
+- 本地 Web：创建 → 校验/预检 → Fake 启动 → 主动停止/自动恢复 → 持久化报告。
+- 已结束的真实 M1 Core：CPU **0% → 10.91% → 0%**，生产 Gate / physical recovery VERIFIED。
+- 恢复原因仍是 **UNKNOWN**。R1/R2 原 INCOMPLETE 及 R3 原始归档保持不变。
+- 普通 ADMIN **不能执行真实故障**。本地启动无需 Docker、VMware、MySQL、root 或 ChaosBlade。
 
-**M5 可追溯报告**：见 [指标来源、质量规则与启动说明](docs/17-m5-traceable-reports.md)。
-报告详情关联真实持久化执行、启动审计参数和恢复证据；只有受信且充分的三阶段 HTTP 观测才展示可比柱状图。
-缺失指标不填零，Fake SUCCESS 不证明物理恢复，旧报告不重新认证，M1 历史归档保持独立。
+## 快速开始（Windows 优先）
 
-普通控制台先按 [M3 启动说明](docs/15-m3-console-auth.md) 配置本机 BCrypt 账号和原 SELECT-only 数据库用户，
-使用 console profile 与同源代理，前端访问 `/login`。除精确受控的本地 fake-demo 外，非 console 模式也不能通过 HTTP 调用旧写接口。
-以下早期后端 API 示例保留作为学习资料，不表示当前公开这些写操作。
+准备完整 **JDK 21+**（建议 21，设置 `JAVA_HOME`）、**Node.js 22.12+**（建议 24，含 npm）、Git。
+首次构建需联网，Maven 无需另装；不要沿用现场部署环境变量。
 
-**想亲自操作一次安全的 Fake 实验？** 按 [M4 两终端启动与操作说明](docs/16-m4-fake-demo.md)：
-普通用户启动 `fake-demo` 后端与 `npm run dev:fake`，ADMIN 登录后创建→校验→启动→停止/自动恢复→报告。
-只使用独立本地 H2 文件数据库，不需要 Docker/VM/root；所有模拟结果标记 SIMULATED。
+```powershell
+git clone https://github.com/8xbAdx8/ChaosLab.git
+cd ChaosLab
+# 替换为自己的实际 JDK 路径，仅设置当前终端
+$env:JAVA_HOME='C:/path/to/jdk-21'
+$env:PATH="$env:JAVA_HOME/bin;$env:PATH"
+.\scripts\start-fake.ps1
+```
 
-**只想展示已经完成的真实 M1 Core？** 按 [M2 本地历史演示](docs/14-m2-history-demo.md)
-启动独立历史后端和 `npm run dev:history`，打开 `/history/m1-core`。
-它校验 Git 归档 SHA 后只读展示 0% → 10.91% → 0%、恢复观察、审计与 UNKNOWN 来源；
-不需要数据库、Docker、ChaosBlade 或 VM，不导入/修改 R1/R2/R3。
-以下普通控制台仍使用专用本地数据库。
+如果 Windows 提示脚本执行策略阻止，可在已审阅的 Git checkout 使用仅本次进程的入口：
+`powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File .\scripts\start-fake.ps1`。
+不修改系统全局策略；组织策略仍优先，受管机器请遵循管理员要求。
+
+Linux / macOS：
 
 ```bash
+git clone https://github.com/8xbAdx8/ChaosLab.git
+cd ChaosLab
+# JAVA_HOME 指向你的 JDK，Node/npm 已在 PATH
+bash scripts/start-fake.sh
+```
+
+首次引导你选择 ADMIN（可选 VIEWER），调用隐藏密码的 BCrypt 工具；**没有默认账号/密码**。
+只保存用户名/hash 到忽略的 `.local/dev/accounts.json`，不保存明文密码。
+后续无需重新配置；每次构建当前源码，固定 loopback 后端和 Vite 同源代理。
+看到 READY 后打开 **http://127.0.0.1:5173/login**。
+
+创建 Fake CPU 实验：classroom target、CPU Load、30 秒、`{"percent":10}` → 保存 → 校验 → 安全预检 →
+启动并确认 → 查看执行 → 停止或等待 → 生成模拟报告。
+**percent=10 是参数，不是实际 CPU 采样。** 无指标显示 NOT_COLLECTED，不填 0。
+刷新/重启记录仍在独立 `.local/chaoslab-fake-demo/` H2 文件。
+
+保留启动终端；Ctrl+C，或另开终端停止并切换独立历史演示：
+
+```powershell
+.\scripts\stop-dev.ps1
+.\scripts\start-history.ps1
+```
+
+```bash
+bash scripts/stop-dev.sh
+bash scripts/start-history.sh
+```
+
+打开 **http://127.0.0.1:5173/history/m1-core**：无需账号或数据库，SHA 校验固定归档，
+标注「历史真实实验 · 已结束 · 非实时监控」。不连接现场，不把历史记录写入 Fake 数据库。
+
+已有账号后用 `scripts/doctor.ps1` / `bash scripts/doctor.sh fake` 单独检查。
+首次账号、端口冲突、换端口、私有权限和安全停止详见 [V1 交付指南](docs/18-v1-delivery.md)。
+macOS 提供 Bash 入口，目前 CI 覆盖 Windows/Ubuntu，不宣称 macOS 已验收。
+
+## 功能与边界
+
+| 能力                              | 当前 V1                                                                          |
+| --------------------------------- | -------------------------------------------------------------------------------- |
+| 配置 / Schema / SafetyGuard       | Fake Web 可操作，Controller → Service → Repository                               |
+| 生命周期 / 幂等 / 占用 / 自动恢复 | 复用原状态机与事务，未知 create 不自动重试                                       |
+| 登录 / RBAC                       | Session + Cookie + CSRF，VIEWER 读、ADMIN 仅本地 Fake 写                         |
+| 审计 / 报告                       | 持久化记录和 ID 关联，来源、质量、缺失明确展示                                   |
+| 指标                              | Micrometer；可选受信 Prometheus HTTP 窗口查询、已有 Grafana；Fake 不伪造目标指标 |
+| 真实 CPU / 物理恢复               | M1 Core 独立受限环境历史 PASS，本地 Web 不开放真实操作                           |
+| 历史可视化                        | 固定 SHA / JSON pointer / CPU 离散点 / 时间线 / Gate / UNKNOWN cause             |
+| 交付                              | PowerShell/Bash 启动，私有账号、H2 持久化、受控停止、跨平台 CI                   |
+
+## 技术栈
+
+| 层     | 技术                                                                   |
+| ------ | ---------------------------------------------------------------------- |
+| 后端   | Java 21 / Spring Boot 4.1 / Spring Security / JPA / JDBC               |
+| 数据   | Flyway V1–V11 / 本地 H2 file / 独立正式部署 MySQL                      |
+| 前端   | React / TypeScript strict / Vite / Tailwind / TanStack Query / ECharts |
+| 观测   | Micrometer / Prometheus / Grafana；来源、标签、窗口与采样质量验证      |
+| 测试   | JUnit / MockMvc / Vitest / REST 契约 / Node 内置测试 / Go 无害 fixture |
+| 自动化 | Maven Wrapper / npm lockfile / GitHub Actions Windows + Ubuntu         |
+
+## 实际界面
+
+下图来自**实际本地运行界面**，Fake 记录是隔离交付测试，不是现场故障证明。
+历史页面读取不变的 M1 归档。版本/上下文见 [截图记录](docs/screenshots/m6/README.md)。
+
+| 登录 / 概览                                   | 实验 / 执行                                     |
+| --------------------------------------------- | ----------------------------------------------- |
+| ![登录](docs/screenshots/m6/login.jpg)        | ![Fake 创建](docs/screenshots/m6/create.jpg)    |
+| ![仪表盘](docs/screenshots/m6/dashboard.jpg)  | ![Fake 执行](docs/screenshots/m6/execution.jpg) |
+| ![可追溯报告](docs/screenshots/m6/report.jpg) | ![VIEWER 只读](docs/screenshots/m6/viewer.jpg)  |
+
+![历史真实实验，非实时](docs/screenshots/m6/history.jpg)
+
+## 安全说明
+
+- 本地教学 V1，**不是可直接公网开放的生产系统**。绑定 127.0.0.1，无默认账号。
+- ADMIN 不等于 root / REAL authorization；Fake 服务端联合验证权限、模式和实际引擎。
+- 普通 console 精确 GET/HEAD 白名单；保留 SELECT-only 数据库建议。隐藏按钮不是安全边界。
+- `.local/` 私有配置/日志/数据库勿上传；Unix owner-only，Windows 要使用私人目录/NTFS ACL。
+- Fake SUCCESS 不等于 physical VERIFIED；缺失不补零，JVM 指标不冒充容器指标。
+- 真实执行只在固定工具/SHA/目标/UID/特权边界的独立审批部署。本地脚本没有真实授权/故障入口。
+- M1 已结束，R1/R2/R3 证据和历史终态不改写；时间戳不能证明恢复因果。
+
+## 文档与演示
+
+- [实际架构、状态机、Fake 时序、M1 证据 Mermaid 图](docs/19-v1-architecture.md)
+- [5–10 分钟课堂 / 面试演示](docs/20-v1-demo.md)
+- [作品集和诚实的简历描述](docs/21-portfolio.md)
+- [M1 原始证据](docs/evidence/m1-core-real-20261010.json) / [验收报告](docs/12-m1-core-field-result.md)
+- [M2 历史](docs/14-m2-history-demo.md) / [M3 认证](docs/15-m3-console-auth.md) / [M4 Fake](docs/16-m4-fake-demo.md) / [M5 报告](docs/17-m5-traceable-reports.md)
+
+## 测试与复现
+
+```powershell
+.\backend\mvnw.cmd -f backend/pom.xml verify
+node --test scripts/dev.test.mjs
+# 独立干净测试 checkout：随机测试凭据，packaged 后端 + Vite + H2
+node scripts/delivery-smoke.mjs
 cd frontend
 npm ci
-npm run dev
+$env:CONSOLE_CONTRACT_DIR='../backend/target'
+npm test
+npm run lint
+npm run build
+npm run build:history
 ```
 
-访问 `http://127.0.0.1:5173`，Vite GET-only proxy 默认连接本机后端8080。
-后端使用 `console` profile 和已迁移的本机专用数据库，关闭迁移与自动恢复扫描、拦截写方法。
-仪表盘、实验与执行详情、历史 CPU/恢复证据、公开审计、已存报告均读取真实 API，无运行时 mock 数据。
-不提供 create/destroy/授权/root 操作；认证/RBAC 留待单独实现。没有保存的指标显示「未采集」，不伪造0%。
+Linux 用 `bash backend/mvnw -f backend/pom.xml verify`，契约测试用 `CONSOLE_CONTRACT_DIR=../backend/target npm test`。
+原 Java/Web/root harmless CI 保留，新增交付 CI 覆盖实际启动入口、权限/CSRF、H2 重启、历史 SHA 与受控停止。
+CI 不执行真实故障；结果见 [Actions](https://github.com/8xbAdx8/ChaosLab/actions)。
 
-## 当前实现
+## 里程碑与限制
 
-- 注册目标、查询预置场景、创建与验证实验。
-- 安全检查与 Dry Run；默认拒绝生产环境目标，限制时长和单次作用范围。
-- 带幂等键的启动、状态查询、手动销毁、超时自动恢复与紧急停止。
-- 单目标互斥、全局并发上限，以及记录成功、拒绝和失败的追加式审计日志。
-- MySQL + Flyway V1–V11；测试使用 H2 的 MySQL 兼容模式。
-
-已加入独立的 [Demo Services 靶场](demo-services/README.md)，用于观察订单到库存的调用及慢/错传播；后端与靶场现可导出 [Prometheus 指标](docs/03-observability.md)。可选的本地 Prometheus 可采集 Demo 指标，Grafana 看板展示订单请求量、5xx 错误率和 P95；报告脚本可核验后端执行、审计事件和本机 Demo 容器／指标 job 的绑定，生成实验前、中、后的观察文件。平台内[实验报告](docs/04-experiment-report.md)已持久化生命周期证据，并在本机 Demo 绑定通过、恢复窗口结束且样本充足时，只读采集三阶段请求数、5xx、错误率与 P95；**仍不给出真实故障效果结论**。Docker Target 的 Dry Run 和启动已接入本机 Demo 身份安全门，未通过校验会拒绝启动；当前仍只有 Fake 执行器，尚无真实 ChaosBlade 故障注入、认证授权、前端和 Kubernetes 集成。完整计划见[路线图](docs/00-roadmap.md)，设计说明见[架构文档](docs/02-architecture.md)。当前 API 没有认证，请仅在本机运行，不要向公网开放。
-
-真实执行器的准备工作见[命令白名单与恢复契约](docs/05-chaosblade-executor-contract.md)。已加入 Docker CPU 命令计划、恢复判定、独立受限进程通道及严格响应解析器；验证使用无故障注入的桩进程与合成响应，未接入应用，当前仍使用 Fake 引擎。
-
-执行记录已支持 `CREATE_UNCERTAIN`，创建流程已拆为“提交 `PREPARING` 占用 → 事务外调用引擎 → 独立事务保存结果”。中断或结果保存失败时保留已提交占用，同一幂等键只读回原记录；紧急停止对 `PREPARING/CREATE_UNCERTAIN` 返回 `MANUAL_INTERVENTION`。这不代表真实执行器的恢复句柄、重启扫描或销毁事务已完成；无可靠 UID 时不会猜测销毁，也没有自动清除占用的接口。
-
-V11 新增独立的 Blade 执行快照存储：保存 Docker CPU 参数、目标身份、执行节点/状态目录标识、工具版本/摘要和恢复截止时间，并支持原生 UID 的一次性绑定。存储组件尚未接入 Fake 或真实引擎；已保存的版本/摘要也不等于已对实际工具做过验证。
-
-可通过 `GET /api/v1/blade/recovery-inventory?limit=50` 分页核对已保存的 Blade 快照，后续页传入返回的 `nextCursor` 作为 `after`。缺 UID 或快照损坏标记人工处置，其余仍需现场身份核验；到期不等于已恢复。该接口只读，不自动调用工具或释放占用。Fake 执行不写入此日志，因此空列表不代表平台没有活动执行。详见[执行器契约](docs/05-chaosblade-executor-contract.md)。
-
-恢复前的本地证据探针 `BladeLocalIdentityVerifier` 已加入：读取部署标识文件并计算工具 SHA-256，不执行工具或修改文件。它尚未接入恢复清单、引擎或调度器；匹配后仍需现场目标核验及原生状态确认。项目完成度的口径与缺口见[进度评估](docs/06-progress-assessment.md)。
-
-## 环境要求
-
-- JDK 21 或更高版本；编译目标是 Java 21。
-- 本地运行后端需要 MySQL 8.x 和一个可写的测试数据库。
-- Maven 不必预装：`backend/mvnw` 与 `backend/mvnw.cmd` 会下载固定版本的 Maven，并校验发行包的 SHA-256。
-
-## 运行测试
-
-测试使用内存数据库，无需安装 MySQL。首次运行需要联网下载 Maven 与依赖。
-
-Windows PowerShell：
-
-```powershell
-cd backend
-$env:JAVA_HOME = 'C:\path\to\jdk-21'
-./mvnw.cmd verify
-```
-
-Linux/macOS：
-
-```bash
-cd backend
-bash ./mvnw verify
-```
-
-Demo Services 的测试命令为 `./backend/mvnw.cmd -f demo-services/pom.xml verify`；报告与看板配置的测试命令为 `py -3 -m unittest discover -s demo-services -p 'test_*.py'`。GitHub Actions 在 Java 21 环境执行两个 Maven 项目的 `verify`，并运行 Python 标准库测试。
-
-真实 MySQL 与 Demo 的报告验收可运行 `py -3 scripts/verify_report_e2e.py --java <Java可执行文件路径>`；先打包后端并准备 Docker 镜像。脚本使用独立临时数据库，检查指标采集、自动恢复、报告持久化及后端重启后的读回，详见[端到端验收说明](docs/04-experiment-report.md#本机-mysql-端到端验收)。
-
-## 本机启动
-
-先用具备管理权限的 MySQL 账号在本机创建专用数据库和用户（将示例密码换成你自己的本机密码）：
-
-```sql
-CREATE DATABASE chaoslab CHARACTER SET utf8mb4;
-CREATE USER 'chaoslab'@'127.0.0.1' IDENTIFIED BY 'replace-with-a-local-password';
-GRANT ALL PRIVILEGES ON chaoslab.* TO 'chaoslab'@'127.0.0.1';
-```
-
-后端启动时 Flyway 自动执行数据库迁移，不需要手工导入表结构。不要把真实密码提交进仓库。
-
-根目录的 [`.env.example`](.env.example) 列出了所需变量，但 Spring Boot 不会自动读取 `.env` 文件。请在当前终端设置真实的本机凭据。例如在 PowerShell 中：
-
-```powershell
-$env:JAVA_HOME = 'C:\path\to\jdk-21'
-$env:CHAOSLAB_DB_URL = 'jdbc:mysql://127.0.0.1:3306/chaoslab?serverTimezone=UTC'
-$env:CHAOSLAB_DB_USERNAME = 'chaoslab'
-$env:CHAOSLAB_DB_PASSWORD = '<your-local-password>'
-cd backend
-./mvnw.cmd spring-boot:run '-Dspring-boot.run.arguments=--server.address=127.0.0.1'
-```
-
-访问 `http://127.0.0.1:8080/actuator/health`，预期返回 `{"status":"UP"}`。如需调整端口，可在启动参数中加入 `--server.port=8081`。数据库凭据请保留在本机环境变量或未跟踪的 `.env` 文件中。
-
-## 最小 API 流程
-
-以下命令以 PowerShell 为例，假定后端运行在 `127.0.0.1:8080`：
-
-```powershell
-$base = 'http://127.0.0.1:8080/api/v1'
-$target = Invoke-RestMethod "$base/targets" -Method Post -ContentType 'application/json' -Body '{"name":"local-demo","type":"JAVA_APPLICATION","environment":"CHAOS_LAB"}'
-$scenario = (Invoke-RestMethod "$base/scenarios" | Where-Object code -eq 'CPU_LOAD' | Select-Object -First 1)
-$body = @{ name='CPU demo'; hypothesis='Service stays available'; targetId=$target.id; scenarioId=$scenario.id; durationSeconds=30; parameters=@{percent=40} } | ConvertTo-Json -Depth 4
-$experiment = Invoke-RestMethod "$base/experiments" -Method Post -ContentType 'application/json' -Body $body
-$null = Invoke-RestMethod "$base/experiments/$($experiment.id)/validation" -Method Post
-$plan = Invoke-RestMethod "$base/experiments/$($experiment.id)/dry-run" -Method Post
-$plan.accepted
-$execution = Invoke-RestMethod "$base/experiments/$($experiment.id)/executions" -Method Post -Headers @{'Idempotency-Key'='local-demo-1'}
-Invoke-RestMethod "$base/experiments/$($experiment.id)/executions/$($execution.id)/destroy" -Method Post
-Invoke-RestMethod "$base/audit-logs?experimentId=$($experiment.id)"
-```
-
-只在 Dry Run 返回 `accepted=true` 后启动实验。`Idempotency-Key` 的相同值用于重放同一次启动请求。当前的 `RUNNING` 表示 Fake 引擎的模拟状态，不代表真实资源被施加故障。紧急恢复入口为 `POST /api/v1/emergency-stop`。
-
-执行成功销毁/恢复后，可向 `$base/experiments/$($experiment.id)/executions/$($execution.id)/reports` 发送带新 `Idempotency-Key` 的 `POST`，保存报告快照；响应的 `Location` 可用于查询。普通 Java Target 的指标仍为 `NOT_COLLECTED`；本机 Demo Docker Target 通过绑定核验、等待恢复窗口结束并具备足够样本后，三个窗口才可能为 `OBSERVED`。详见[报告说明](docs/04-experiment-report.md)。
-
-## 项目结构
+M1 Core PASS；M2 历史可视化；M3 Session/RBAC；M4 Fake Web；M5 可追溯报告；M6 V1 本地交付。
+未完成：Kubernetes/Operator、多目标真实故障、ACTIVE/TIMEOUT 因果仲裁、多租户、公网生产加固。
+没有虚构用户规模、吞吐量或 AI Agent 功能。
 
 ```text
-backend/   Spring Boot 后端、Flyway 迁移、单元测试与集成测试
-demo-services/   独立的订单/库存靶场与 Docker Compose
-docs/      路线图、ChaosBlade 调研和架构设计
+backend/        Spring 服务、状态机、Repository、Flyway、测试
+frontend/       React 控制台、契约/组件测试
+scripts/        doctor / start / stop / 无害交付验收
+docs/           架构、演示、作品集、归档证据
+demo-services/  可选监控靶场（不依赖它启动本地 Fake）
+tools/          已审核真实边界与无害 fixture（本地启动不运行）
 ```
 
-## 许可证
-
-本项目采用 [Apache License 2.0](LICENSE)。
+[Apache License 2.0](LICENSE)

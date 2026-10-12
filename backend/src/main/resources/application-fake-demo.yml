@@ -7,7 +7,8 @@ server:
         secure: false
 spring:
   datasource:
-    url: jdbc:h2:file:${chaoslab.fake-demo.directory}/chaoslab_fake_demo;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE
+    # Commit must flush before a Windows-owned process is terminated by the launcher.
+    url: jdbc:h2:file:${chaoslab.fake-demo.directory}/chaoslab_fake_demo;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE;WRITE_DELAY=0
     username: sa
     password: ${CHAOSLAB_FAKE_DEMO_DB_PASSWORD:}
     driver-class-name: org.h2.Driver

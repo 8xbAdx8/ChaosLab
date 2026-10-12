@@ -1,0 +1,54 @@
+name: V1 Delivery CI
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  delivery:
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Production tests and random-account test utility (not in JAR)
+        run: bash ./backend/mvnw -f backend/pom.xml -B verify
+      - name: Launcher safety unit tests
+        run: node --test scripts/dev.test.mjs
+      - name: Packaged application through actual PowerShell/Bash entry points
+        if: runner.os != 'Windows'
+        shell: bash
+        # setup-java injects MAVEN_ARGS=-ntp. Exercise the documented clean terminal,
+        # not an exemption in the production launcher's fail-closed override guard.
+        run: |
+          unset MAVEN_ARGS
+          node scripts/delivery-smoke.mjs
+      - name: Packaged application through native PowerShell entry points
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Windows hosted runners carry MAVEN_OPTS (confirmed by the guard).
+          # Keep production rejection intact; CI starts from a clean tooling environment.
+          if (Test-Path Env:MAVEN_OPTS) { Write-Output 'Clearing hosted tooling MAVEN_OPTS (value withheld).' }
+          Remove-Item Env:MAVEN_OPTS -ErrorAction SilentlyContinue
+          Remove-Item Env:CLASSPATH -ErrorAction SilentlyContinue
+          Remove-Item Env:MAVEN_ARGS -ErrorAction SilentlyContinue
+          node scripts/delivery-smoke.mjs
+      - name: Ensure secrets and test bypasses are not delivered
+        run: |
+          python3 backend/scripts/check_auth_artifact.py
+          python3 tools/m1-wrapper/deployment/test_m1_core_contract.py
+          git check-ignore .local/dev/accounts.json .local/dev/smoke-credentials.json .local/dev/session.json
+          git diff --exit-code -- docs/evidence

@@ -6,6 +6,10 @@ React + TypeScript（strict）+ Vite + Tailwind CSS + React Router + TanStack Qu
 
 ## 操作本地 Fake 实验
 
+V1 推荐从仓库根用 `scripts/start-fake.ps1` / `bash scripts/start-fake.sh`，首次引导私有账号，
+同时构建/启动固定本机后端和前端；停止用 `stop-dev`。独立历史用 `start-history`。
+环境与故障处理见 [V1 交付指南](../docs/18-v1-delivery.md)。下方两终端方式仍可用于单独前端开发。
+
 按 [M4 启动说明](../docs/16-m4-fake-demo.md) 配置自己的 BCrypt 账号并启动 `fake-demo` 后端，
 然后 `npm ci`、`npm run dev:fake`，访问 `/login`。无需数据库安装，使用独立可写 H2 文件数据库。
 ADMIN 完成创建→校验→预检→启动→主动停止或自动恢复→SIMULATED 报告；VIEWER 仅查看。
