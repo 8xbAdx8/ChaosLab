@@ -13,7 +13,7 @@
 
     <groupId>com.chaoslab</groupId>
     <artifactId>chaoslab-backend</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>1.0.0-rc1</version>
     <name>ChaosLab Backend</name>
     <description>Teaching-oriented chaos engineering platform backend</description>
 

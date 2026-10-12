@@ -17,10 +17,10 @@ const local = path.join(root, ".local", "dev");
 const accountFile = path.join(local, "accounts.json");
 const stateFile = path.join(local, "session.json");
 const lockFile = path.join(local, "start.lock");
-const jar = path.join(
-  root,
-  "backend/target/chaoslab-backend-0.0.1-SNAPSHOT.jar",
-);
+const version = fs.readFileSync(path.join(root, "VERSION"), "utf8").trim();
+if (!/^\d+\.\d+\.\d+(?:-rc\d+)?$/.test(version))
+  throw new Error("Invalid checkout VERSION; no service started.");
+const jar = path.join(root, `backend/target/chaoslab-backend-${version}.jar`);
 const windows = process.platform === "win32";
 const fail = (message) => {
   throw new Error(message);
@@ -241,7 +241,14 @@ export async function doctor(opts, requireAccounts = true) {
     );
   if (opts.mode === "fake") {
     privateDirectory(path.join(root, ".local/chaoslab-fake-demo"));
-    if (requireAccounts) validateAccounts(privateRead(accountFile));
+    if (requireAccounts) {
+      const accounts = privateRead(accountFile);
+      if (!accounts)
+        fail(
+          "No local accounts configured. First run scripts/start-fake in an interactive terminal.",
+        );
+      validateAccounts(accounts);
+    }
   }
   await freePort(opts.backend);
   await freePort(opts.frontend);

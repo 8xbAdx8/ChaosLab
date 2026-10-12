@@ -26,7 +26,7 @@ jobs:
       - name: Production tests and random-account test utility (not in JAR)
         run: bash ./backend/mvnw -f backend/pom.xml -B verify
       - name: Launcher safety unit tests
-        run: node --test scripts/dev.test.mjs
+        run: node --test scripts/dev.test.mjs scripts/release.test.mjs
       - name: Packaged application through actual PowerShell/Bash entry points
         if: runner.os != 'Windows'
         shell: bash

@@ -5,6 +5,7 @@ services running; removes only its uniquely named, tmpfs-backed MySQL container.
 """
 
 import argparse
+import re
 import json
 import os
 from pathlib import Path
@@ -76,7 +77,9 @@ def main():
     parser.add_argument("--mysql-image", default="mysql:8.4")
     parser.add_argument("--port", type=int, default=18080)
     args = parser.parse_args()
-    jar = ROOT / "backend/target/chaoslab-backend-0.0.1-SNAPSHOT.jar"
+    version = (ROOT / "VERSION").read_text().strip()
+    require(re.fullmatch(r"\d+\.\d+\.\d+(?:-rc\d+)?", version) is not None, "Invalid checkout VERSION")
+    jar = ROOT / "backend/target" / f"chaoslab-backend-{version}.jar"
     require(jar.is_file(), "Package backend first: mvnw -f backend/pom.xml package")
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", args.port))
