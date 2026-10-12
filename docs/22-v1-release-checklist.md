@@ -69,7 +69,8 @@
 - 新历史字段断言起初将 missing 的JSON projection错认作JS undefined；源码原契约明确 missing/非标量=null。修正新增断言忠实检查原契约，不改 reader或原数据。
 - during原始精度为10.911216516130064，10.91只是显示四舍五入；新增测试先逐字段对照raw pointer，再核对2位显示，不能要求原始值被改为10.91。
 - 候选代码 `aaaca103f16a251bea96672c6bf52a39113f0bef`：[Java](https://github.com/8xbAdx8/ChaosLab/actions/runs/38201544623)、[Web](https://github.com/8xbAdx8/ChaosLab/actions/runs/38201544692)、[Delivery](https://github.com/8xbAdx8/ChaosLab/actions/runs/38201544702) Windows/Ubuntu全PASS，含原root harmless job。Ubuntu backend 421/0失败/0跳过，Node19/0失败/0跳过；Windows hosted backend421/0失败/0跳过，Node19/17通过/2跳过。本机Windows backend的1个symlink跳过不能混入有该能力的hosted runner统计。最终PR HEAD以Checks实时结果为准。
-- 首个发布代码提交 `3690522` 的 [Delivery CI](https://github.com/8xbAdx8/ChaosLab/actions/runs/38200706464) Windows/Ubuntu均因新增null/undefined预期错误失败，不是随机红灯；修正原reader的scalar/null映射并验证后完整重跑通过。未删除测试、未放宽已有安全断言，没有尚未定位的偶发失败。
+- 首个发布代码提交 `3690522` 的 [Delivery CI](https://github.com/8xbAdx8/ChaosLab/actions/runs/38200706464) Windows/Ubuntu均因新增null/undefined预期错误失败，不是随机红灯；修正新增断言以遵循原reader的scalar/null映射后完整重跑通过，未修改reader或历史数据。
+- `ce695d1` 的[PR Delivery CI](https://github.com/8xbAdx8/ChaosLab/actions/runs/38202308792)发生一次Windows PowerShell入口测试超时：10s后stdout/stderr为空；同提交[push CI](https://github.com/8xbAdx8/ChaosLab/actions/runs/38202305378)完整通过。仅将该无Node入口测试的外部shell启动期限改为30s并显式检查spawn错误；安装提示和非零退出断言完整保留，生产命令/清理期限没有修改。最终HEAD需重新完成Windows/Ubuntu CI，不将重跑或旧HEAD绿灯当成修复证明。
 - 既有 M6 夹具/审计时序修订见 docs/18，本轮不再放宽它们。Package启动中的`-DskipTests`仅避免重复verify；以上统计来自独立完整verify，不把package打印的“Tests skipped”算额外漏测。
 
 ### 本机自动化标识（SIMULATED，非现场证据）

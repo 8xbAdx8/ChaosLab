@@ -121,9 +121,12 @@ test("public doctor entry point explains missing Node without installing anythin
   const result = spawnSync(executable, args, {
     env: { ...cleanEnvironment(), PATH: "" },
     encoding: "utf8",
-    timeout: 10000,
+    // A loaded Windows hosted runner may spend over 10s initializing PowerShell.
+    // Bound the test harness, not the production launcher or its safety checks.
+    timeout: 30000,
     windowsHide: true,
   });
+  assert.ifError(result.error);
   assert.notEqual(result.status, 0);
   assert.match(result.stdout + result.stderr, /Node\.js/);
 });
