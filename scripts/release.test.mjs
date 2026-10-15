@@ -5,6 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { root } from "./dev.mjs";
 
 function fixture() {
@@ -76,6 +77,75 @@ test("RC version agrees across trusted VERSION, Maven and npm lock; no dependenc
   assert.equal(pkg.version, version);
   assert.equal(lock.version, version);
   assert.equal(lock.packages[""].version, version);
+});
+
+test("explicit local test accounts use bounded stdin, keep no plaintext file and never overwrite", () => {
+  const report = path.join(
+    root,
+    "backend/target/surefire-reports/TEST-com.chaoslab.console.fakedemo.FakeDemoApiTests.xml",
+  );
+  assert.ok(
+    fs.existsSync(report),
+    "Run backend verify before release acceptance",
+  );
+  const classpath = /name="java.class.path" value="([^"]+)"/
+    .exec(fs.readFileSync(report, "utf8"))?.[1]
+    ?.replaceAll("&amp;", "&")
+    .replaceAll("&quot;", '"');
+  assert.ok(classpath);
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "chaoslab-local-account-"),
+  );
+  const backend = path.join(directory, "backend");
+  fs.mkdirSync(backend);
+  const password = "Fixture-" + randomUUID();
+  const config = path.join(directory, ".local/dev/accounts.json");
+  const invoke = (input) =>
+    spawnSync(
+      path.join(
+        process.env.JAVA_HOME,
+        "bin",
+        process.platform === "win32" ? "java.exe" : "java",
+      ),
+      [
+        "-cp",
+        classpath,
+        "com.chaoslab.console.fakedemo.DeliveryTestAccounts",
+        "--stdin-local",
+      ],
+      {
+        cwd: backend,
+        input,
+        encoding: "utf8",
+        timeout: 30000,
+        windowsHide: true,
+      },
+    );
+  for (const input of [
+    "{" + password,
+    "x".repeat(4097),
+    JSON.stringify({ username: "fixture.admin", password: "short" }),
+  ]) {
+    const result = invoke(input);
+    assert.equal(result.status, 1);
+    assert.doesNotMatch(result.stdout + result.stderr, new RegExp(password));
+    assert.equal(fs.existsSync(config), false);
+  }
+  const input = JSON.stringify({ username: "fixture.admin", password });
+  const configured = invoke(input);
+  assert.equal(configured.status, 0);
+  const original = fs.readFileSync(config, "utf8");
+  assert.ok(!original.includes(password));
+  const accounts = JSON.parse(original);
+  assert.equal(accounts.admin.username, "fixture.admin");
+  assert.match(accounts.admin.hash, /^\$2a\$12\$/);
+  assert.equal(
+    fs.existsSync(path.join(directory, ".local/dev/smoke-credentials.json")),
+    false,
+  );
+  assert.equal(invoke(input).status, 1);
+  assert.equal(fs.readFileSync(config, "utf8"), original);
+  assert.ok(!(configured.stdout + configured.stderr).includes(password));
 });
 test("doctor fails before private data writes when JAVA_HOME is absent", () => {
   const directory = fixture(),

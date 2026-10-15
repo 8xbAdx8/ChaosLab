@@ -12,6 +12,7 @@ const privateFile = (name) => path.join(root, ".local/dev", name);
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const hold = process.argv.includes("--hold"); // Screenshot QA only, never used by public launchers.
 const setupOnly = process.argv.includes("--setup-only");
+const localAccounts = process.argv.includes("--local-accounts"); // Explicit operator input, never a deployment default.
 assert.ok(
   fs.existsSync(
     path.join(
@@ -22,11 +23,20 @@ assert.ok(
   "Run complete backend verify after updating release fixtures, before starting acceptance.",
 );
 if (
-  process.argv.slice(2).some((arg) => !["--hold", "--setup-only"].includes(arg))
+  process.argv
+    .slice(2)
+    .some(
+      (arg) => !["--hold", "--setup-only", "--local-accounts"].includes(arg),
+    )
 )
   throw new Error("Unknown smoke option");
 
 if (!fs.existsSync(privateFile("accounts.json"))) {
+  assert.equal(
+    localAccounts,
+    false,
+    "Explicit local accounts must already exist; never create defaults.",
+  );
   const xml = fs.readFileSync(
     path.join(
       root,
@@ -48,16 +58,40 @@ if (!fs.existsSync(privateFile("accounts.json"))) {
     { cwd: path.join(root, "backend"), stdio: "inherit", windowsHide: true },
   );
   assert.equal(result.status, 0);
-} else
+} else if (!localAccounts)
   assert.ok(
     fs.existsSync(privateFile("smoke-credentials.json")),
     "Never reuse developer accounts for acceptance",
   );
 if (setupOnly) process.exit(0);
 
-const credentials = JSON.parse(
-  fs.readFileSync(privateFile("smoke-credentials.json"), "utf8"),
+const accountNames = JSON.parse(
+  fs.readFileSync(privateFile("accounts.json"), "utf8"),
 );
+let credentials;
+if (localAccounts) {
+  assert.equal(
+    Boolean(process.stdin.isTTY),
+    false,
+    "Use a private pipe, not terminal password echo.",
+  );
+  const chunks = [];
+  let bytes = 0;
+  for await (const chunk of process.stdin) {
+    bytes += chunk.length;
+    assert.ok(bytes <= 72, "Local test input exceeds password byte limit");
+    chunks.push(chunk);
+  }
+  const buffer = Buffer.concat(chunks);
+  credentials = { password: buffer.toString("utf8") };
+  buffer.fill(0);
+  chunks.forEach((chunk) => chunk.fill(0));
+  assert.ok(credentials.password.length >= 12, "Local test input is too short");
+} else {
+  credentials = JSON.parse(
+    fs.readFileSync(privateFile("smoke-credentials.json"), "utf8"),
+  );
+}
 const classpathXml = fs.readFileSync(
   path.join(
     root,
@@ -133,7 +167,7 @@ async function login(role) {
   await request("/api/v1/auth/login", {
     method: "POST",
     body: new URLSearchParams({
-      username: `demo.${role}`,
+      username: accountNames[role].username,
       password: credentials.password,
     }),
     token,

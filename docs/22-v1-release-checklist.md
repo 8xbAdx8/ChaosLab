@@ -1,6 +1,53 @@
-# R1 — V1 Release Candidate 验收清单
+# R1 / R2 — V1 Release Candidate 验收清单
 
 目标 `v1.0.0-rc1`；正式 `v1.0.0` 尚未发布。状态只用 PASS / FAIL / BLOCKED / NOT_RUN；PASS 必须说明是本机自动化、CI 或人工，而不是把三者混在一起。
+
+## R2 最终验收更新（2026-10-15）
+
+以下是最新状态；后续 R1 章节保留 2026-10-12 当时的验收记录，不将旧测试或旧 CI 冒充本次结果。
+
+- 起始 PR #9：OPEN / CLEAN，HEAD `ca816146063bfb3260c807a812d11e0aaefee6eb`，Java/Web/Delivery Checks 全绿；main 仍为 `ddcb89e6bd1fe8d5528a68e1b51eb005c6181e43`。没有自动合并、tag 或 Release。
+- 独立 `--no-local` clone：`C:\Users\W\ChaosLab-rc2`，工作分支 `codex/rc1-final-acceptance`。没有从两个旧 RC1 目录复制账号、H2 或产物；旧目录均无源码修改，原 D 盘用户未提交文件也保留。
+- 指定 ADMIN 及独立 VIEWER 测试身份仅在这个新目录创建。密码经内存 pipe 送到 test-classpath BCrypt 工具，未进入 argv、环境变量、源代码、Git 或日志；只有用户名/hash 的 accounts.json，**没有明文 smoke-credentials.json**。账号不是项目默认值，也不是发布资产。工具不存在于生产 JAR；CREATE_NEW 拒绝覆盖。
+
+| 项目 | 状态 | 依据与验证类型 |
+|---|---|---|
+| 本机 Java24 全量 verify | PASS | AUTO；425 tests、0 failures/errors、1 symlink 能力跳过；新增4项隐藏密码校验/重试/清理测试，未删改原安全断言 |
+| React/TypeScript/lint/两种build | PASS | AUTO；47项全部通过，显式使用 backend/target 的真实契约。最初未设置契约环境时42通过/5跳过，补齐契约配置后重跑47通过，不混淆两次结果 |
+| Node/发布测试 | PASS | AUTO；21项，Windows19通过/2个平台跳过；真实临时 stdin 账号、拒绝覆盖、无明文文件、无输入泄漏；终端 raw mode/keypress 所有权释放 |
+| 指定本地测试账号 | PASS | AUTO；只保存 BCrypt，登录实际生产 Session 链；不等于首次真人输入已验收 |
+| Fake 完整业务 | PASS | AUTO；CREATED编辑、参数校验、SafetyGuard、RUNNING、相同幂等键同Execution、主动停止SUCCESS、审计、报告/analysis；physical UNKNOWN、CPU null、INSUFFICIENT_DATA，未伪装物理故障 |
+| Session/RBAC/CSRF/REAL边界 | PASS | AUTO；未登录401、有效VIEWER读且写403、缺CSRF403、退出后旧Session401、REAL/root拒绝、请求中切换engine拒绝；服务端回归保留 |
+| 立即停止和重启 | PASS | AUTO；Execution/Report读回，无关Java/Node仍活着，保留WRITE_DELAY=0；未增加sleep掩盖持久化，未删除任何个人H2 |
+| history独立回归 | PASS | AUTO；匿名无DB、原H2 mtime不变、固定SHA/JSON Pointer；CPU0→10.91→0、Destroyed/CLEAR/HEALTHY/VERIFIED，原因UNKNOWN不升级ACTIVE |
+| 新RC2目录及五个私有路径NTFS ACL | PASS | AUTO只读；Owner=W，W/SYSTEM/Administrators完全控制；没有Users、Authenticated Users、Everyone、CodexSandboxUsers；没有用mode/chmod推断NTFS，也未改ACL |
+| 旧manual目录ACL | BLOCKED | AUTO只读；root及.local/dev/H2继承CodexSandboxUsers的ReadAndExecute；没有额外写权限，但可读取hash/数据。不使用其账号/DB，修复仅在授权后执行 |
+| 真人 Windows Terminal 隐藏密码 | NOT_RUN | HUMAN待验；工具伪终端的输入显示不能证明真人终端不回显。没有把自动配置或模拟TTY记成人工PASS |
+| 本机Java21 / Ubuntu人工 | NOT_RUN | 本机Java24为补充验证，Java21和Ubuntu依赖对应新HEAD CI；不操作VM/WSL/SSH |
+| 新HEAD Windows/Ubuntu CI + Unix真实PTY | NOT_RUN | 推送后以PR #9当前HEAD Checks为准；旧ca816146绿灯不等于本次修复通过。新增Unix PTY检查真实Node→Java、错误确认后重试及无密码回显；Windows不冒用POSIX PTY |
+
+### 密码问题调查与最小修复
+
+Windows伪终端复现了 `readline.pause()` 后 `stdin.isRaw=true`、Java读取停滞；关闭readline后 `isRaw=false`，同一无害密码fixture可以完成并退出0。这证明输入交接缺陷，**不能断言此前真人两次“不匹配”必定只有这个原因，也不能归咎用户**。JDK24测试不冒充JDK21人工验收。
+
+修复仅让每个非秘密问题创建/关闭自己的readline，并在交接前等待libuv释放读取；不改Java Console隐藏输入机制。PasswordHashTool保留至少12字符/最多72 UTF8字节与BCrypt12，失败分类提示、不含输入、最多三次原地重试，数组finally清零。EOF/失败不写账号；单独configure可复用已有JAR，正常start仍构建当前源码。未更改执行器、Security、CSRF、状态机、数据库migration或root边界。
+
+本机虚拟终端输入适配器的显示不作为密码隐藏验收依据；Windows真人首次流程仍NOT_RUN。Node的输入释放语义见[官方readline说明](https://nodejs.org/api/readline.html#rlclose)，隐藏读取契约见[Java Console](https://docs.oracle.com/en/java/javase/24/docs/api/java.base/java/io/Console.html)。
+
+### R2 自动化记录与失败说明
+
+Fake Experiment `4377cc43-cea4-46b4-8d65-9d8b14bdf4c0`；Execution `1b14bce4-9f59-49b3-bab4-f2560493e3a4`；Report `a92e90ad-d3b0-421f-83bd-9c214344b39f`。全部为SIMULATED，非M1现场证据。服务退出码0，session/start.lock不存在，验收端口已释放，账号/H2留在原新目录。
+
+- 一次Node测试误用本机默认JDK17，doctor正确先拒绝，后续“缺npm/无账号/锁”断言因此失败；使用当前进程JAVA_HOME24后21项按平台正常通过，未改断言。
+- 一次验收编排误启动两个Maven，停止的仅是已核对RC2路径的自有测试进程树；不将中断结果计为PASS，重新串行全量verify取得425项结果。
+- 最初内存pipe测试驱动自行重建Windows环境遗漏PATHEXT且ComSpec采用了不适合Node cmd参数处理的拼写，启动前被doctor拒绝（0次create）；修复驱动环境后实际完整流程退出0，没有修改生产guard以迁就驱动。
+- WindowsApps的python别名不作为执行依据；改用明确的Python3.12运行产物检查和原历史保护测试，2项通过。Unix PTY本机NOT_RUN，等待Ubuntu CI；没有调用真实Blade或现场脚本。
+
+### ACL最小修复建议与审批结论
+
+旧 `C:\Users\W\ChaosLab-rc1-manual\.local` 的额外读取来自继承ACE。最小建议是**仅此.local范围**关闭外部继承并保留W/SYSTEM/Administrators，移除不必要读取，随后逐项复核；不改用户主目录、不删除数据、不递归重置系统ACL。已请求用户批准，未获得明确批准前不执行。
+
+代码可在最终HEAD CI通过后进入PR审核；**rc1 Tag/Release仍不能自动批准**：真人隐藏输入待验，旧manual目录ACL尚未获准处理。可以使用已通过只读ACL检查的独立RC2目录继续本地演示，但不能把它写成旧目录已经修好。所有M1历史证据与下列SHA不变。
 
 ## 基线与独立输入
 

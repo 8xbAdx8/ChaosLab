@@ -18,6 +18,7 @@
 - `VERSION`、后端 Maven、前端 npm/lockfile 一致为 `1.0.0-rc1`，启动与产物检查使用同一受信版本。未升级 Spring Boot、Java、Node 或依赖。
 - 增加发布失败矩阵、完整草稿/权限/旧 Session/重启验收、无关 Java/Node 进程存活检查及历史字段来源核对。
 - 缺少账号时提示先运行交互启动入口；未增添业务功能、迁移或真实权限。
+- R2 发布阻塞清理：修正 Node readline 向 Java Console 的输入所有权交接；隐藏密码校验保留长度/BCrypt限制，提供有界重试。扩展只用于验收的 stdin 测试账号配置，不产生部署默认账号或明文凭据文件。
 - 新增发布检查表和待审批 Release Notes；原有安全断言、root harmless CI 与归档保护保留。
 
 ### 支持与限制
