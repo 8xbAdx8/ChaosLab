@@ -1,5 +1,7 @@
 # M2：真实 M1 Core 历史演示
 
+当前 V1 首选 [交付指南](18-v1-delivery.md) 的独立启动脚本；本页保留 M2 接口说明与手动入口，不代表新的现场验收。
+
 ## 选择与边界
 
 只实现一套 **SHA 校验后的只读证据投影**，没有数据库导入程序。
@@ -41,7 +43,7 @@ cd backend
 也可先 `./mvnw package` / `.\mvnw.cmd package`，再从仓库根目录运行打包产物：
 
 ```bash
-java -Dloader.main=org.chaoslab.historydemo.HistoryDemoApplication -cp backend/target/chaoslab-backend-0.0.1-SNAPSHOT.jar org.springframework.boot.loader.launch.PropertiesLauncher
+java -Dloader.main=org.chaoslab.historydemo.HistoryDemoApplication -cp backend/target/chaoslab-backend-1.0.0-rc1.jar org.springframework.boot.loader.launch.PropertiesLauncher
 ```
 
 正常 `java -jar` 仍启动原 ChaosLabApplication，而不是演示应用。

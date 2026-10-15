@@ -12,12 +12,31 @@ const privateFile = (name) => path.join(root, ".local/dev", name);
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const hold = process.argv.includes("--hold"); // Screenshot QA only, never used by public launchers.
 const setupOnly = process.argv.includes("--setup-only");
+const localAccounts = process.argv.includes("--local-accounts"); // Explicit operator input, never a deployment default.
+assert.ok(
+  fs.existsSync(
+    path.join(
+      root,
+      "backend/target/test-classes/com/chaoslab/console/fakedemo/DeliveryIdleFixture.class",
+    ),
+  ),
+  "Run complete backend verify after updating release fixtures, before starting acceptance.",
+);
 if (
-  process.argv.slice(2).some((arg) => !["--hold", "--setup-only"].includes(arg))
+  process.argv
+    .slice(2)
+    .some(
+      (arg) => !["--hold", "--setup-only", "--local-accounts"].includes(arg),
+    )
 )
   throw new Error("Unknown smoke option");
 
 if (!fs.existsSync(privateFile("accounts.json"))) {
+  assert.equal(
+    localAccounts,
+    false,
+    "Explicit local accounts must already exist; never create defaults.",
+  );
   const xml = fs.readFileSync(
     path.join(
       root,
@@ -39,20 +58,66 @@ if (!fs.existsSync(privateFile("accounts.json"))) {
     { cwd: path.join(root, "backend"), stdio: "inherit", windowsHide: true },
   );
   assert.equal(result.status, 0);
-} else
+} else if (!localAccounts)
   assert.ok(
     fs.existsSync(privateFile("smoke-credentials.json")),
     "Never reuse developer accounts for acceptance",
   );
 if (setupOnly) process.exit(0);
 
-const credentials = JSON.parse(
-  fs.readFileSync(privateFile("smoke-credentials.json"), "utf8"),
+const accountNames = JSON.parse(
+  fs.readFileSync(privateFile("accounts.json"), "utf8"),
 );
+let credentials;
+if (localAccounts) {
+  assert.equal(
+    Boolean(process.stdin.isTTY),
+    false,
+    "Use a private pipe, not terminal password echo.",
+  );
+  const chunks = [];
+  let bytes = 0;
+  for await (const chunk of process.stdin) {
+    bytes += chunk.length;
+    assert.ok(bytes <= 72, "Local test input exceeds password byte limit");
+    chunks.push(chunk);
+  }
+  const buffer = Buffer.concat(chunks);
+  credentials = { password: buffer.toString("utf8") };
+  buffer.fill(0);
+  chunks.forEach((chunk) => chunk.fill(0));
+  assert.ok(credentials.password.length >= 12, "Local test input is too short");
+} else {
+  credentials = JSON.parse(
+    fs.readFileSync(privateFile("smoke-credentials.json"), "utf8"),
+  );
+}
+const classpathXml = fs.readFileSync(
+  path.join(
+    root,
+    "backend/target/surefire-reports/TEST-com.chaoslab.console.fakedemo.FakeDemoApiTests.xml",
+  ),
+  "utf8",
+);
+const sentinelClasspath = /name="java.class.path" value="([^"]+)"/
+  .exec(classpathXml)?.[1]
+  ?.replaceAll("&amp;", "&")
+  .replaceAll("&quot;", '"');
+assert.ok(sentinelClasspath, "Run backend verify first");
+const sentinelExecutable = javaExecutable();
 const sentinel = spawn(
   process.execPath,
   ["-e", "setInterval(() => {}, 1000)"],
   { stdio: "ignore", windowsHide: true },
+);
+const sentinelJava = spawn(
+  sentinelExecutable,
+  [
+    "-cp",
+    sentinelClasspath,
+    "com.chaoslab.console.fakedemo.DeliveryIdleFixture",
+  ],
+  { cwd: path.join(root, "backend"), stdio: "ignore", windowsHide: true },
 );
 const base = "http://127.0.0.1:15173";
 let cookies = new Map();
@@ -102,7 +167,7 @@ async function login(role) {
   await request("/api/v1/auth/login", {
     method: "POST",
     body: new URLSearchParams({
-      username: `demo.${role}`,
+      username: accountNames[role].username,
       password: credentials.password,
     }),
     token,
@@ -112,9 +177,9 @@ async function login(role) {
   assert.equal(identity.realExecutionAllowed, false);
   assert.ok(identity.roles.includes(role.toUpperCase()));
 }
-async function write(route, body, key, expected = 200) {
+async function write(route, body, key, expected = 200, method = "POST") {
   const token = await request("/api/v1/auth/csrf");
-  return request(route, { method: "POST", body, key, token, expected });
+  return request(route, { method, body, key, token, expected });
 }
 let session;
 function launch(mode) {
@@ -183,6 +248,12 @@ async function stop() {
     null,
     "stop must preserve unrelated Node processes",
   );
+  assert.equal(
+    sentinelJava.exitCode,
+    null,
+    "stop must preserve unrelated Java processes",
+  );
+  assert.equal(sentinelJava.signalCode, null);
   session = null;
 }
 try {
@@ -212,6 +283,7 @@ try {
     }
   await request("/api/v1/console/overview", { expected: 401 });
   await login("admin");
+  await request("/api/v1/console/overview");
   const definition = {
     name: "M6 local Fake delivery demo",
     hypothesis: "SIMULATED lifecycle; no physical CPU claim",
@@ -226,6 +298,19 @@ try {
     undefined,
     201,
   );
+  assert.equal(experiment.status, "CREATED");
+  const edited = await write(
+    `/api/v1/experiments/${experiment.id}`,
+    {
+      definition: { ...definition, name: "RC1 edited Fake draft" },
+      version: experiment.version,
+    },
+    undefined,
+    200,
+    "PUT",
+  );
+  assert.equal(edited.status, "CREATED");
+  assert.equal(edited.name, "RC1 edited Fake draft");
   await write(`/api/v1/experiments/${experiment.id}/validation`);
   assert.equal(
     (await write(`/api/v1/experiments/${experiment.id}/dry-run`)).accepted,
@@ -252,6 +337,8 @@ try {
   );
   assert.equal(analysis.recovery.physicalRecovery, "UNKNOWN");
   assert.equal(analysis.recovery.baselineCpuPercent, null);
+  assert.equal(analysis.recovery.recoveryCause, "UNKNOWN");
+  assert.equal(analysis.report.conclusionStatus, "INSUFFICIENT_DATA");
   assert.ok(analysis.audits.length > 0);
   // Even a logged-in ADMIN with valid CSRF cannot access REAL or bypass missing CSRF.
   await request("/api/v1/experiments", {
@@ -260,12 +347,39 @@ try {
     expected: 403,
   });
   await write("/api/v1/real/authorization", {}, undefined, 403);
+  await write("/api/v1/root/exec", {}, undefined, 403);
+  await write(
+    "/api/v1/experiments",
+    { ...definition, engine: "blade" },
+    undefined,
+    400,
+  );
+  await write("/api/v1/auth/logout", undefined, undefined, 204);
+  await login("admin");
+  await request(`/api/v1/console/executions/${execution.id}`);
   await login("viewer");
   await request(`/api/v1/console/executions/${execution.id}`);
   await write("/api/v1/experiments", definition, undefined, 403);
+  await write(
+    `/api/v1/experiments/${experiment.id}`,
+    { definition, version: edited.version },
+    undefined,
+    403,
+    "PUT",
+  );
+  await write(route, undefined, `viewer-${randomUUID()}`, 403);
+  await write(
+    `${route}/${execution.id}/reports`,
+    undefined,
+    `viewer-report-${randomUUID()}`,
+    403,
+  );
   await write(`${route}/${execution.id}/destroy`, undefined, undefined, 403);
+  const invalidatedCookies = new Map(cookies);
   await write("/api/v1/auth/logout", undefined, undefined, 204);
+  cookies = invalidatedCookies;
   await request("/api/v1/console/overview", { expected: 401 });
+  cookies = new Map();
   fs.writeFileSync(
     privateFile("smoke-result.json"),
     JSON.stringify(
@@ -321,6 +435,40 @@ try {
       history.evidenceSource.sha256,
       "b57cac027022e3c3b009b6daf20eef22c9146d2c7f32dd5c579841fe6eb84f33",
     );
+    const original = JSON.parse(
+      fs.readFileSync(
+        path.join(root, "docs/evidence/m1-core-real-20261010.json"),
+        "utf8",
+      ),
+    );
+    const pointerValue = (pointer) =>
+      pointer
+        .split("/")
+        .slice(1)
+        .reduce(
+          (value, key) =>
+            value?.[key.replaceAll("~1", "/").replaceAll("~0", "~")],
+          original,
+        );
+    for (const fact of [
+      ...history.facts,
+      ...history.cpu.map((sample) => sample.percent),
+    ])
+      if (fact.pointer) {
+        const native = pointerValue(fact.pointer);
+        // Match HistoryEvidenceReader's existing scalar-only projection: missing
+        // or non-scalar fields remain null, never invented values or raw objects.
+        const projected =
+          native === undefined ||
+          (native !== null && typeof native === "object")
+            ? null
+            : native;
+        assert.deepEqual(fact.value, projected);
+      }
+    assert.deepEqual(
+      history.cpu.map((sample) => Number(sample.percent.value.toFixed(2))),
+      [0, 10.91, 0],
+    );
     await request("/api/v1/console/experiments", { expected: 401 });
     await stop();
     assert.equal(
@@ -336,4 +484,5 @@ try {
 } finally {
   await stop();
   sentinel.kill();
+  sentinelJava.kill();
 }

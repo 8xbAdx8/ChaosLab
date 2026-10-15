@@ -2,6 +2,10 @@
 
 **教学型混沌工程平台｜Java 后端 + React 全栈｜安全 Fake 演示与可信真实历史**
 
+当前源码版本 **1.0.0-rc1（发布准备，尚未创建 tag / Release）**。
+见 [CHANGELOG](CHANGELOG.md)、[发布验收状态](docs/22-v1-release-checklist.md) 和 [Release Notes 草案](docs/releases/v1.0.0-rc1.md)。
+CI自动化、真人首次账号流程和正式发布审批是不同条件；不要把“CI绿”理解成“正式版已发布”。
+
 ChaosLab 将“配置、受控执行、恢复确认、审计、报告”连成可学习的工程闭环。
 混沌工程不是随意破坏，而是在明确目标、强度和停止条件下验证系统如何应对故障。
 本项目区分**命令完成、模拟成功、物理恢复、恢复因果**，不把一个 SUCCESS 当作所有证据都 VERIFIED。

@@ -43,7 +43,7 @@ JNDI/Hikari URL 替代、symlink、console/history overlap、真实 engine、外
 生成自己的 BCrypt hash（交互密码不回显，不接受 argv 密码）：
 
 ```powershell
-java -Dloader.main=com.chaoslab.console.security.PasswordHashTool -cp backend/target/chaoslab-backend-0.0.1-SNAPSHOT.jar org.springframework.boot.loader.launch.PropertiesLauncher
+java -Dloader.main=com.chaoslab.console.security.PasswordHashTool -cp backend/target/chaoslab-backend-1.0.0-rc1.jar org.springframework.boot.loader.launch.PropertiesLauncher
 ```
 
 终端 A 配置受信本地账号，没有默认账号/密码。可仅配置 ADMIN；验证 VIEWER 时再生成独立 hash：
@@ -55,7 +55,7 @@ $env:CHAOSLAB_ADMIN_PASSWORD_HASH=Read-Host 'Paste your locally generated ADMIN 
 $env:CHAOSLAB_VIEWER_USERNAME='your-viewer-name'
 $env:CHAOSLAB_VIEWER_PASSWORD_HASH=Read-Host 'Paste your locally generated VIEWER BCrypt hash'
 cd backend
-java -jar target/chaoslab-backend-0.0.1-SNAPSHOT.jar --spring.profiles.active=fake-demo
+java -jar target/chaoslab-backend-1.0.0-rc1.jar --spring.profiles.active=fake-demo
 ```
 
 保持工作目录一致，避免相对路径创建第二个演示数据库。无需设置现场 MySQL 凭据。

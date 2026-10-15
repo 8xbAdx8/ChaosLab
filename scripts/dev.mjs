@@ -17,10 +17,10 @@ const local = path.join(root, ".local", "dev");
 const accountFile = path.join(local, "accounts.json");
 const stateFile = path.join(local, "session.json");
 const lockFile = path.join(local, "start.lock");
-const jar = path.join(
-  root,
-  "backend/target/chaoslab-backend-0.0.1-SNAPSHOT.jar",
-);
+const version = fs.readFileSync(path.join(root, "VERSION"), "utf8").trim();
+if (!/^\d+\.\d+\.\d+(?:-rc\d+)?$/.test(version))
+  throw new Error("Invalid checkout VERSION; no service started.");
+const jar = path.join(root, `backend/target/chaoslab-backend-${version}.jar`);
 const windows = process.platform === "win32";
 const fail = (message) => {
   throw new Error(message);
@@ -241,7 +241,14 @@ export async function doctor(opts, requireAccounts = true) {
     );
   if (opts.mode === "fake") {
     privateDirectory(path.join(root, ".local/chaoslab-fake-demo"));
-    if (requireAccounts) validateAccounts(privateRead(accountFile));
+    if (requireAccounts) {
+      const accounts = privateRead(accountFile);
+      if (!accounts)
+        fail(
+          "No local accounts configured. First run scripts/start-fake in an interactive terminal.",
+        );
+      validateAccounts(accounts);
+    }
   }
   await freePort(opts.backend);
   await freePort(opts.frontend);
@@ -325,32 +332,44 @@ export async function build() {
   }
 }
 
+// readline.pause() leaves a TTY in raw mode and still owns its input decoder.
+// A console child must be the sole input owner, including on Windows ConPTY.
+export async function terminalQuestion(
+  prompt,
+  input = process.stdin,
+  output = process.stdout,
+) {
+  const readline = createInterface({ input, output });
+  try {
+    return await readline.question(prompt);
+  } finally {
+    readline.close();
+    // Let libuv finish the stopped read before another process reads the console.
+    await new Promise(setImmediate);
+  }
+}
+
 async function configure(java) {
   if (!process.stdin.isTTY || !process.stdout.isTTY)
     fail(
       "First use requires an interactive terminal: run scripts/start-fake or configure. CI uses isolated random test accounts, never defaults.",
     );
-  const readline = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-  try {
-    const accounts = {};
-    for (const role of ["admin", "viewer"]) {
-      if (
-        role === "viewer" &&
-        (
-          await readline.question("Configure an optional VIEWER? [y/N] ")
-        ).toLowerCase() !== "y"
-      )
-        continue;
-      const username = await readline.question(
-        `${role.toUpperCase()} username (your choice, no default): `,
-      );
-      console.log(
-        "The existing Java tool will ask for a hidden password twice and display its BCrypt hash.",
-      );
-      readline.pause();
+  const accounts = {};
+  for (const role of ["admin", "viewer"]) {
+    if (
+      role === "viewer" &&
+      (
+        await terminalQuestion("Configure an optional VIEWER? [y/N] ")
+      ).toLowerCase() !== "y"
+    )
+      continue;
+    const username = await terminalQuestion(
+      `${role.toUpperCase()} username (your choice, no default): `,
+    );
+    console.log(
+      "The existing Java tool will ask for a hidden password twice and display its BCrypt hash.",
+    );
+    try {
       await run(
         java,
         [
@@ -361,34 +380,35 @@ async function configure(java) {
         ],
         root,
       );
-      readline.resume();
-      const hash = (
-        await readline.question(
-          "Paste only the generated BCrypt hash (not the password): ",
-        )
-      ).trim();
-      accounts[role] = { username, hash };
-    }
-    validateAccounts(accounts);
-    privateDirectory(local);
-    if (fs.existsSync(accountFile))
+    } catch {
       fail(
-        "Accounts already exist. No overwrite: stop services and explicitly archive your private config before reconfiguring.",
+        "Password setup did not complete; no accounts saved. Check the terminal/password rules, then retry node scripts/dev.mjs configure fake without rebuilding.",
       );
-    fs.writeFileSync(accountFile, JSON.stringify(accounts), {
-      mode: 0o600,
-      flag: "wx",
-    });
-    console.log(
-      "Private BCrypt configuration saved under ignored .local/dev. No plaintext password saved.",
-    );
-    if (windows)
-      console.log(
-        "Windows: keep this checkout in your private user folder; restrict .local ACL for shared machines (see delivery guide).",
-      );
-  } finally {
-    readline.close();
+    }
+    const hash = (
+      await terminalQuestion(
+        "Paste only the generated BCrypt hash (not the password): ",
+      )
+    ).trim();
+    accounts[role] = { username, hash };
   }
+  validateAccounts(accounts);
+  privateDirectory(local);
+  if (fs.existsSync(accountFile))
+    fail(
+      "Accounts already exist. No overwrite: stop services and explicitly archive your private config before reconfiguring.",
+    );
+  fs.writeFileSync(accountFile, JSON.stringify(accounts), {
+    mode: 0o600,
+    flag: "wx",
+  });
+  console.log(
+    "Private BCrypt configuration saved under ignored .local/dev. No plaintext password saved.",
+  );
+  if (windows)
+    console.log(
+      "Windows: keep this checkout in your private user folder; restrict .local ACL for shared machines (see delivery guide).",
+    );
 }
 
 export function runtimeEnvironment(accounts, port) {
@@ -689,7 +709,9 @@ export async function main(args = process.argv.slice(2)) {
     fail("Startup already reserved; no build or service was started.");
   }
   try {
-    await build();
+    // A failed password attempt must not force another Maven/npm build. Explicit
+    // configure reuses the local artifact; start still always builds current code.
+    if (opts.command !== "configure" || !fs.existsSync(jar)) await build();
     if (opts.mode === "fake" && !fs.existsSync(accountFile))
       await configure(javaExecutable());
     if (opts.command === "configure") return;

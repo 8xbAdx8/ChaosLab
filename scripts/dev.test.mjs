@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import net from "node:net";
+import { PassThrough } from "node:stream";
 import { spawn } from "node:child_process";
 import {
   options,
@@ -15,6 +16,7 @@ import {
   controlAuthorized,
   javaExecutable,
   childRunning,
+  terminalQuestion,
 } from "./dev.mjs";
 
 test("fixed modes, unique bounded ports; no argv/root/profile/database overrides", () => {
@@ -27,6 +29,28 @@ test("fixed modes, unique bounded ports; no argv/root/profile/database overrides
     ["start", "fake", "--backend-port", "9000", "--backend-port", "9001"],
   ])
     assert.throws(() => options(args));
+});
+
+test("each terminal question releases raw mode and input ownership before a console child", async () => {
+  const input = new PassThrough();
+  input.isTTY = true;
+  input.setRawMode = (enabled) => {
+    input.isRaw = enabled;
+  };
+  const output = new PassThrough();
+  output.isTTY = true;
+  output.columns = 80;
+  for (const answer of ["chosen.admin", "$2a$12$" + "a".repeat(53), "n"]) {
+    const result = terminalQuestion("Fixture prompt: ", input, output);
+    assert.equal(input.isRaw, true);
+    input.write(answer + "\r");
+    assert.equal(await result, answer);
+    assert.equal(input.isRaw, false);
+    assert.equal(input.listenerCount("keypress"), 0);
+    assert.equal(input.isPaused(), true);
+  }
+  input.destroy();
+  output.destroy();
 });
 test("private accounts require complete BCrypt pairs and distinct identities; no defaults", () => {
   const admin = { username: "chosen.admin", hash: "$2a$12$" + "a".repeat(53) };
