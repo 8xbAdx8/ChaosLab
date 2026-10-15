@@ -24,7 +24,7 @@
 | 旧manual目录ACL | BLOCKED | AUTO只读；root及.local/dev/H2继承CodexSandboxUsers的ReadAndExecute；没有额外写权限，但可读取hash/数据。不使用其账号/DB，修复仅在授权后执行 |
 | 真人 Windows Terminal 隐藏密码 | NOT_RUN | HUMAN待验；工具伪终端的输入显示不能证明真人终端不回显。没有把自动配置或模拟TTY记成人工PASS |
 | 本机Java21 / Ubuntu人工 | NOT_RUN | 本机Java24为补充验证，Java21和Ubuntu依赖对应新HEAD CI；不操作VM/WSL/SSH |
-| 新HEAD Windows/Ubuntu CI + Unix真实PTY | NOT_RUN | 推送后以PR #9当前HEAD Checks为准；旧ca816146绿灯不等于本次修复通过。新增Unix PTY检查真实Node→Java、错误确认后重试及无密码回显；Windows不冒用POSIX PTY |
+| R2修复代码Windows/Ubuntu CI + Unix真实PTY | PASS | AUTO；代码commit `ba99ca6764d4fa053cd84f0cae9129e1589745d5`的[Java](https://github.com/8xbAdx8/ChaosLab/actions/runs/38722201325)、[Web](https://github.com/8xbAdx8/ChaosLab/actions/runs/38722201321)、[Delivery](https://github.com/8xbAdx8/ChaosLab/actions/runs/38722201305)全部通过，含原harmless root。Ubuntu真实PTY的Node→Java、错误确认后重试及无密码回显通过；Windows按条件跳过该Unix步骤，不冒用POSIX结果。最终仅文档HEAD仍需核对独立Checks |
 
 ### 密码问题调查与最小修复
 
@@ -34,6 +34,8 @@ Windows伪终端复现了 `readline.pause()` 后 `stdin.isRaw=true`、Java读取
 
 本机虚拟终端输入适配器的显示不作为密码隐藏验收依据；Windows真人首次流程仍NOT_RUN。Node的输入释放语义见[官方readline说明](https://nodejs.org/api/readline.html#rlclose)，隐藏读取契约见[Java Console](https://docs.oracle.com/en/java/javase/24/docs/api/java.base/java/io/Console.html)。
 
+修订后的实际Windows虚拟终端fixture还完成了“不匹配→同进程重试→匹配→退出0”；没有重建或写账号。Ubuntu Java21 CI则在真实Unix PTY中证明无输入回显。这两者都不能自动升级为真人Windows Terminal的HUMAN_PASS。
+
 ### R2 自动化记录与失败说明
 
 Fake Experiment `4377cc43-cea4-46b4-8d65-9d8b14bdf4c0`；Execution `1b14bce4-9f59-49b3-bab4-f2560493e3a4`；Report `a92e90ad-d3b0-421f-83bd-9c214344b39f`。全部为SIMULATED，非M1现场证据。服务退出码0，session/start.lock不存在，验收端口已释放，账号/H2留在原新目录。
@@ -42,6 +44,7 @@ Fake Experiment `4377cc43-cea4-46b4-8d65-9d8b14bdf4c0`；Execution `1b14bce4-9f5
 - 一次验收编排误启动两个Maven，停止的仅是已核对RC2路径的自有测试进程树；不将中断结果计为PASS，重新串行全量verify取得425项结果。
 - 最初内存pipe测试驱动自行重建Windows环境遗漏PATHEXT且ComSpec采用了不适合Node cmd参数处理的拼写，启动前被doctor拒绝（0次create）；修复驱动环境后实际完整流程退出0，没有修改生产guard以迁就驱动。
 - WindowsApps的python别名不作为执行依据；改用明确的Python3.12运行产物检查和原历史保护测试，2项通过。Unix PTY本机NOT_RUN，等待Ubuntu CI；没有调用真实Blade或现场脚本。
+- 补充本机Python回归：观测/报告16项、旧M1禁用保护8项（1项Linux strace格式fixture在Windows跳过）、Core操作器无害测试5项均通过。以上运行的是`test_*.py`，没有调用真实实验入口。Ubuntu PTY随后已在上述R2 CI通过。
 
 ### ACL最小修复建议与审批结论
 
