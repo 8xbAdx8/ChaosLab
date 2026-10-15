@@ -21,7 +21,7 @@
 | 立即停止和重启 | PASS | AUTO；Execution/Report读回，无关Java/Node仍活着，保留WRITE_DELAY=0；未增加sleep掩盖持久化，未删除任何个人H2 |
 | history独立回归 | PASS | AUTO；匿名无DB、原H2 mtime不变、固定SHA/JSON Pointer；CPU0→10.91→0、Destroyed/CLEAR/HEALTHY/VERIFIED，原因UNKNOWN不升级ACTIVE |
 | 新RC2目录及五个私有路径NTFS ACL | PASS | AUTO只读；Owner=W，W/SYSTEM/Administrators完全控制；没有Users、Authenticated Users、Everyone、CodexSandboxUsers；没有用mode/chmod推断NTFS，也未改ACL |
-| 旧manual目录ACL | BLOCKED | AUTO只读；root及.local/dev/H2继承CodexSandboxUsers的ReadAndExecute；没有额外写权限，但可读取hash/数据。不使用其账号/DB，修复仅在授权后执行 |
+| 旧manual的.local私有范围ACL | PASS | AUTO；2026-10-15获用户明确授权后完成修复并独立复核4个对象；.local关闭外部继承，子项仅继承W/SYSTEM/Administrators完全控制，CodexSandboxUsers读取ACE已移除。源码根目录及用户主目录ACL不变；不是chmod推断 |
 | 真人 Windows Terminal 隐藏密码 | NOT_RUN | HUMAN待验；工具伪终端的输入显示不能证明真人终端不回显。没有把自动配置或模拟TTY记成人工PASS |
 | 本机Java21 / Ubuntu人工 | NOT_RUN | 本机Java24为补充验证，Java21和Ubuntu依赖对应新HEAD CI；不操作VM/WSL/SSH |
 | R2修复代码Windows/Ubuntu CI + Unix真实PTY | PASS | AUTO；代码commit `ba99ca6764d4fa053cd84f0cae9129e1589745d5`的[Java](https://github.com/8xbAdx8/ChaosLab/actions/runs/38722201325)、[Web](https://github.com/8xbAdx8/ChaosLab/actions/runs/38722201321)、[Delivery](https://github.com/8xbAdx8/ChaosLab/actions/runs/38722201305)全部通过，含原harmless root。Ubuntu真实PTY的Node→Java、错误确认后重试及无密码回显通过；Windows按条件跳过该Unix步骤，不冒用POSIX结果。最终仅文档HEAD仍需核对独立Checks |
@@ -46,11 +46,13 @@ Fake Experiment `4377cc43-cea4-46b4-8d65-9d8b14bdf4c0`；Execution `1b14bce4-9f5
 - WindowsApps的python别名不作为执行依据；改用明确的Python3.12运行产物检查和原历史保护测试，2项通过。Unix PTY本机NOT_RUN，等待Ubuntu CI；没有调用真实Blade或现场脚本。
 - 补充本机Python回归：观测/报告16项、旧M1禁用保护8项（1项Linux strace格式fixture在Windows跳过）、Core操作器无害测试5项均通过。以上运行的是`test_*.py`，没有调用真实实验入口。Ubuntu PTY随后已在上述R2 CI通过。
 
-### ACL最小修复建议与审批结论
+### ACL授权修复结果与审批结论
 
-旧 `C:\Users\W\ChaosLab-rc1-manual\.local` 的额外读取来自继承ACE。最小建议是**仅此.local范围**关闭外部继承并保留W/SYSTEM/Administrators，移除不必要读取，随后逐项复核；不改用户主目录、不删除数据、不递归重置系统ACL。已请求用户批准，未获得明确批准前不执行。
+用户于2026-10-15明确批准“允许仅修复该.local范围”。执行前重新核对绝对路径、owner、无reparse point、无运行会话及全部现有规则，随后**仅对 `C:\Users\W\ChaosLab-rc1-manual\.local` 的DACL**关闭外部继承，保留W/SYSTEM/Administrators完全控制。子项继承更新后，4个对象均独立复核通过，无Users/Authenticated Users/Everyone/CodexSandboxUsers访问ACE；owner未变。源码根目录原ACL保持原样，其额外源码读取权限没有传播回受保护的.local。
 
-代码可在最终HEAD CI通过后进入PR审核；**rc1 Tag/Release仍不能自动批准**：真人隐藏输入待验，旧manual目录ACL尚未获准处理。可以使用已通过只读ACL检查的独立RC2目录继续本地演示，但不能把它写成旧目录已经修好。所有M1历史证据与下列SHA不变。
+原ACL已保存到RC2私有、Git忽略的 `.local/dev/manual-local-acl-*.txt`；备份解析核验为4条.local范围内的路径，不上传原始SDDL。修复时manual目录没有accounts.json或H2文件；唯一现有文件npm-installed.json的SHA未变，独立RC2账号与H2数据库SHA也未变。用户主目录和源码根目录的SDDL前后完全相同，没有递归重置主目录、修改源码或删除数据，也未执行回退。
+
+**ACL阻塞已解除。** 代码可在最终HEAD CI通过后进入PR审核；**rc1 Tag/Release仍不能自动批准**：真人Windows隐藏输入仍NOT_RUN，合并及Tag/Release也需单独授权。所有M1历史证据与下列SHA不变。本次提交仅补录ACL验收文档，不包含账号、密码/hash、原始ACL备份、数据库或修复脚本。
 
 ## 基线与独立输入
 
